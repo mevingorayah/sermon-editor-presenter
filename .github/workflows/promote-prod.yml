@@ -1,0 +1,113 @@
+name: Promote to prod
+
+# Manual only. Deploys the staging-verified image digests pinned in
+# deploy/prod-release.env. No rebuild. Gated by the `production` Environment
+# (required reviewer) and by PROD_STORAGE_READY (durable sermon store).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_sha:
+        description: "Type the RELEASE_SHA from deploy/prod-release.env to confirm"
+        required: true
+
+concurrency:
+  group: promote-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  promote:
+    name: Promote pinned images to Cloud Run (prod)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load and validate release pin
+        id: pin
+        env:
+          CONFIRM: ${{ inputs.confirm_sha }}
+        run: |
+          set -euo pipefail
+          source deploy/prod-release.env
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::RELEASE_SHA malformed"; exit 1; }
+          [[ "$SHELL_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::SHELL_DIGEST malformed"; exit 1; }
+          [[ "$EXPORT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::EXPORT_DIGEST malformed"; exit 1; }
+          [ "$CONFIRM" = "$RELEASE_SHA" ] || { echo "::error::confirm_sha does not match RELEASE_SHA"; exit 1; }
+          echo "sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+          echo "shell_digest=$SHELL_DIGEST" >> "$GITHUB_OUTPUT"
+          echo "export_digest=$EXPORT_DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Require prod config and durable storage
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+          IMAGE_BASE: ${{ vars.SOURCE_IMAGE_BASE }}
+          WIF: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          SA: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          RUNTIME_SA: ${{ vars.PROD_RUNTIME_SERVICE_ACCOUNT }}
+          STORAGE_READY: ${{ vars.PROD_STORAGE_READY }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for v in PROJECT_ID REGION IMAGE_BASE WIF SA RUNTIME_SA; do
+            if [ -z "${!v}" ]; then echo "::error::$v is not set on the production Environment"; missing=1; fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          if [ "$STORAGE_READY" != "true" ]; then
+            echo "::error::PROD_STORAGE_READY is not true. Sermons are still saved to container disk; prod is blocked until the durable store ships and QA's durability gate passes."
+            exit 1
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy export worker (auth only)
+        run: |
+          gcloud run deploy sermon-editor-export-prod \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --region="${{ vars.GCP_REGION }}" \
+            --image="${{ vars.SOURCE_IMAGE_BASE }}/export@${{ steps.pin.outputs.export_digest }}" \
+            --service-account="${{ vars.PROD_RUNTIME_SERVICE_ACCOUNT }}" \
+            --platform=managed \
+            --no-allow-unauthenticated \
+            --port=8080 --memory=2Gi --cpu=2 \
+            --min-instances=0 --max-instances=2 --concurrency=5 --timeout=300 \
+            --set-env-vars="NODE_ENV=production,NEXT_TELEMETRY_DISABLED=1,ROLE=export" \
+            --labels="release-sha=${{ steps.pin.outputs.sha }}" \
+            --quiet
+
+      - name: Deploy shell
+        run: |
+          gcloud run deploy sermon-editor-shell-prod \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --region="${{ vars.GCP_REGION }}" \
+            --image="${{ vars.SOURCE_IMAGE_BASE }}/shell@${{ steps.pin.outputs.shell_digest }}" \
+            --service-account="${{ vars.PROD_RUNTIME_SERVICE_ACCOUNT }}" \
+            --platform=managed \
+            --allow-unauthenticated \
+            --port=8080 --memory=512Mi --cpu=1 \
+            --min-instances=0 --max-instances=3 --concurrency=80 \
+            --set-env-vars="NODE_ENV=production,NEXT_TELEMETRY_DISABLED=1,EXPORT_SERVICE_URL=${{ vars.EXPORT_SERVICE_URL }}" \
+            --labels="release-sha=${{ steps.pin.outputs.sha }}" \
+            --quiet
+
+      - name: Smoke check
+        run: |
+          set -euo pipefail
+          URL=$(gcloud run services describe sermon-editor-shell-prod --project="${{ vars.GCP_PROJECT_ID }}" --region="${{ vars.GCP_REGION }}" --format='value(status.url)')
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$URL/edit")
+          echo "### Prod promoted: ${{ steps.pin.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Shell: $URL (/edit returned $code)" >> "$GITHUB_STEP_SUMMARY"
+          [ "$code" = "200" ] || { echo "::error::/edit returned $code"; exit 1; }
