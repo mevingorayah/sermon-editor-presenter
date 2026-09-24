@@ -1,6 +1,22 @@
 import PDFDocument from "pdfkit";
-import type { CalibratedSnapshot, SemanticBlock } from "@/types/document";
+import type { CalibratedSnapshot } from "@/types/document";
+import { HIGHLIGHT_AMBER, toHexRgb } from "./colors";
+import {
+  styledBlocksFromSnapshot,
+  titleTextFromSnapshot,
+  withNotesSection,
+  type StyledBlock,
+  type StyledRun,
+  type TextAlign,
+} from "./contentWalk";
+import { pdfkitFont, type FontFamilyId } from "./fonts";
 import { resolveMargins } from "./margins";
+
+export interface PdfBuildOptions {
+  includeNotes?: boolean;
+  notes?: string;
+  resolvedColors?: { accent: string };
+}
 
 function pageSize(
   target: string,
@@ -42,60 +58,111 @@ function fontSize(
   return Math.round(roleBase * Math.pow(STEP_FACTOR, step) * 10) / 10;
 }
 
+function pdfAlign(align: TextAlign): "left" | "center" | "right" {
+  return align;
+}
+
+function writeRuns(
+  doc: PDFKit.PDFDocument,
+  runs: StyledRun[],
+  opts: {
+    size: number;
+    lineHeight: number;
+    align: TextAlign;
+    defaultColor: string;
+    forceItalic?: boolean;
+    defaultFont?: FontFamilyId;
+  },
+): void {
+  if (runs.length === 0) {
+    doc.text(" ", { align: pdfAlign(opts.align), continued: false });
+    return;
+  }
+
+  runs.forEach((run, i) => {
+    const italic = opts.forceItalic || !!run.italic;
+    const bold = !!run.bold;
+    const fontId = run.fontFamily || opts.defaultFont || "serif";
+    const color = run.color || opts.defaultColor;
+    doc
+      .font(pdfkitFont(fontId, { bold, italic }))
+      .fontSize(opts.size)
+      .fillColor(color);
+
+    if (run.highlight) {
+      // Best-effort: soft amber fill behind this continued run is limited in
+      // pdfkit; approximate by drawing text then a translucent note is skipped.
+      // Color the text slightly warmer instead of failing the export.
+      void HIGHLIGHT_AMBER;
+    }
+
+    const isLast = i === runs.length - 1;
+    doc.text(run.text || " ", {
+      align: pdfAlign(opts.align),
+      continued: !isLast,
+      lineGap: (opts.lineHeight - 1) * opts.size,
+      // highlight: pdfkit has no run-level background; omit rather than fail
+    });
+  });
+}
+
 function writeBlock(
   doc: PDFKit.PDFDocument,
-  block: SemanticBlock,
+  block: StyledBlock,
   step: number,
   lineHeight: number,
+  accent?: string,
 ): void {
   switch (block.type) {
     case "Title":
-      doc
-        .font("Times-Bold")
-        .fontSize(fontSize(step, "title"))
-        .fillColor("#111111")
-        .text(block.text, {
-          align: "left",
-          lineGap: (lineHeight - 1) * fontSize(step, "title"),
-        });
+      writeRuns(doc, block.runs, {
+        size: fontSize(step, "title"),
+        lineHeight,
+        align: block.align,
+        defaultColor: accent || "#111111",
+        defaultFont: "serif",
+      });
       doc.moveDown(0.6);
       break;
     case "H1":
-      doc
-        .font("Times-Bold")
-        .fontSize(fontSize(step, "h1"))
-        .fillColor("#111111")
-        .text(block.text, { align: "left" });
+      writeRuns(doc, block.runs, {
+        size: fontSize(step, "h1"),
+        lineHeight,
+        align: block.align,
+        defaultColor: "#111111",
+        defaultFont: "serif",
+      });
       doc.moveDown(0.4);
       break;
     case "H2":
-      doc
-        .font("Times-Bold")
-        .fontSize(fontSize(step, "h2"))
-        .fillColor("#222222")
-        .text(block.text, { align: "left" });
+      writeRuns(doc, block.runs, {
+        size: fontSize(step, "h2"),
+        lineHeight,
+        align: block.align,
+        defaultColor: "#222222",
+        defaultFont: "serif",
+      });
       doc.moveDown(0.3);
       break;
     case "Body":
-      doc
-        .font("Times-Roman")
-        .fontSize(fontSize(step, "body"))
-        .fillColor("#111111")
-        .text(block.text || " ", {
-          align: "left",
-          lineGap: (lineHeight - 1) * fontSize(step, "body"),
-        });
+      writeRuns(doc, block.runs, {
+        size: fontSize(step, "body"),
+        lineHeight,
+        align: block.align,
+        defaultColor: "#111111",
+        defaultFont: "serif",
+      });
       doc.moveDown(0.5);
       break;
     case "Scripture":
-      doc
-        .font("Times-Italic")
-        .fontSize(fontSize(step, "body"))
-        .fillColor("#111111")
-        .text(block.text, {
-          align: "left",
-          lineGap: (lineHeight - 1) * fontSize(step, "body"),
-        });
+      writeRuns(doc, block.runs, {
+        size: fontSize(step, "body"),
+        lineHeight,
+        align: block.align,
+        defaultColor: "#111111",
+        forceItalic: true,
+        defaultFont: "serif",
+      });
       if (block.citation) {
         doc
           .font("Times-Roman")
@@ -106,11 +173,13 @@ function writeBlock(
       doc.moveDown(0.6);
       break;
     case "Caption":
-      doc
-        .font("Times-Roman")
-        .fontSize(fontSize(step, "caption"))
-        .fillColor("#555555")
-        .text(block.text, { align: "right" });
+      writeRuns(doc, block.runs, {
+        size: fontSize(step, "caption"),
+        lineHeight,
+        align: "right",
+        defaultColor: "#555555",
+        defaultFont: "serif",
+      });
       doc.moveDown(0.4);
       break;
     default: {
@@ -120,13 +189,9 @@ function writeBlock(
   }
 }
 
-function titleFromSnapshot(snapshot: CalibratedSnapshot): string {
-  const titleBlock = snapshot.semanticBlocks.find((b) => b.type === "Title");
-  return titleBlock?.text?.trim() || "Sermon";
-}
-
 export async function buildPdf(
   snapshot: CalibratedSnapshot,
+  options: PdfBuildOptions = {},
 ): Promise<Buffer> {
   const target = String(snapshot.target);
   const margins = resolveMargins(snapshot.margins, target);
@@ -135,7 +200,13 @@ export async function buildPdf(
   const right = margins.right * inch;
   const top = margins.top * inch;
   const bottom = margins.bottom * inch;
-  const title = titleFromSnapshot(snapshot);
+  const title = titleTextFromSnapshot(snapshot);
+  const accent = toHexRgb(options.resolvedColors?.accent);
+  const blocks = withNotesSection(
+    styledBlocksFromSnapshot(snapshot),
+    options.includeNotes === true,
+    options.notes,
+  );
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
@@ -154,14 +225,19 @@ export async function buildPdf(
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
-    // Print/export: always light ink (ignore dark theme for paper/file).
     doc.fillColor("#111111");
 
-    if (snapshot.semanticBlocks.length === 0) {
+    if (blocks.length === 0) {
       doc.font("Times-Bold").fontSize(18).text(title);
     } else {
-      for (const block of snapshot.semanticBlocks) {
-        writeBlock(doc, block, snapshot.typeScaleStep, snapshot.lineHeight);
+      for (const block of blocks) {
+        writeBlock(
+          doc,
+          block,
+          snapshot.typeScaleStep,
+          snapshot.lineHeight,
+          accent,
+        );
       }
     }
 

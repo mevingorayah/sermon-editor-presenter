@@ -52,41 +52,144 @@ const calibratedMarginsSchema = z.object({
   binderGutter: z.string().min(1).max(32).optional(),
 });
 
+/** #RRGGBB / #RGB or rgb()/rgba() */
+const resolvedColorSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine(
+    (v) =>
+      /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v.trim()) ||
+      /^rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(,\s*[\d.]+\s*)?\)$/.test(
+        v.trim(),
+      ),
+    { message: "Color must be #RRGGBB or rgb()/rgba()" },
+  );
+
+/**
+ * Walk TipTap JSON for textStyle / color marks containing CSS var(--…).
+ * Frontend must flatten accent colors to hex/RGB before POST.
+ */
+export function findCssVarColorMarks(
+  node: unknown,
+  path: string = "content",
+): string[] {
+  const hits: string[] = [];
+  if (!node || typeof node !== "object") return hits;
+
+  if (Array.isArray(node)) {
+    node.forEach((child, i) => {
+      hits.push(...findCssVarColorMarks(child, `${path}[${i}]`));
+    });
+    return hits;
+  }
+
+  const obj = node as Record<string, unknown>;
+
+  if (Array.isArray(obj.marks)) {
+    for (let i = 0; i < obj.marks.length; i++) {
+      const mark = obj.marks[i] as Record<string, unknown> | null;
+      if (!mark || typeof mark !== "object") continue;
+      const attrs = mark.attrs as Record<string, unknown> | undefined;
+      const color =
+        typeof attrs?.color === "string"
+          ? attrs.color
+          : typeof mark.color === "string"
+            ? mark.color
+            : undefined;
+      if (color && /var\s*\(\s*--/i.test(color)) {
+        hits.push(`${path}.marks[${i}].color`);
+      }
+    }
+  }
+
+  if (obj.attrs && typeof obj.attrs === "object") {
+    const attrs = obj.attrs as Record<string, unknown>;
+    if (typeof attrs.color === "string" && /var\s*\(\s*--/i.test(attrs.color)) {
+      hits.push(`${path}.attrs.color`);
+    }
+  }
+
+  if (Array.isArray(obj.content)) {
+    hits.push(...findCssVarColorMarks(obj.content, `${path}.content`));
+  }
+
+  return hits;
+}
+
+function refineNoCssVarColors(
+  val: { content: unknown },
+  ctx: z.RefinementCtx,
+): void {
+  const hits = findCssVarColorMarks(val.content);
+  if (hits.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["content"],
+      message:
+        "Export content color marks must be concrete #RRGGBB or rgb() — CSS var(--…) is not allowed. Flatten accent colors on the Frontend before POST.",
+    });
+  }
+}
+
+const calibratedSnapshotFields = {
+  target: z.union([calibrationTargetSchema, z.string().min(1).max(64)]),
+  margins: calibratedMarginsSchema,
+  typeScaleStep: z.number().int().min(-2).max(2),
+  lineHeight: lineHeightSchema,
+  theme: z.enum(["light", "dark"]),
+  flattenGradient: z.literal(true),
+  bionic: z.literal(false),
+  semanticBlocks: z.array(semanticBlockSchema).max(2000),
+  content: sermonContentSchema,
+};
+
 /**
  * Validates Frontend `CalibratedSnapshot` (`src/types/document.ts`).
  * - `bionic` must be literal `false` (never true in export)
  * - `flattenGradient` must be literal `true`
+ * - TipTap color marks must not contain CSS `var(--…)`
  */
 export const calibratedSnapshotSchema = z
-  .object({
-    target: z.union([calibrationTargetSchema, z.string().min(1).max(64)]),
-    margins: calibratedMarginsSchema,
-    typeScaleStep: z.number().int().min(-2).max(2),
-    lineHeight: lineHeightSchema,
-    theme: z.enum(["light", "dark"]),
-    flattenGradient: z.literal(true),
-    bionic: z.literal(false),
-    semanticBlocks: z.array(semanticBlockSchema).max(2000),
-    content: sermonContentSchema,
-  })
-  .strict();
+  .object(calibratedSnapshotFields)
+  .strict()
+  .superRefine(refineNoCssVarColors);
 
-export const exportFormatSchema = z.enum(["docx", "pdf"]);
+export const exportFormatSchema = z.enum(["docx", "pdf", "png", "pptx"]);
+
+const exportExtrasFields = {
+  format: exportFormatSchema.optional(),
+  filenameStem: z.string().max(200).optional(),
+  includeNotes: z.boolean().optional(),
+  notes: z.string().max(100_000).optional(),
+  resolvedColors: z
+    .object({
+      accent: resolvedColorSchema,
+    })
+    .strict()
+    .optional(),
+};
 
 /**
  * Accept either:
  * 1. Raw CalibratedSnapshot (what CalibrationPanel POSTs today)
- * 2. `{ format, ...CalibratedSnapshot }`
- * 3. `{ format, snapshot: CalibratedSnapshot }`
+ * 2. `{ format, filenameStem?, includeNotes?, notes?, resolvedColors?, ...CalibratedSnapshot }`
+ * 3. `{ format, snapshot: CalibratedSnapshot, filenameStem?, includeNotes?, notes?, resolvedColors? }`
  */
 export const exportRequestSchema = z.union([
-  calibratedSnapshotSchema.extend({
-    format: exportFormatSchema.optional(),
-  }),
-  z.object({
-    format: exportFormatSchema.optional(),
-    snapshot: calibratedSnapshotSchema,
-  }),
+  z
+    .object({
+      ...calibratedSnapshotFields,
+      ...exportExtrasFields,
+    })
+    .strict()
+    .superRefine(refineNoCssVarColors),
+  z
+    .object({
+      ...exportExtrasFields,
+      snapshot: calibratedSnapshotSchema,
+    })
+    .strict(),
 ]);
 
 export const createSermonSchema = z.object({

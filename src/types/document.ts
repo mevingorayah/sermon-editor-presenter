@@ -57,8 +57,9 @@ export interface CalibratedMargins {
 }
 
 /**
- * Backend export contract — Frontend POSTs this shape to /api/export.
- * Real DOCX/PDF generation is owned by Backend.
+ * Backend export contract — Frontend POSTs this shape to /api/export
+ * (plus optional ExportRequestOptions for slice 2).
+ * DOCX/PDF/PNG/PPTX generation is owned by Backend.
  */
 export interface CalibratedSnapshot {
   target: CalibrationTarget | string;
@@ -81,3 +82,22 @@ export const DEFAULT_PRESENTATION_SETTINGS: PresentationSettings = {
 };
 
 export const STORAGE_KEY = "sermon-editor-presenter:document:v1";
+
+/** Slice 2 export formats (query ?format= still wins over body). */
+export type ExportFormat = "docx" | "pdf" | "png" | "pptx";
+
+/**
+ * Optional fields accepted on POST /api/export alongside CalibratedSnapshot.
+ * Not persisted on the sermon document.
+ */
+export interface ExportRequestOptions {
+  format?: ExportFormat;
+  /** Sanitized for Content-Disposition; empty → sermon-export */
+  filenameStem?: string;
+  /** Default false. When true, append study notes in DOCX/PDF only. */
+  includeNotes?: boolean;
+  /** Study notes text used when includeNotes is true. */
+  notes?: string;
+  /** Concrete accent for workers (e.g. PPTX/PNG chrome). */
+  resolvedColors?: { accent: string };
+}
