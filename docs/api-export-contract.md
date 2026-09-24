@@ -2,7 +2,9 @@
 
 Contract between Frontend (TipTap dual shells `/edit` + `/preach`) and Backend.
 
-**Source of truth for the export payload:** `src/types/document.ts` → `CalibratedSnapshot`.
+**Source of truth for the export payload:** `src/types/document.ts` → `CalibratedSnapshot` + `ExportRequestOptions`.
+
+**Slice:** Document setup / Save as / Export — slice 2 (`docs/ux/document-setup-save-export-slice-2.md`).
 
 ## Principles
 
@@ -11,11 +13,12 @@ Contract between Frontend (TipTap dual shells `/edit` + `/preach`) and Backend.
 - Export POSTs a **calibrated snapshot** after Reading Mode calibration.
 - **`bionic` must be `false` in export** (Frontend already sends literal `false`).
 - Print / DOCX / PDF use **light ink**; Frontend sets `flattenGradient: true` before POST.
+- **Color marks:** TipTap `textStyle.color` must be concrete `#RRGGBB` or `rgb()` — **never** CSS `var(--…)`. Backend rejects `var(--` in content color marks with **400**.
 - Favor simple, secure defaults. No invented metrics.
 
 ---
 
-## `CalibratedSnapshot` (export body)
+## `CalibratedSnapshot` (export body core)
 
 Shape defined in `src/types/document.ts` and built by `buildCalibratedSnapshot()`:
 
@@ -35,7 +38,7 @@ Shape defined in `src/types/document.ts` and built by `buildCalibratedSnapshot()
   flattenGradient: true,
   bionic: false,           // required literal false
   semanticBlocks: SemanticBlock[],
-  content: SermonContent   // TipTap JSON
+  content: SermonContent   // TipTap JSON (marks walked for italic/align/highlight/font/color)
 }
 ```
 
@@ -50,13 +53,50 @@ Shape defined in `src/types/document.ts` and built by `buildCalibratedSnapshot()
 | `Scripture` | `text`, `citation?` | Italic body + caption right |
 | `Caption`   | `text`              | Caption (right-aligned)     |
 
+Workers prefer TipTap `content` (for marks) and fall back to `semanticBlocks`.
+
+---
+
+## Slice 2 request extras (`ExportRequestOptions`)
+
+Accepted on the same POST alongside the snapshot:
+
+```ts
+{
+  format?: "docx" | "pdf" | "png" | "pptx",
+  filenameStem?: string,       // sanitized; empty → "sermon-export"
+  includeNotes?: boolean,      // default false
+  notes?: string,              // study notes text when includeNotes is true
+  resolvedColors?: { accent: string }  // "#RRGGBB" or rgb()
+}
+```
+
+| Field | Rules |
+|-------|--------|
+| `format` | `docx` \| `pdf` \| `png` \| `pptx`. Invalid → **400**. |
+| `filenameStem` | Sanitized to `[A-Za-z0-9._-]`; empty/whitespace → `sermon-export`. Used in `Content-Disposition`. When omitted, Backend derives from Title block / `"sermon-export"`. |
+| `includeNotes` | Default **false**. When **true**, appends a final **Study Notes** section in **DOCX/PDF only**. Ignored for **png** / **pptx**. Requires `notes` string from Frontend; empty/missing notes → no section added. |
+| `notes` | Free-form study notes (not part of `CalibratedSnapshot`). |
+| `resolvedColors.accent` | Concrete accent for Title / chrome (PNG accent bar, PPTX accents, DOCX/PDF title default). |
+
+### Shared export rules (all formats)
+
+1. `bionic: false` always.
+2. `flattenGradient: true` always.
+3. Paper targets → Frontend should send `theme: "light"`.
+4. Color marks: no `var(--…)`; hex/RGB only (validated).
+5. Highlight → soft amber background on runs when the worker supports it; otherwise omit mark (don’t fail).
+6. Font family marks → Sans / Serif / Mono mapped to concrete fonts; unknown → Sans.
+7. Align → left / center / right on blocks (best-effort).
+8. Italic → honored in all formats (best-effort).
+
 ---
 
 ## `POST /api/export`
 
 ### Request
 
-CalibrationPanel POSTs the snapshot **directly** as JSON:
+CalibrationPanel POSTs the snapshot **directly** as JSON (plus optional extras):
 
 ```http
 POST /api/export
@@ -88,7 +128,11 @@ Content-Type: application/json
       "citation": "Philippians 4:4"
     }
   ],
-  "content": { "type": "doc", "content": [] }
+  "content": { "type": "doc", "content": [] },
+  "format": "pdf",
+  "filenameStem": "Joy-Without-Ceasing",
+  "includeNotes": false,
+  "resolvedColors": { "accent": "#8B6914" }
 }
 ```
 
@@ -96,9 +140,9 @@ Content-Type: application/json
 
 | Mechanism | Example |
 |-----------|---------|
-| Query (preferred until UI adds a picker) | `POST /api/export?format=pdf` |
-| Body field | `{ "format": "docx", ...snapshot }` |
-| Wrapper | `{ "format": "pdf", "snapshot": { ... } }` |
+| Query (**wins** over body) | `POST /api/export?format=png` |
+| Body field | `{ "format": "pptx", ...snapshot }` |
+| Wrapper | `{ "format": "pdf", "snapshot": { ... }, "filenameStem": "…" }` |
 | Default | `docx` |
 
 ### Success response
@@ -108,16 +152,41 @@ Content-Type: application/json
 - Headers:
   - DOCX: `Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document`
   - PDF: `Content-Type: application/pdf`
-  - `Content-Disposition: attachment; filename="<safe-title>.(docx|pdf)"`
+  - PNG: `Content-Type: image/png`
+  - PPTX: `Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation`
+  - `Content-Disposition: attachment; filename="<stem>.(docx|pdf|png|pptx)"`
   - `Cache-Control: no-store`
+
+### Format workers (slice 2)
+
+| Format | Status | Behavior |
+|--------|--------|----------|
+| **DOCX** | Implemented | Semantic / TipTap content; optional Study Notes; `filenameStem`; accent on title when provided |
+| **PDF** | Implemented | Same as DOCX |
+| **PNG** | Implemented | Single PNG of calibrated frame at target aspect (`sharp` + SVG). Notes ignored. |
+| **PPTX** | Implemented | Title slide + one slide per H1 section (`pptxgenjs`). Notes ignored. |
+
+If a future worker is stubbed, Backend returns:
+
+```http
+501
+Content-Type: application/json
+```
+
+```json
+{ "error": "…", "code": "NOT_IMPLEMENTED" }
+```
+
+Frontend should show a clear status (and may keep the button disabled + “Coming soon” when it already knows).
 
 ### Error responses
 
 | Status | When |
 |--------|------|
-| `400` | Schema validation failed (`{ error, details }`) — e.g. `bionic: true` |
+| `400` | Schema validation failed (`{ error, details }`) — e.g. `bionic: true`, CSS `var(--` in color marks, invalid `format` |
 | `405` | GET used instead of POST |
 | `500` | Unexpected generation failure |
+| `501` | Format worker intentionally not implemented (`{ error, code: "NOT_IMPLEMENTED" }`) |
 
 ---
 
@@ -173,11 +242,20 @@ At least one of `content` or `document` required. TipTap JSON is sanitized on wr
 }
 ```
 
+**IDs:** sermon route params remain **UUID-only** (seed-* blocked on first paint / API).
+
 ---
 
 ## TypeScript references
 
-- `src/types/document.ts` — `CalibratedSnapshot`, semantic blocks, presentation
-- `src/lib/sermon/schema.ts` — Zod validators
+- `src/types/document.ts` — `CalibratedSnapshot`, `ExportFormat`, `ExportRequestOptions`, semantic blocks, presentation
+- `src/lib/sermon/schema.ts` — Zod validators (incl. CSS var rejection)
 - `src/lib/sermon/store.ts` — file persistence
-- `src/lib/sermon/export/` — DOCX (`docx`) + PDF (`pdfkit`)
+- `src/lib/sermon/export/` — DOCX (`docx`), PDF (`pdfkit`), PNG (`sharp`+SVG), PPTX (`pptxgenjs`)
+
+## Frontend follow-ups (slice 2)
+
+1. Flatten TipTap `textStyle.color` CSS vars → hex before POST (esp. accent).
+2. Send `filenameStem`, optional `includeNotes` + `notes`, and `resolvedColors.accent`.
+3. Wire PNG / PPTX format buttons; on 501 show clear status (or disable + hint).
+4. Edit topbar **Export…** → `/preach?calibrate=1` (chrome only; not Backend).

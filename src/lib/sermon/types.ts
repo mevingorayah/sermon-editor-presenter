@@ -13,6 +13,8 @@ export type {
   CalibratedSnapshot,
   CalibrationTarget,
   CalibratedMargins,
+  ExportFormat,
+  ExportRequestOptions,
   LineHeightOption,
   PresentationSettings,
   ReadingTheme,
@@ -21,8 +23,6 @@ export type {
   SermonContent,
   TypeScaleStep,
 } from "@/types/document";
-
-export type ExportFormat = "docx" | "pdf";
 
 export interface SermonMeta {
   title: string;
