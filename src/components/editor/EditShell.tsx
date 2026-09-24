@@ -6,7 +6,6 @@ import type { Editor, JSONContent } from "@tiptap/react";
 import {
   extractTitleFromContent,
   loadDocument,
-  promoteLocalDraftToServer,
   resolveActiveDocument,
   saveDocument,
   sermonToDocument,
@@ -21,6 +20,12 @@ import {
   listSermons,
   updateSermon,
 } from "@/lib/sermonApi";
+import {
+  AutosaveController,
+  classifySaveError,
+  type AutosaveStatus,
+  type SaveFailureKind,
+} from "@/lib/autosave/autosaveController";
 import type { Sermon } from "@/lib/sermon/types";
 import type { SermonDocument } from "@/types/document";
 import { DEFAULT_PRESENTATION_SETTINGS } from "@/types/document";
@@ -31,10 +36,56 @@ import { NotesPanel } from "./NotesPanel";
 import { SermonList } from "./SermonList";
 import styles from "./EditShell.module.css";
 
-type SaveStatus = "saved-server" | "saved-local" | "saving" | "offline";
+type SaveStatus =
+  | "saved-server"
+  | "saved-local"
+  | "saving"
+  | "offline"
+  | "restoring"
+  | "retrying"
+  | "failed-network"
+  | "failed-server";
 
-const CONTENT_DEBOUNCE_MS = 650;
-const NOTES_DEBOUNCE_MS = 800;
+/** States that a local keystroke must not paper over with "Saved locally". */
+const STICKY_STATUSES: ReadonlySet<SaveStatus> = new Set<SaveStatus>([
+  "offline",
+  "restoring",
+  "retrying",
+  "failed-network",
+  "failed-server",
+]);
+
+function toSaveStatus(s: AutosaveStatus): SaveStatus {
+  switch (s.kind) {
+    case "saving":
+      return "saving";
+    case "saved":
+      return "saved-server";
+    case "restoring":
+      return "restoring";
+    case "offline":
+      return "offline";
+    case "retrying":
+      return "retrying";
+    case "failed":
+      return failedStatus(s.reason);
+  }
+}
+
+function failedStatus(reason: SaveFailureKind): SaveStatus {
+  return reason === "network" ? "failed-network" : "failed-server";
+}
+
+const STATUS_LABELS: Record<SaveStatus, string> = {
+  saving: "Saving…",
+  "saved-server": "Saved to server",
+  "saved-local": "Saved locally",
+  offline: "Offline — saved locally",
+  restoring: "Restoring on server…",
+  retrying: "Save failed — retrying…",
+  "failed-network": "Offline — saved locally",
+  "failed-server": "Couldn’t save to server — saved locally",
+};
 
 function toListItems(sermons: Sermon[]) {
   return sermons.map((s) => ({
@@ -50,10 +101,16 @@ export function EditShell() {
   const [editor, setEditor] = useState<Editor | null>(null);
   const [status, setStatus] = useState<SaveStatus>("saving");
   const [busy, setBusy] = useState(false);
+  /**
+   * Remounts the editor only on real doc switches — not when autosave re-keys
+   * the same doc to a new server id (local-* promotion / 404 recovery), so the
+   * writer keeps focus, selection and undo history.
+   */
+  const [editorKey, setEditorKey] = useState("");
 
   const docRef = useRef<SermonDocument | null>(null);
-  const contentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** lost/local id → server id, so a stale docRef can never PATCH a gone id. */
+  const rekeyMap = useRef(new Map<string, string>());
   const onlineRef = useRef(true);
 
   useEffect(() => {
@@ -68,6 +125,7 @@ export function EditShell() {
         if (cancelled) return;
         onlineRef.current = resolved.source === "server";
         setDoc(resolved.doc);
+        setEditorKey(resolved.doc.id);
         setSermons(resolved.sermons);
         setStatus(resolved.source === "server" ? "saved-server" : "offline");
       } catch {
@@ -75,6 +133,7 @@ export function EditShell() {
         if (cancelled) return;
         const fallback = loadDocument();
         setDoc(fallback);
+        setEditorKey(fallback.id);
         setSermons([]);
         onlineRef.current = false;
         setStatus("offline");
@@ -82,8 +141,6 @@ export function EditShell() {
     })();
     return () => {
       cancelled = true;
-      if (contentTimer.current) clearTimeout(contentTimer.current);
-      if (notesTimer.current) clearTimeout(notesTimer.current);
     };
   }, []);
 
@@ -93,117 +150,79 @@ export function EditShell() {
       setSermons(next);
       onlineRef.current = true;
       return next;
-    } catch {
-      onlineRef.current = false;
-      setStatus("offline");
+    } catch (err) {
+      // Only a failed fetch means offline; an HTTP error here says nothing
+      // about the autosave state, so leave the indicator alone.
+      if (classifySaveError(err) === "network") {
+        onlineRef.current = false;
+        setStatus("offline");
+      }
       return null;
     }
   }, []);
 
   const applyLocal = useCallback((next: SermonDocument) => {
     setDoc(next);
+    setEditorKey(next.id);
+    docRef.current = next;
     saveDocument(next);
   }, []);
 
-  const queueContentAutosave = useCallback(
-    (next: SermonDocument) => {
-      if (contentTimer.current) clearTimeout(contentTimer.current);
-      contentTimer.current = setTimeout(async () => {
-        const current = docRef.current;
-        if (!current || current.id !== next.id) return;
-        setStatus("saving");
-        try {
-          let working = current;
-          // Offline local-* / legacy seed ids must never PATCH the API.
-          if (!isServerSermonId(working.id)) {
-            working = await promoteLocalDraftToServer(working);
-            // Preserve in-flight editor content/title over the POST snapshot.
-            working = {
-              ...working,
-              content: current.content,
-              title:
-                extractTitleFromContent(current.content) ??
-                current.title ??
-                working.title,
-              notes: current.notes,
-              presentationSettings: current.presentationSettings,
-            };
-            setDoc(working);
-            saveDocument(working);
-            docRef.current = working;
-          }
-          const title =
-            extractTitleFromContent(working.content) ?? working.title;
-          const saved = await autosaveContent(working.id, {
-            content: working.content,
-            title,
+  const autosave = useMemo(
+    () =>
+      new AutosaveController({
+        getDoc: () => {
+          const d = docRef.current;
+          const mapped = d ? rekeyMap.current.get(d.id) : undefined;
+          return d && mapped ? { ...d, id: mapped } : d;
+        },
+        rekeyDoc: (fromId, toId, updatedAt) => {
+          const current = docRef.current;
+          if (!current || current.id !== fromId) return null;
+          rekeyMap.current.set(fromId, toId);
+          const rekeyed: SermonDocument = { ...current, id: toId, updatedAt };
+          // Local copy is re-keyed in place (single cached doc + active-id),
+          // so there is never an orphan under the lost id.
+          docRef.current = rekeyed;
+          saveDocument(rekeyed);
+          setDoc((prev) => {
+            if (!prev || prev.id !== fromId) return prev;
+            const next = { ...prev, id: toId };
+            saveDocument(next);
+            return next;
           });
-          onlineRef.current = true;
-          const merged = sermonToDocument(saved, working);
-          // Keep unsaved notes/presentation that may have raced.
-          const withLocal: SermonDocument = {
-            ...merged,
-            notes: working.notes,
-            presentationSettings: working.presentationSettings,
-            content: working.content,
-            title:
-              extractTitleFromContent(working.content) ??
-              merged.title ??
-              working.title,
-          };
-          setDoc(withLocal);
-          saveDocument(withLocal);
-          setStatus("saved-server");
+          return rekeyed;
+        },
+        save: {
+          content: (d) =>
+            autosaveContent(d.id, {
+              content: d.content,
+              title: extractTitleFromContent(d.content) ?? d.title,
+            }),
+          notes: (d) => updateSermon(d.id, { notes: d.notes }),
+        },
+        create: (input) => createSermon(input),
+        get: (id) => getSermon(id),
+        onStatus: (next) => setStatus(toSaveStatus(next)),
+        onSaved: () => {
+          // Local content always wins; the server echo only proves durability.
           void refreshList();
-        } catch {
-          onlineRef.current = false;
-          setStatus("offline");
-        }
-      }, CONTENT_DEBOUNCE_MS);
-    },
+        },
+      }),
     [refreshList],
   );
 
-  const queueNotesAutosave = useCallback((next: SermonDocument) => {
-    if (notesTimer.current) clearTimeout(notesTimer.current);
-    notesTimer.current = setTimeout(async () => {
-      const current = docRef.current;
-      if (!current || current.id !== next.id) return;
-      setStatus("saving");
-      try {
-        let working = current;
-        if (!isServerSermonId(working.id)) {
-          working = await promoteLocalDraftToServer(working);
-          working = {
-            ...working,
-            content: current.content,
-            title: current.title,
-            notes: current.notes,
-            presentationSettings: current.presentationSettings,
-          };
-          setDoc(working);
-          saveDocument(working);
-          docRef.current = working;
-        }
-        const saved = await updateSermon(working.id, { notes: working.notes });
-        onlineRef.current = true;
-        const merged = sermonToDocument(saved, working);
-        const withLocal: SermonDocument = {
-          ...merged,
-          content: working.content,
-          presentationSettings: working.presentationSettings,
-          title: working.title,
-          notes: working.notes,
-        };
-        setDoc(withLocal);
-        saveDocument(withLocal);
-        setStatus("saved-server");
-      } catch {
-        onlineRef.current = false;
-        setStatus("offline");
-      }
-    }, NOTES_DEBOUNCE_MS);
-  }, []);
+  // cancel (not dispose) so a StrictMode effect re-run keeps the controller usable.
+  useEffect(() => () => autosave.cancel(), [autosave]);
+
+  // Coming back online: retry anything still queued (or a failed save).
+  useEffect(() => {
+    const onOnline = () => {
+      if (autosave.hasPending) void autosave.retryNow();
+    };
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, [autosave]);
 
   const onContentChange = useCallback(
     (content: JSONContent) => {
@@ -217,12 +236,13 @@ export function EditShell() {
           updatedAt: new Date().toISOString(),
         };
         saveDocument(next);
-        queueContentAutosave(next);
-        setStatus((s) => (s === "offline" ? "offline" : "saved-local"));
+        docRef.current = next;
+        autosave.request("content");
+        setStatus((s) => (STICKY_STATUSES.has(s) ? s : "saved-local"));
         return next;
       });
     },
-    [queueContentAutosave],
+    [autosave],
   );
 
   const onNotesChange = useCallback(
@@ -235,12 +255,13 @@ export function EditShell() {
           updatedAt: new Date().toISOString(),
         };
         saveDocument(next);
-        queueNotesAutosave(next);
-        setStatus((s) => (s === "offline" ? "offline" : "saved-local"));
+        docRef.current = next;
+        autosave.request("notes");
+        setStatus((s) => (STICKY_STATUSES.has(s) ? s : "saved-local"));
         return next;
       });
     },
-    [queueNotesAutosave],
+    [autosave],
   );
 
   const openSermon = useCallback(
@@ -249,8 +270,7 @@ export function EditShell() {
       if (!isServerSermonId(id)) return;
       setBusy(true);
       try {
-        if (contentTimer.current) clearTimeout(contentTimer.current);
-        if (notesTimer.current) clearTimeout(notesTimer.current);
+        autosave.cancel();
         const sermon = await getSermon(id);
         const next = sermonToDocument(sermon, docRef.current);
         applyLocal(next);
@@ -264,14 +284,13 @@ export function EditShell() {
         setBusy(false);
       }
     },
-    [applyLocal, refreshList],
+    [applyLocal, autosave, refreshList],
   );
 
   const onCreate = useCallback(async () => {
     setBusy(true);
     try {
-      if (contentTimer.current) clearTimeout(contentTimer.current);
-      if (notesTimer.current) clearTimeout(notesTimer.current);
+      autosave.cancel();
       const sermon = await createSermon({
         title: "Untitled sermon",
         content: { type: "doc", content: [{ type: "title", content: [] }] },
@@ -302,7 +321,7 @@ export function EditShell() {
     } finally {
       setBusy(false);
     }
-  }, [applyLocal, refreshList]);
+  }, [applyLocal, autosave, refreshList]);
 
   const onDelete = useCallback(
     async (id: string) => {
@@ -313,6 +332,9 @@ export function EditShell() {
         if (!window.confirm(`Delete “${title}”?`)) return;
       }
       setBusy(true);
+      // Drop queued saves for the doc being deleted so autosave's 404 recovery
+      // can never resurrect it.
+      if (docRef.current?.id === id) autosave.cancel();
       try {
         await deleteSermon(id);
         onlineRef.current = true;
@@ -335,7 +357,7 @@ export function EditShell() {
         setBusy(false);
       }
     },
-    [applyLocal, onCreate, refreshList, sermons],
+    [applyLocal, autosave, onCreate, refreshList, sermons],
   );
 
   const listItems = useMemo(() => {
@@ -355,14 +377,8 @@ export function EditShell() {
     [doc?.content],
   );
 
-  const statusLabel =
-    status === "saving"
-      ? "Saving…"
-      : status === "saved-server"
-        ? "Saved to server"
-        : status === "offline"
-          ? "Offline — saved locally"
-          : "Saved locally";
+  const statusLabel = STATUS_LABELS[status];
+  const canRetry = status === "failed-network" || status === "failed-server";
 
   if (!doc) {
     return (
@@ -380,9 +396,23 @@ export function EditShell() {
           <h1 className={styles.docTitle}>{doc.title || "Untitled sermon"}</h1>
         </div>
         <div className={styles.actions}>
-          <span className={styles.saved} aria-live="polite">
+          <span
+            className={styles.saved}
+            aria-live="polite"
+            data-testid="save-status"
+            data-status={status}
+          >
             {statusLabel}
           </span>
+          {canRetry ? (
+            <button
+              type="button"
+              className={styles.retryBtn}
+              onClick={() => void autosave.retryNow()}
+            >
+              Retry
+            </button>
+          ) : null}
           <Link
             href="/preach?calibrate=1"
             className={styles.exportLink}
@@ -413,7 +443,7 @@ export function EditShell() {
 
         <main className={styles.editorPane}>
           <SermonEditor
-            key={doc.id}
+            key={editorKey || doc.id}
             content={doc.content}
             onChange={onContentChange}
             onEditorReady={setEditor}
