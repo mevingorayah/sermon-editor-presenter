@@ -17,7 +17,7 @@ const FONT_OPTIONS = [
 /** Soft mid-tones readable on dark edit chrome and light cream. */
 export const TEXT_COLORS = [
   { id: "muted", label: "Muted gray", value: "#9a948a" },
-  { id: "accent", label: "Accent", value: "var(--edit-accent)" },
+  { id: "accent", label: "Accent", value: "#5c4a1f" },
   { id: "red", label: "Soft red", value: "#d47870" },
   { id: "blue", label: "Soft blue", value: "#6a9fc4" },
   { id: "green", label: "Soft green", value: "#6aaa7a" },
@@ -125,7 +125,7 @@ export function FormatToolbar({ editor }: FormatToolbarProps) {
 
   const fontId = activeFontId(state.fontFamily);
   const currentColor = state.color || "";
-  const underlineColor = currentColor || "var(--edit-fg)";
+  const underlineColor = currentColor || "#1a1814";
 
   const onFontChange = useCallback(
     (e: ChangeEvent<HTMLSelectElement>) => {

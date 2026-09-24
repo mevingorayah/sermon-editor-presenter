@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Editor, JSONContent } from "@tiptap/react";
 import {
   extractTitleFromContent,
+  loadDocument,
   promoteLocalDraftToServer,
   resolveActiveDocument,
   saveDocument,
@@ -62,12 +63,22 @@ export function EditShell() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const resolved = await resolveActiveDocument();
-      if (cancelled) return;
-      onlineRef.current = resolved.source === "server";
-      setDoc(resolved.doc);
-      setSermons(resolved.sermons);
-      setStatus(resolved.source === "server" ? "saved-server" : "offline");
+      try {
+        const resolved = await resolveActiveDocument();
+        if (cancelled) return;
+        onlineRef.current = resolved.source === "server";
+        setDoc(resolved.doc);
+        setSermons(resolved.sermons);
+        setStatus(resolved.source === "server" ? "saved-server" : "offline");
+      } catch {
+        // Never white-screen /edit — fall back to a local seed doc.
+        if (cancelled) return;
+        const fallback = loadDocument();
+        setDoc(fallback);
+        setSermons([]);
+        onlineRef.current = false;
+        setStatus("offline");
+      }
     })();
     return () => {
       cancelled = true;

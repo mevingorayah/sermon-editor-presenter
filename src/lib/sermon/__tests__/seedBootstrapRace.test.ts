@@ -244,3 +244,180 @@ describe("bootstrap never requests seed ids (first-paint race)", () => {
     assert.equal(resolved.doc.id, uuid);
   });
 });
+
+describe("Scenario B: orphan UUID in STORAGE + seed active (no speculative GET)", () => {
+  let calls: FetchCall[];
+  let mem: Map<string, string>;
+  let originalFetch: typeof fetch;
+
+  const orphanUuid = "c2222222-2222-4222-8222-222222222222";
+  const newUuid = "a940f792-34e1-4e33-a507-a267f81ef960";
+  const listedUuid = "b1111111-1111-4111-8111-111111111111";
+
+  beforeEach(() => {
+    mem = installLocalStorage();
+    calls = [];
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    delete (globalThis as { window?: unknown }).window;
+    delete (globalThis as { localStorage?: unknown }).localStorage;
+  });
+
+  function getByIdCalls(): FetchCall[] {
+    return calls.filter(
+      (c) =>
+        c.method === "GET" &&
+        /\/api\/sermons\/[0-9a-f-]{36}/i.test(c.url),
+    );
+  }
+
+  it("empty list: zero GET-by-id, then POST; remaps to new UUID (no throw)", async () => {
+    mem.set(STORAGE_KEY, JSON.stringify(seedDoc(orphanUuid)));
+    mem.set(ACTIVE_ID_KEY, "seed-philippians-4:0");
+
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      calls.push({ url, method });
+
+      if (url === "/api/sermons" && method === "GET") {
+        return new Response(JSON.stringify({ sermons: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url === "/api/sermons" && method === "POST") {
+        const sermon = {
+          id: newUuid,
+          meta: {
+            title: "Joy That Outlasts the Moment",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          content: { type: "doc", content: [] },
+        };
+        return new Response(JSON.stringify({ sermon }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      // Any GET-by-id → 404 (must not be called)
+      return new Response(JSON.stringify({ error: "not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const resolved = await resolveActiveDocument();
+
+    const byId = getByIdCalls();
+    assert.equal(
+      byId.length,
+      0,
+      `expected zero GET-by-id when list empty, got: ${JSON.stringify(byId)}`,
+    );
+
+    const listIdx = calls.findIndex(
+      (c) => c.url === "/api/sermons" && c.method === "GET",
+    );
+    const postIdx = calls.findIndex(
+      (c) => c.url === "/api/sermons" && c.method === "POST",
+    );
+    assert.ok(listIdx >= 0, "expected list GET");
+    assert.ok(postIdx >= 0, "expected POST create");
+    assert.ok(listIdx < postIdx, "list must precede POST");
+
+    // No GET-by-id before POST (stronger form of the race assertion)
+    const beforePost = calls.slice(0, postIdx);
+    const getUuidBeforePost = beforePost.filter(
+      (c) =>
+        c.method === "GET" &&
+        /\/api\/sermons\/[0-9a-f-]{36}/i.test(c.url),
+    );
+    assert.equal(
+      getUuidBeforePost.length,
+      0,
+      `GET-by-id raced ahead of POST: ${JSON.stringify(getUuidBeforePost)}`,
+    );
+
+    assert.equal(resolved.doc.id, newUuid);
+    assert.equal(mem.get(ACTIVE_ID_KEY), newUuid);
+  });
+
+  it("non-empty list: opens listed UUID only (no GET of orphan)", async () => {
+    mem.set(STORAGE_KEY, JSON.stringify(seedDoc(orphanUuid)));
+    mem.set(ACTIVE_ID_KEY, "seed-philippians-4:0");
+
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      calls.push({ url, method });
+
+      if (url === "/api/sermons" && method === "GET") {
+        return new Response(
+          JSON.stringify({
+            sermons: [
+              {
+                id: listedUuid,
+                meta: {
+                  title: "Existing",
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                },
+                content: { type: "doc", content: [] },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url === `/api/sermons/${listedUuid}` && method === "GET") {
+        return new Response(
+          JSON.stringify({
+            sermon: {
+              id: listedUuid,
+              meta: {
+                title: "Existing",
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              },
+              content: { type: "doc", content: [] },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url === `/api/sermons/${orphanUuid}` && method === "GET") {
+        return new Response(JSON.stringify({ error: "not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ error: "unexpected" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const resolved = await resolveActiveDocument();
+
+    const orphanGets = calls.filter(
+      (c) => c.method === "GET" && c.url.includes(orphanUuid),
+    );
+    assert.equal(
+      orphanGets.length,
+      0,
+      `must not GET orphan UUID: ${JSON.stringify(orphanGets)}`,
+    );
+
+    const listedGets = calls.filter(
+      (c) =>
+        c.method === "GET" && c.url === `/api/sermons/${listedUuid}`,
+    );
+    assert.equal(listedGets.length, 1, "expected exactly one GET of listed id");
+    assert.equal(resolved.doc.id, listedUuid);
+  });
+});

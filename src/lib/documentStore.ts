@@ -262,21 +262,17 @@ export async function resolveActiveDocument(): Promise<{
   try {
     const sermons = await listSermons();
 
-    // Prefer last-active UUID when it still exists on the server.
-    // openId is UUID-only — seed-*/local-* never reach getSermon.
+    // Prefer last-active UUID only when it appears in the list response.
+    // Never speculative GET-by-id for a UUID absent from the list (orphans /
+    // wiped Cloud Run store → 404 race ahead of POST and crash /edit).
     if (openId) {
       const match = sermons.find((s) => s.id === openId);
       if (match) {
         const full = await getSermon(match.id);
         return persistServerDoc(full, local, sermons);
       }
-      // List race / stale cache — try direct fetch only for UUIDs.
-      try {
-        const full = await getSermon(openId);
-        return persistServerDoc(full, local, sermons);
-      } catch {
-        /* fall through */
-      }
+      // Stale active UUID (not on server) — clear and migrate from local content.
+      clearActiveSermonId();
     }
 
     // Real offline drafts (local-<timestamp>) — POST to obtain a UUID and remap.
