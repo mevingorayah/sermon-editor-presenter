@@ -1,0 +1,144 @@
+.panel {
+  width: min(100%, 22rem);
+  border-left: 1px solid var(--rm-border);
+  background: var(--rm-bg-elevated);
+  font-family: var(--rm-font-ui);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem 1.5rem;
+  overflow: auto;
+  max-height: calc(100dvh - var(--rm-progress-h) - 3rem);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--rm-fg);
+}
+
+.close {
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--rm-fg-muted);
+  background: transparent;
+  border: 1px solid var(--rm-border);
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+}
+
+.close:focus-visible {
+  outline: 2px solid var(--rm-accent);
+  outline-offset: 1px;
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--rm-fg-muted);
+}
+
+.select {
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--rm-fg);
+  background: var(--rm-bg);
+  border: 1px solid var(--rm-border);
+  border-radius: 6px;
+  padding: 0.3rem 0.4rem;
+}
+
+.select:focus-visible {
+  outline: 2px solid var(--rm-accent);
+}
+
+.margins {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--rm-fg-muted);
+  line-height: 1.4;
+}
+
+.previewWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.previewLabel {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--rm-fg-muted);
+}
+
+.frame {
+  border: 1px solid var(--rm-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--rm-bg);
+  box-shadow: 0 var(--rm-settle) 16px rgba(0, 0, 0, 0.18);
+  align-self: center;
+}
+
+.frameInner {
+  height: 100%;
+  overflow: auto;
+  /* Shrink reading view inside preview */
+  font-size: 0.55rem;
+}
+
+.frameInner :global([class*="stage"]) {
+  padding: 0.4rem !important;
+}
+
+.exportRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.exportBtn {
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 0.4rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid var(--rm-accent);
+  background: var(--rm-accent);
+  color: var(--rm-bg);
+  cursor: pointer;
+}
+
+.exportBtn:focus-visible {
+  outline: 2px solid var(--rm-fg);
+  outline-offset: 2px;
+}
+
+.status,
+.hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--rm-fg-muted);
+  line-height: 1.4;
+}
+
+.hint code {
+  font-size: 0.7rem;
+}

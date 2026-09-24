@@ -1,0 +1,93 @@
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-block: var(--rm-pad-block);
+  padding-inline: var(--rm-pad-inline);
+}
+
+/* Gradient atmosphere BEHIND the reading column only — never under glyphs */
+.atmosphere {
+  position: absolute;
+  inset: 0;
+  background: var(--rm-gradient);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.column {
+  position: relative;
+  z-index: 1;
+  max-width: var(--rm-measure);
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--rm-gap-block);
+}
+
+.title {
+  margin: 0 0 var(--rm-gap-title-body);
+  font-size: calc(var(--rm-size-title) * var(--rm-scale));
+  line-height: var(--rm-lh-tight);
+  font-weight: 700;
+  color: var(--rm-fg);
+}
+
+.h1 {
+  margin: 0.5rem 0 0;
+  font-size: calc(var(--rm-size-h1) * var(--rm-scale));
+  line-height: var(--rm-lh-tight);
+  font-weight: 700;
+  color: var(--rm-fg);
+}
+
+.h2 {
+  margin: 0.25rem 0 0;
+  padding-inline-start: var(--rm-indent-h2);
+  font-size: calc(var(--rm-size-h2) * var(--rm-scale));
+  line-height: var(--rm-lh-tight);
+  font-weight: 600;
+  color: var(--rm-fg);
+}
+
+.body {
+  margin: 0;
+  font-size: calc(var(--rm-size-body) * var(--rm-scale));
+  line-height: var(--rm-lh-body);
+  color: var(--rm-fg);
+}
+
+.scripture {
+  margin: 0.35rem 0;
+  padding: 0.85rem 1rem 0.85rem 1.1rem;
+  border-left: var(--rm-scripture-rule);
+  background: var(--rm-bg-elevated);
+  border-radius: 0 10px 10px 0;
+}
+
+.citation {
+  display: block;
+  font-style: normal;
+  font-family: var(--rm-font-ui);
+  font-size: calc(var(--rm-size-caption) * var(--rm-scale));
+  letter-spacing: var(--rm-tracking-caps);
+  text-transform: uppercase;
+  color: var(--rm-fg-muted);
+  margin-bottom: 0.45rem;
+}
+
+.quote {
+  margin: 0;
+  font-size: calc(var(--rm-size-body) * var(--rm-scale));
+  line-height: var(--rm-lh-body);
+  color: var(--rm-fg);
+}
+
+.body :global(strong),
+.title :global(strong),
+.h1 :global(strong),
+.h2 :global(strong),
+.quote :global(strong) {
+  font-weight: 700;
+}

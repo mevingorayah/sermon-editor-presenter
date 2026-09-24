@@ -1,0 +1,85 @@
+/**
+ * Reading / Preaching Mode — Art Director tokens.
+ * Scoped under [data-reading-mode] — do NOT share with Editing chrome.
+ */
+
+[data-reading-mode] {
+  /* Type */
+  --rm-font-body: var(--font-literata), var(--font-source-serif), "Source Serif 4", Georgia, serif;
+  --rm-font-ui: system-ui, sans-serif;
+  --rm-size-title: 2rem;
+  --rm-size-h1: 1.35rem;
+  --rm-size-h2: 1.15rem;
+  --rm-size-body: 1.25rem;
+  --rm-size-caption: 0.8125rem;
+  --rm-lh-body: 1.7;
+  --rm-lh-tight: 1.35;
+  --rm-measure: 66ch;
+  --rm-tracking-caps: 0.04em;
+
+  /* Spacing */
+  --rm-pad-block: 2.5rem;
+  --rm-pad-inline: max(1.5rem, 8vw);
+  --rm-gap-title-body: 1.75rem;
+  --rm-gap-block: 1.25rem;
+  --rm-indent-h2: 1.25rem;
+  --rm-scripture-rule: 3px solid var(--rm-accent);
+  --rm-progress-h: 2px;
+
+  /* Motion */
+  --rm-dur: 180ms;
+  --rm-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --rm-settle: 6px;
+
+  /* Type-scale multiplier applied via --rm-scale */
+  --rm-scale: 1;
+
+  color: var(--rm-fg);
+  background: var(--rm-bg);
+  font-family: var(--rm-font-body);
+}
+
+/* Dark (stage default for Preaching) */
+[data-reading-mode][data-theme="dark"] {
+  --rm-bg: #12110f;
+  --rm-bg-elevated: #1a1814;
+  --rm-fg: #ede8df;
+  --rm-fg-muted: #a39e94;
+  --rm-border: #2a2824;
+  --rm-accent: #c4a574;
+  --rm-selection: rgba(196, 165, 116, 0.28);
+  --rm-gradient: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.03) 0%,
+    transparent 40%,
+    rgba(0, 0, 0, 0.12) 100%
+  );
+}
+
+/* Light (paper / print default) */
+[data-reading-mode][data-theme="light"] {
+  --rm-bg: #f7f3eb;
+  --rm-bg-elevated: #fffcf7;
+  --rm-fg: #1a1814;
+  --rm-fg-muted: #6b6560;
+  --rm-border: #d9d2c5;
+  --rm-accent: #8b6914;
+  --rm-selection: rgba(139, 105, 20, 0.22);
+  --rm-gradient: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.02) 0%,
+    transparent 45%,
+    rgba(0, 0, 0, 0.04) 100%
+  );
+}
+
+[data-reading-mode] ::selection {
+  background: var(--rm-selection);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-reading-mode] {
+    --rm-settle: 0px;
+    --rm-dur: 0ms;
+  }
+}

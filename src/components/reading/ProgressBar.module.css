@@ -1,0 +1,22 @@
+.bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--rm-progress-h);
+  background: transparent;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.fill {
+  height: 100%;
+  background: var(--rm-accent);
+  transition: width var(--rm-dur) var(--rm-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fill {
+    transition: none;
+  }
+}
