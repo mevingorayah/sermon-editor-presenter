@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/lib/sermon/__tests__/schema.test.ts src/lib/sermon/__tests__/sanitize-store.test.ts src/lib/sermon/__tests__/export.test.ts"
+    "test": "node --import tsx --test src/lib/sermon/__tests__/schema.test.ts src/lib/sermon/__tests__/sanitize-store.test.ts src/lib/sermon/__tests__/export.test.ts src/lib/find/__tests__/collectMatches.test.ts"
   },
   "dependencies": {
     "@tiptap/extension-placeholder": "^3.31.3",

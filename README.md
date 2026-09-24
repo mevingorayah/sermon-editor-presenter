@@ -26,7 +26,7 @@ npm run typecheck && npm test
 | Route | Shell | Notes |
 |-------|--------|--------|
 | `/` | — | Redirects to `/edit` |
-| `/edit` | Editing | TipTap blocks (Title, H1, H2, Body, Scripture), outline, find stub, notes stub, paste cleanup, **Enter Preaching** |
+| `/edit` | Editing | TipTap blocks (Title, H1, H2, Body, Scripture), outline, find/replace, notes, paste cleanup, **Enter Preaching** |
 | `/preach` | Reading | Read-only stage: theme, type scale, line-height, bionic (default off), progress bar, calibration panel |
 | `POST /api/export` | API | Accepts `CalibratedSnapshot` JSON; returns DOCX/PDF binary (`?format=docx\|pdf`) |
 

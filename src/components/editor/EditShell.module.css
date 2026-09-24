@@ -115,11 +115,6 @@
   background: var(--edit-bg-elevated);
 }
 
-.findHint {
-  margin: -0.5rem 0 0;
-  font-size: 0.75rem;
-  color: var(--edit-fg-muted);
-}
 
 .editorPane {
   padding: 1.25rem 1.5rem 3rem;

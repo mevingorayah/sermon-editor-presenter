@@ -1,6 +1,11 @@
 "use client";
 
-import { useEditor, EditorContent, type JSONContent } from "@tiptap/react";
+import {
+  useEditor,
+  EditorContent,
+  type Editor,
+  type JSONContent,
+} from "@tiptap/react";
 import { useEffect } from "react";
 import { createSermonExtensions } from "@/extensions";
 import styles from "./SermonEditor.module.css";
@@ -8,9 +13,14 @@ import styles from "./SermonEditor.module.css";
 interface SermonEditorProps {
   content: JSONContent;
   onChange: (json: JSONContent) => void;
+  onEditorReady?: (editor: Editor | null) => void;
 }
 
-export function SermonEditor({ content, onChange }: SermonEditorProps) {
+export function SermonEditor({
+  content,
+  onChange,
+  onEditorReady,
+}: SermonEditorProps) {
   const editor = useEditor({
     immediatelyRender: false,
     extensions: createSermonExtensions(),
@@ -35,6 +45,11 @@ export function SermonEditor({ content, onChange }: SermonEditorProps) {
       editor.commands.setContent(content, { emitUpdate: false });
     }
   }, [content, editor]);
+
+  useEffect(() => {
+    onEditorReady?.(editor);
+    return () => onEditorReady?.(null);
+  }, [editor, onEditorReady]);
 
   if (!editor) {
     return <div className={styles.loading}>Loading editor…</div>;

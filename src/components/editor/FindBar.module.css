@@ -4,12 +4,25 @@
   gap: 0.35rem;
 }
 
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
 .label {
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--edit-fg-muted);
+}
+
+.count {
+  font-size: 0.75rem;
+  color: var(--edit-fg-muted);
+  min-height: 1em;
 }
 
 .input {
@@ -26,4 +39,51 @@
   outline: 2px solid var(--edit-focus);
   outline-offset: 1px;
   border-color: var(--edit-accent);
+}
+
+.caseToggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
+  color: var(--edit-fg-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+}
+
+.btn {
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid var(--edit-border);
+  background: var(--edit-bg-elevated);
+  color: var(--edit-fg);
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled),
+.btn:focus-visible:not(:disabled) {
+  border-color: var(--edit-accent);
+  outline: 2px solid var(--edit-focus);
+  outline-offset: 1px;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.hint {
+  margin: 0.15rem 0 0;
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  color: var(--edit-fg-muted);
 }

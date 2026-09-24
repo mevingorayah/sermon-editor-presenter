@@ -3,6 +3,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { Title } from "./Title";
 import { Scripture } from "./Scripture";
 import { PasteCleanup } from "./PasteCleanup";
+import { SearchAndReplace } from "./SearchAndReplace";
 
 export function createSermonExtensions() {
   return [
@@ -14,6 +15,7 @@ export function createSermonExtensions() {
     Title,
     Scripture,
     PasteCleanup,
+    SearchAndReplace,
     Placeholder.configure({
       placeholder: ({ node }) => {
         if (node.type.name === "title") return "Sermon title…";
@@ -29,4 +31,4 @@ export function createSermonExtensions() {
   ];
 }
 
-export { Title, Scripture, PasteCleanup };
+export { Title, Scripture, PasteCleanup, SearchAndReplace };

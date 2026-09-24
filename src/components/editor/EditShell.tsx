@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import type { JSONContent } from "@tiptap/react";
+import type { Editor, JSONContent } from "@tiptap/react";
 import {
   extractTitleFromContent,
   resolveActiveDocument,
@@ -44,7 +44,7 @@ function toListItems(sermons: Sermon[]) {
 export function EditShell() {
   const [doc, setDoc] = useState<SermonDocument | null>(null);
   const [sermons, setSermons] = useState<Sermon[]>([]);
-  const [findQuery, setFindQuery] = useState("");
+  const [editor, setEditor] = useState<Editor | null>(null);
   const [status, setStatus] = useState<SaveStatus>("saving");
   const [busy, setBusy] = useState(false);
 
@@ -352,12 +352,7 @@ export function EditShell() {
             disabled={busy}
           />
           <OutlineNav items={outline} />
-          <FindBar onQueryChange={setFindQuery} />
-          {findQuery ? (
-            <p className={styles.findHint}>
-              Find stub — matching “{findQuery}” is not highlighted yet.
-            </p>
-          ) : null}
+          <FindBar editor={editor} />
           <NotesPanel value={doc.notes} onChange={onNotesChange} />
         </aside>
 
@@ -366,6 +361,7 @@ export function EditShell() {
             key={doc.id}
             content={doc.content}
             onChange={onContentChange}
+            onEditorReady={setEditor}
           />
         </main>
       </div>

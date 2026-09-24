@@ -116,3 +116,13 @@
   height: 0;
   pointer-events: none;
 }
+
+.prose :global(.sermon-find-match) {
+  background: color-mix(in srgb, var(--edit-accent) 28%, transparent);
+  border-radius: 2px;
+}
+
+.prose :global(.sermon-find-match-current) {
+  background: color-mix(in srgb, var(--edit-accent) 55%, transparent);
+  outline: 1px solid var(--edit-accent);
+}
