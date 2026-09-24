@@ -18,6 +18,17 @@ function textOf(node: JSONContent | undefined): string {
   return node.content.map(textOf).join("");
 }
 
+const TEXT_ALIGNS = new Set(["left", "center", "right"]);
+
+function textAlignOf(
+  node: JSONContent,
+): "left" | "center" | "right" | undefined {
+  const v = node.attrs?.textAlign;
+  return typeof v === "string" && TEXT_ALIGNS.has(v)
+    ? (v as "left" | "center" | "right")
+    : undefined;
+}
+
 export function ReadingView({
   content,
   bionic,
@@ -64,16 +75,28 @@ export function ReadingView({
             case "scripture": {
               const citation =
                 typeof node.attrs?.citation === "string" ? node.attrs.citation : "";
+              // Block body follows the node's TextAlign; the citation is always
+              // caption-right below the quote in Preach (slice 1 spec, Align).
+              const align = textAlignOf(node);
               return (
-                <blockquote key={key} className={styles.scripture}>
+                <figure
+                  key={key}
+                  className={styles.scripture}
+                  data-scripture=""
+                  style={align ? { textAlign: align } : undefined}
+                >
+                  <blockquote className={styles.quoteBlock}>
+                    {/* The entire Scripture block, including all descendants, stays plain. */}
+                    <p className={styles.quote}>
+                      <BionicText text={textOf(node)} enabled={false} />
+                    </p>
+                  </blockquote>
                   {citation ? (
-                    <cite className={styles.citation}>{citation}</cite>
+                    <figcaption className={styles.citation}>
+                      <cite>{citation}</cite>
+                    </figcaption>
                   ) : null}
-                  {/* The entire Scripture block, including all descendants, stays plain. */}
-                  <p className={styles.quote}>
-                    <BionicText text={textOf(node)} enabled={false} />
-                  </p>
-                </blockquote>
+                </figure>
               );
             }
             default:

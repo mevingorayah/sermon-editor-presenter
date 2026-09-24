@@ -66,15 +66,24 @@
   border-radius: 0 10px 10px 0;
 }
 
+.quoteBlock {
+  margin: 0;
+}
+
+/* Caption-right below the quote, whatever the block's textAlign is. */
 .citation {
   display: block;
-  font-style: normal;
+  text-align: right;
   font-family: var(--rm-font-ui);
   font-size: calc(var(--rm-size-caption) * var(--rm-scale));
   letter-spacing: var(--rm-tracking-caps);
   text-transform: uppercase;
   color: var(--rm-fg-muted);
-  margin-bottom: 0.45rem;
+  margin-top: 0.45rem;
+}
+
+.citation cite {
+  font-style: normal;
 }
 
 .quote {

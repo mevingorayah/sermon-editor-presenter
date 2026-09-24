@@ -74,7 +74,7 @@ Title H1 H2 Body Scripture | ↶ ↷ | I  ▮ | ≡ ≡ ≡ | Font ▾ | A▾
 
 - **Scope:** current block(s) — paragraph, heading, title, scripture — via TextAlign (or equivalent attrs)
 - **Exclusive:** one active at a time; Left is default
-- **Scripture:** align applies to the scripture block as a whole (citation stays caption-right in Preach/export per existing contract; Edit can show writer alignment)
+- **Scripture:** align applies to the scripture quote body. In Preach and export the citation is always caption-right, below the quote, whatever the block alignment. In Edit the citation field does **not** follow block alignment; it stays left-aligned as a fixed input, because the writer does not control citation position (issue #6).
 - **Icons:** standard left/center/right; `aria-pressed` on active
 - **No justify** in slice 1
 
