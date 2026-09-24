@@ -9,14 +9,25 @@ import {
   type NodeViewProps,
 } from "@tiptap/react";
 
-function ScriptureView({ node, updateAttributes, selected }: NodeViewProps) {
+function ScriptureView({
+  node,
+  updateAttributes,
+  selected,
+  HTMLAttributes,
+}: NodeViewProps) {
   const citation = (node.attrs.citation as string) || "";
+  const { class: _htmlClass, ...restAttrs } = HTMLAttributes as Record<
+    string,
+    unknown
+  > & { class?: string };
+  void _htmlClass;
   return (
     <NodeViewWrapper
       as="div"
       className={`sermon-scripture${selected ? " is-selected" : ""}`}
       data-scripture=""
       data-citation={citation}
+      {...restAttrs}
     >
       <label className="sermon-scripture-citation-field">
         <span className="visually-hidden">Citation</span>

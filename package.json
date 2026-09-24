@@ -12,7 +12,12 @@
     "test": "node --import tsx --test src/lib/sermon/__tests__/schema.test.ts src/lib/sermon/__tests__/sanitize-store.test.ts src/lib/sermon/__tests__/export.test.ts src/lib/find/__tests__/collectMatches.test.ts src/lib/sermon/__tests__/sermonApiIds.test.ts src/lib/sermon/__tests__/seedBootstrapRace.test.ts"
   },
   "dependencies": {
+    "@tiptap/extension-color": "^3.31.3",
+    "@tiptap/extension-font-family": "^3.31.3",
+    "@tiptap/extension-highlight": "^3.31.3",
     "@tiptap/extension-placeholder": "^3.31.3",
+    "@tiptap/extension-text-align": "^3.31.3",
+    "@tiptap/extension-text-style": "^3.31.3",
     "@tiptap/pm": "^3.31.3",
     "@tiptap/react": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",

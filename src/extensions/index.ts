@@ -1,5 +1,8 @@
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
+import Highlight from "@tiptap/extension-highlight";
+import TextAlign from "@tiptap/extension-text-align";
+import { TextStyle, Color, FontFamily } from "@tiptap/extension-text-style";
 import { Title } from "./Title";
 import { Scripture } from "./Scripture";
 import { PasteCleanup } from "./PasteCleanup";
@@ -16,6 +19,20 @@ export function createSermonExtensions() {
     Scripture,
     PasteCleanup,
     SearchAndReplace,
+    TextStyle,
+    Color,
+    FontFamily,
+    Highlight.configure({
+      multicolor: false,
+      HTMLAttributes: {
+        class: "sermon-highlight",
+      },
+    }),
+    TextAlign.configure({
+      types: ["heading", "paragraph", "title", "scripture"],
+      alignments: ["left", "center", "right"],
+      defaultAlignment: "left",
+    }),
     Placeholder.configure({
       placeholder: ({ node }) => {
         if (node.type.name === "title") return "Sermon title…";

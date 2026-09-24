@@ -8,6 +8,7 @@ import {
 } from "@tiptap/react";
 import { useEffect } from "react";
 import { createSermonExtensions } from "@/extensions";
+import { FormatToolbar } from "./FormatToolbar";
 import styles from "./SermonEditor.module.css";
 
 interface SermonEditorProps {
@@ -57,56 +58,63 @@ export function SermonEditor({
 
   return (
     <div className={styles.root}>
-      <div className={styles.toolbar} role="toolbar" aria-label="Block insert">
-        <button
-          type="button"
-          className={styles.toolBtn}
-          onClick={() => editor.chain().focus().setNode("title").run()}
-        >
-          Title
-        </button>
-        <button
-          type="button"
-          className={styles.toolBtn}
-          onClick={() =>
-            editor.chain().focus().toggleHeading({ level: 1 }).run()
-          }
-        >
-          H1
-        </button>
-        <button
-          type="button"
-          className={styles.toolBtn}
-          onClick={() =>
-            editor.chain().focus().toggleHeading({ level: 2 }).run()
-          }
-        >
-          H2
-        </button>
-        <button
-          type="button"
-          className={styles.toolBtn}
-          onClick={() => editor.chain().focus().setParagraph().run()}
-        >
-          Body
-        </button>
-        <button
-          type="button"
-          className={styles.toolBtn}
-          onClick={() =>
-            editor
-              .chain()
-              .focus()
-              .insertContent({
-                type: "scripture",
-                attrs: { citation: "" },
-                content: [],
-              })
-              .run()
-          }
-        >
-          Scripture
-        </button>
+      <div
+        className={styles.toolbar}
+        role="toolbar"
+        aria-label="Text formatting"
+      >
+        <div className={styles.toolGroup} role="group" aria-label="Block type">
+          <button
+            type="button"
+            className={styles.toolBtn}
+            onClick={() => editor.chain().focus().setNode("title").run()}
+          >
+            Title
+          </button>
+          <button
+            type="button"
+            className={styles.toolBtn}
+            onClick={() =>
+              editor.chain().focus().toggleHeading({ level: 1 }).run()
+            }
+          >
+            H1
+          </button>
+          <button
+            type="button"
+            className={styles.toolBtn}
+            onClick={() =>
+              editor.chain().focus().toggleHeading({ level: 2 }).run()
+            }
+          >
+            H2
+          </button>
+          <button
+            type="button"
+            className={styles.toolBtn}
+            onClick={() => editor.chain().focus().setParagraph().run()}
+          >
+            Body
+          </button>
+          <button
+            type="button"
+            className={styles.toolBtn}
+            onClick={() =>
+              editor
+                .chain()
+                .focus()
+                .insertContent({
+                  type: "scripture",
+                  attrs: { citation: "" },
+                  content: [],
+                })
+                .run()
+            }
+          >
+            Scripture
+          </button>
+        </div>
+        <FormatToolbar editor={editor} />
       </div>
       <EditorContent editor={editor} />
     </div>

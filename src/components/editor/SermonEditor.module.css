@@ -9,9 +9,31 @@
 .toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
-  padding-bottom: 0.5rem;
+  align-items: center;
+  gap: 0.4rem 0.5rem;
+  padding: 0.5rem 0;
   border-bottom: 1px solid var(--edit-border);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--edit-bg);
+}
+
+.toolGroup {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  position: relative;
+}
+
+.toolDivider {
+  width: 1px;
+  align-self: stretch;
+  min-height: 1.6rem;
+  background: var(--edit-border);
+  margin: 0 0.15rem;
+  flex-shrink: 0;
 }
 
 .toolBtn {
@@ -23,6 +45,12 @@
   background: var(--edit-bg-elevated);
   color: var(--edit-fg);
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  min-height: 2rem;
+  line-height: 1;
 }
 
 .toolBtn:hover,
@@ -30,6 +58,137 @@
   border-color: var(--edit-accent);
   outline: 2px solid var(--edit-focus);
   outline-offset: 1px;
+}
+
+.toolBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.toolBtnActive {
+  background: color-mix(in srgb, var(--edit-accent) 22%, var(--edit-bg-elevated));
+  border-color: var(--edit-accent);
+  color: var(--edit-fg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--edit-accent) 35%, transparent);
+}
+
+.toolBtnItalic {
+  font-style: italic;
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 600;
+}
+
+.toolBtnHighlight {
+  color: #c4a35a;
+}
+
+.alignIcon {
+  display: block;
+}
+
+.fontLabel {
+  display: inline-flex;
+  align-items: center;
+}
+
+.fontSelect {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--edit-border);
+  background: var(--edit-bg-elevated);
+  color: var(--edit-fg);
+  cursor: pointer;
+  min-height: 2rem;
+}
+
+.fontSelect:hover,
+.fontSelect:focus-visible {
+  border-color: var(--edit-accent);
+  outline: 2px solid var(--edit-focus);
+  outline-offset: 1px;
+}
+
+.colorGroup {
+  position: relative;
+}
+
+.colorTrigger {
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.25rem 0.55rem 0.3rem;
+  min-width: 2.1rem;
+}
+
+.colorLetter {
+  font-weight: 700;
+  font-size: 0.875rem;
+  line-height: 1;
+}
+
+.colorUnderline {
+  display: block;
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--edit-fg);
+}
+
+.swatchMenu {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  padding: 0.45rem;
+  border-radius: 8px;
+  border: 1px solid var(--edit-border);
+  background: var(--edit-bg-elevated);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  min-width: 11rem;
+}
+
+.swatch {
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.swatch:hover,
+.swatch:focus-visible {
+  outline: 2px solid var(--edit-focus);
+  outline-offset: 1px;
+}
+
+.swatchActive {
+  border-color: var(--edit-fg);
+  box-shadow: 0 0 0 1px var(--edit-bg-elevated);
+}
+
+.swatchDefault {
+  width: auto;
+  height: auto;
+  min-height: 1.6rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 6px;
+  border: 1px solid var(--edit-border);
+  background: var(--edit-bg);
+  color: var(--edit-fg);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.swatchDefault.swatchActive {
+  border-color: var(--edit-accent);
+  background: color-mix(in srgb, var(--edit-accent) 18%, var(--edit-bg));
 }
 
 .loading {
@@ -125,4 +284,25 @@
 .prose :global(.sermon-find-match-current) {
   background: color-mix(in srgb, var(--edit-accent) 55%, transparent);
   outline: 1px solid var(--edit-accent);
+}
+
+/* Soft amber highlight — readable on dark and light edit chrome */
+.prose :global(mark.sermon-highlight),
+.prose :global(.sermon-highlight) {
+  background: rgba(212, 168, 75, 0.42);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0.05em 0.12em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+@media (max-width: 640px) {
+  .toolDivider {
+    display: none;
+  }
+
+  .toolbar {
+    gap: 0.5rem;
+  }
 }
