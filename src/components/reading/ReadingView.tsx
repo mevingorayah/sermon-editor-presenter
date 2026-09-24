@@ -69,9 +69,9 @@ export function ReadingView({
                   {citation ? (
                     <cite className={styles.citation}>{citation}</cite>
                   ) : null}
-                  {/* Citation never gets bionic; quote body may */}
+                  {/* The entire Scripture block, including all descendants, stays plain. */}
                   <p className={styles.quote}>
-                    <BionicText text={textOf(node)} enabled={bionic} />
+                    <BionicText text={textOf(node)} enabled={false} />
                   </p>
                 </blockquote>
               );
