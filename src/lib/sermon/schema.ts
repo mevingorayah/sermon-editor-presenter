@@ -52,19 +52,87 @@ const calibratedMarginsSchema = z.object({
   binderGutter: z.string().min(1).max(32).optional(),
 });
 
-/** #RRGGBB / #RGB or rgb()/rgba() */
+/** Sermon ids are UUID-only (matches store `assertSafeId`). */
+export const SERMON_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Contract colors: `#RRGGBB` or `rgb(r, g, b)` with 0–255 integers.
+ * Named colors, `#RGB`, `rgba()`, `hsl()` and CSS `var(--…)` are rejected.
+ */
+export function isContractColor(v: string): boolean {
+  const s = v.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(s)) return true;
+  const m = s.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
+  return !!m && [m[1], m[2], m[3]].every((n) => Number(n) <= 255);
+}
+
+export const CONTRACT_COLOR_MESSAGE =
+  "Color must be #RRGGBB or rgb(r, g, b). Named colors, #RGB, rgba(), hsl() and CSS var(--…) are not allowed.";
+
 const resolvedColorSchema = z
   .string()
   .min(1)
   .max(64)
-  .refine(
-    (v) =>
-      /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v.trim()) ||
-      /^rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(,\s*[\d.]+\s*)?\)$/.test(
-        v.trim(),
-      ),
-    { message: "Color must be #RRGGBB or rgb()/rgba()" },
-  );
+  .refine(isContractColor, { message: CONTRACT_COLOR_MESSAGE });
+
+/**
+ * Walk TipTap JSON for color marks / attrs whose value fails `predicate`.
+ * Returns JSON-ish paths (e.g. `content.content[2].marks[0].color`).
+ */
+function findColorHits(
+  node: unknown,
+  isBad: (color: string) => boolean,
+  path: string,
+): string[] {
+  const hits: string[] = [];
+  if (!node || typeof node !== "object") return hits;
+
+  if (Array.isArray(node)) {
+    node.forEach((child, i) => {
+      hits.push(...findColorHits(child, isBad, `${path}[${i}]`));
+    });
+    return hits;
+  }
+
+  const obj = node as Record<string, unknown>;
+
+  if (Array.isArray(obj.marks)) {
+    for (let i = 0; i < obj.marks.length; i++) {
+      const mark = obj.marks[i] as Record<string, unknown> | null;
+      if (!mark || typeof mark !== "object") continue;
+      const attrs = mark.attrs as Record<string, unknown> | undefined;
+      const color =
+        typeof attrs?.color === "string"
+          ? attrs.color
+          : typeof mark.color === "string"
+            ? mark.color
+            : undefined;
+      if (color && isBad(color)) hits.push(`${path}.marks[${i}].color`);
+    }
+  }
+
+  if (obj.attrs && typeof obj.attrs === "object") {
+    const attrs = obj.attrs as Record<string, unknown>;
+    if (typeof attrs.color === "string" && isBad(attrs.color)) {
+      hits.push(`${path}.attrs.color`);
+    }
+  }
+
+  if (Array.isArray(obj.content)) {
+    hits.push(...findColorHits(obj.content, isBad, `${path}.content`));
+  }
+
+  return hits;
+}
+
+/** Color marks that are not `#RRGGBB` / `rgb()` (includes CSS vars). */
+export function findInvalidColorMarks(
+  node: unknown,
+  path: string = "content",
+): string[] {
+  return findColorHits(node, (c) => c.trim() !== "" && !isContractColor(c), path);
+}
 
 /**
  * Walk TipTap JSON for textStyle / color marks containing CSS var(--…).
@@ -121,13 +189,16 @@ function refineNoCssVarColors(
   val: { content: unknown },
   ctx: z.RefinementCtx,
 ): void {
-  const hits = findCssVarColorMarks(val.content);
-  if (hits.length > 0) {
+  const varHits = new Set(findCssVarColorMarks(val.content));
+  const hits = findInvalidColorMarks(val.content);
+  // Cap issues so a pasted document can't produce a giant 400 body.
+  for (const hit of hits.slice(0, 20)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["content"],
-      message:
-        "Export content color marks must be concrete #RRGGBB or rgb() — CSS var(--…) is not allowed. Flatten accent colors on the Frontend before POST.",
+      message: varHits.has(hit)
+        ? `${hit}: CSS var(--…) is not allowed in export color marks. Flatten colors to #RRGGBB on the Frontend before POST.`
+        : `${hit}: ${CONTRACT_COLOR_MESSAGE}`,
     });
   }
 }
@@ -193,6 +264,11 @@ export const exportRequestSchema = z.union([
 ]);
 
 export const createSermonSchema = z.object({
+  /** Optional client-chosen UUID (same-id restore). Existing id returns 409. */
+  id: z
+    .string()
+    .regex(SERMON_ID_RE, { message: "id must be a UUID" })
+    .optional(),
   title: z.string().max(500).optional(),
   content: sermonContentSchema.optional(),
   presentation: presentationSettingsSchema.optional(),

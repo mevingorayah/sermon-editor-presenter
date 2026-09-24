@@ -182,4 +182,17 @@ describe("exportSnapshot", () => {
     assert.equal(result.buffer[1], 0x4b);
     assert.ok(result.buffer.length > 1000);
   });
+
+  it("PPTX honours block alignment on body text", async () => {
+    const JSZip = (await import("jszip")).default;
+    const result = await exportSnapshot(snapshot, "pptx", {
+      resolvedColors: { accent: "#5c4a1f" },
+    });
+    const zip = await JSZip.loadAsync(result.buffer);
+    const slide = await zip.file("ppt/slides/slide2.xml")?.async("string");
+    assert.ok(slide, "Introduction slide exists");
+    // Centered paragraph under "Introduction" must carry algn="ctr".
+    assert.match(slide!, /algn="ctr"/);
+  });
 });
+

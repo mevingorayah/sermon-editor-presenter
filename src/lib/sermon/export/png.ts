@@ -1,6 +1,11 @@
 import sharp from "sharp";
 import type { CalibratedSnapshot } from "@/types/document";
-import { HIGHLIGHT_AMBER, toHexRgb } from "./colors";
+import {
+  DEFAULT_ACCENT_DARK,
+  DEFAULT_ACCENT_LIGHT,
+  HIGHLIGHT_AMBER,
+  toHexRgb,
+} from "./colors";
 import {
   styledBlocksFromSnapshot,
   titleTextFromSnapshot,
@@ -140,7 +145,7 @@ export async function buildPng(
   const muted = light ? "#555555" : "#A8A29A";
   const accent =
     toHexRgb(options.resolvedColors?.accent) ||
-    (light ? "#8B6914" : "#C4A35A");
+    (light ? DEFAULT_ACCENT_LIGHT : DEFAULT_ACCENT_DARK);
 
   // PNG ignores includeNotes by contract.
   const blocks = styledBlocksFromSnapshot(snapshot);

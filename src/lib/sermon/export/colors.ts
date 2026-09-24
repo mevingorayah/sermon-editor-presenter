@@ -1,6 +1,11 @@
 /** Soft amber highlight used in Edit chrome — shared across workers. */
 export const HIGHLIGHT_AMBER = "#F5D98A";
 
+/** Canonical Edit accent (FormatToolbar "Accent"); used when no accent is sent. */
+export const DEFAULT_ACCENT_LIGHT = "#5C4A1F";
+/** Dark-theme counterpart for screen targets. */
+export const DEFAULT_ACCENT_DARK = "#C4A35A";
+
 /**
  * Normalize #RGB / #RRGGBB / rgb() / rgba() to #RRGGBB (uppercase hex, no alpha).
  * Returns undefined when the value cannot be parsed.

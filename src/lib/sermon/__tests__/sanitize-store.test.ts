@@ -83,4 +83,26 @@ describe("store CRUD", () => {
     assert.equal(deleted, true);
     assert.equal(await store.getSermon(created.id), null);
   });
+
+  it("creates with a client-chosen UUID and returns 409 on duplicate", async () => {
+    const id = "3F1C2A4E-9B7D-4E2F-8A1B-2C3D4E5F6A7B";
+    const created = await store.createSermon({ id, title: "Restored" });
+    assert.equal(created.id, id.toLowerCase());
+    const got = await store.getSermon(id.toLowerCase());
+    assert.equal(got?.meta.title, "Restored");
+
+    await assert.rejects(
+      store.createSermon({ id: id.toLowerCase(), title: "Clobber" }),
+      (err: unknown) => (err as { status?: number }).status === 409,
+    );
+    const still = await store.getSermon(id.toLowerCase());
+    assert.equal(still?.meta.title, "Restored");
+  });
+
+  it("rejects a non-UUID client id with 400", async () => {
+    await assert.rejects(
+      store.createSermon({ id: "seed-philippians-4:0" }),
+      (err: unknown) => (err as { status?: number }).status === 400,
+    );
+  });
 });

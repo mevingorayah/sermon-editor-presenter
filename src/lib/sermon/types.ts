@@ -45,6 +45,8 @@ export interface Sermon {
 }
 
 export interface CreateSermonInput {
+  /** Optional client-chosen UUID for same-id restore. */
+  id?: string;
   title?: string;
   content?: SermonContent;
   presentation?: PresentationSettings;

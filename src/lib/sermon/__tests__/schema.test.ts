@@ -5,6 +5,8 @@ import {
   createSermonSchema,
   exportRequestSchema,
   findCssVarColorMarks,
+  findInvalidColorMarks,
+  isContractColor,
   updateContentSchema,
 } from "../schema";
 import { parseExportRequest } from "../export/parseRequest";
@@ -256,5 +258,66 @@ describe("createSermonSchema / updateContentSchema", () => {
       }).success,
       true,
     );
+  });
+});
+
+describe("contract colors (strict)", () => {
+  const withColor = (color: string) => ({
+    ...validSnapshot,
+    content: {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "x",
+              marks: [{ type: "textStyle", attrs: { color } }],
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  for (const ok of ["#5c4a1f", "#5C4A1F", "rgb(92, 74, 31)", "rgb(0,0,0)"]) {
+    it(`accepts ${ok} in content marks and accent`, () => {
+      assert.equal(calibratedSnapshotSchema.safeParse(withColor(ok)).success, true);
+      assert.equal(isContractColor(ok), true);
+    });
+  }
+
+  for (const bad of ["red", "#abc", "hsl(40, 50%, 24%)", "rgba(0,0,0,0.5)", "rgb(300, 0, 0)", "var(--edit-accent)"]) {
+    it(`rejects ${bad} in content marks and accent`, () => {
+      const r = calibratedSnapshotSchema.safeParse(withColor(bad));
+      assert.equal(r.success, false);
+      if (!r.success) {
+        assert.match(r.error.issues[0].message, /content\.content\[0\]\.content\[0\]\.marks\[0\]\.color/);
+      }
+      const wrapped = exportRequestSchema.safeParse({
+        format: "pptx",
+        snapshot: validSnapshot,
+        resolvedColors: { accent: bad },
+      });
+      assert.equal(wrapped.success, false);
+    });
+  }
+
+  it("findInvalidColorMarks ignores empty color attrs", () => {
+    assert.deepEqual(findInvalidColorMarks(withColor("").content), []);
+  });
+});
+
+describe("createSermonSchema id", () => {
+  it("accepts an optional UUID id", () => {
+    const r = createSermonSchema.safeParse({ id: "3f1c2a4e-9b7d-4e2f-8a1b-2c3d4e5f6a7b" });
+    assert.equal(r.success, true);
+  });
+
+  it("rejects non-UUID ids like seed ids", () => {
+    const r = createSermonSchema.safeParse({ id: "seed-philippians-4:0" });
+    assert.equal(r.success, false);
+    if (!r.success) assert.deepEqual(r.error.issues[0].path, ["id"]);
   });
 });

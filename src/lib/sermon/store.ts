@@ -86,7 +86,11 @@ export async function createSermon(
 ): Promise<Sermon> {
   await ensureDataDir();
   const now = new Date().toISOString();
-  const id = randomUUID();
+  let id: string = randomUUID();
+  if (input.id !== undefined) {
+    assertSafeId(input.id);
+    id = input.id.toLowerCase();
+  }
   const title = sanitizeText(input.title?.trim() || "Untitled sermon");
   const content = sanitizeDocumentJson(input.content ?? EMPTY_DOC);
   const sermon: Sermon = {
@@ -98,7 +102,18 @@ export async function createSermon(
       ? { notes: sanitizeText(input.notes) }
       : {}),
   };
-  await fs.writeFile(sermonPath(id), JSON.stringify(sermon, null, 2), "utf8");
+  try {
+    // "wx" fails if the file exists, so a client-chosen id never overwrites.
+    await fs.writeFile(sermonPath(id), JSON.stringify(sermon, null, 2), {
+      encoding: "utf8",
+      flag: "wx",
+    });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new StoreError("Sermon already exists", 409);
+    }
+    throw err;
+  }
   return sermon;
 }
 

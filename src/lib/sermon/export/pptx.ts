@@ -1,6 +1,11 @@
 import PptxGenJS from "pptxgenjs";
 import type { CalibratedSnapshot } from "@/types/document";
-import { HIGHLIGHT_AMBER, toHexRgb } from "./colors";
+import {
+  DEFAULT_ACCENT_DARK,
+  DEFAULT_ACCENT_LIGHT,
+  HIGHLIGHT_AMBER,
+  toHexRgb,
+} from "./colors";
 import {
   styledBlocksFromSnapshot,
   titleTextFromSnapshot,
@@ -87,10 +92,11 @@ export async function buildPptx(
   const blocks = styledBlocksFromSnapshot(snapshot);
   const { title: fromBlocks, sections, preamble } = groupSections(blocks);
   const title = fromBlocks || titleTextFromSnapshot(snapshot);
-  const accent =
-    toHexRgb(options.resolvedColors?.accent) || "#8B6914";
   const paper = isPaperTarget(String(snapshot.target));
   const light = paper || snapshot.theme === "light";
+  const accent =
+    toHexRgb(options.resolvedColors?.accent) ||
+    (light ? DEFAULT_ACCENT_LIGHT : DEFAULT_ACCENT_DARK);
   const bg = light ? "F7F4EF" : "1A1A1A";
   const fg = light ? "111111" : "F0EDE6";
   const muted = light ? "555555" : "A8A29A";
@@ -195,7 +201,7 @@ export async function buildPptx(
             defaultColor: `#${fg}`,
             bold: true,
           }),
-          { x: 0.6, y, w: 12, h: 0.45, valign: "top" },
+          { x: 0.6, y, w: 12, h: 0.45, valign: "top", align: block.align },
         );
         y += 0.5;
       } else if (block.type === "Scripture") {
@@ -205,7 +211,7 @@ export async function buildPptx(
             defaultColor: `#${fg}`,
             forceItalic: true,
           }),
-          { x: 0.6, y, w: 12, h: 0.8, valign: "top" },
+          { x: 0.6, y, w: 12, h: 0.8, valign: "top", align: block.align },
         );
         y += 0.7;
         if (block.citation) {
@@ -241,7 +247,7 @@ export async function buildPptx(
             fontSize: 16,
             defaultColor: `#${fg}`,
           }),
-          { x: 0.6, y, w: 12, h, valign: "top" },
+          { x: 0.6, y, w: 12, h, valign: "top", align: block.align },
         );
         y += h + 0.15;
       }
