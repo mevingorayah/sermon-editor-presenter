@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.github
+coverage
+*.md
+!README.md
+.env*
+.DS_Store
+npm-debug.log*
+deploy
+docs

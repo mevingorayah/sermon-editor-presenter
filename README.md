@@ -16,3 +16,10 @@ Sermon editor + preaching presenter for pastors.
 ## Status
 
 Scaffold in progress — App Build Pod.
+
+## DevOps
+
+- CI: `.github/workflows/ci.yml` (lint/test/build + Trivy image scan)
+- Staging: `.github/workflows/deploy-staging.yml` — needs GCP env vars (see `docs/runbook-staging.md`)
+- Shell vs export: `Dockerfile` (512Mi) and `Dockerfile.export` (2Gi, fonts)
+- Next.js: set `output: "standalone"` in `next.config` so these images boot on Cloud Run
