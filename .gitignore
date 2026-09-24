@@ -43,3 +43,9 @@ next-env.d.ts
 /data/sermons/*.json
 !/data/sermons/.gitkeep
 !/data/sermons/README.md
+
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

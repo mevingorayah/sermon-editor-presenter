@@ -21,6 +21,23 @@ npm start       # serve the production build
 npm run typecheck && npm test
 ```
 
+### Real-browser E2E (Chromium)
+
+`npm test` runs node unit tests only. Browser mount tests live in `e2e/` and use
+`@playwright/test` with real Chromium. They are **not** part of `npm test`:
+
+```bash
+npx playwright install chromium   # first time only
+npm run test:e2e                  # builds, starts on :3322, runs e2e/*.spec.ts
+E2E_BASE_URL=https://<host> npm run test:e2e   # run against a deployed shell instead
+```
+
+`e2e/edit-mount.spec.ts` opens `/edit` with (a) cleared localStorage, (b) a stale
+`seed-philippians-4:0` active id, and (c) a random UUID active id, and fails on any
+`pageerror` or if the edit toolbar (History group / Undo) doesn't render. It also
+checks that Scripture block alignment is applied live. Note: the tests write to the
+local file store (`data/sermons/`, gitignored) through autosave.
+
 ## Route map
 
 | Route | Shell | Notes |
