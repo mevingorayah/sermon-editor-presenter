@@ -17,6 +17,22 @@ import type {
 import { ReadingView } from "./ReadingView";
 import styles from "./CalibrationPanel.module.css";
 
+function filenameFromContentDisposition(header: string | null): string | null {
+  if (!header) return null;
+
+  const encoded = header.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+  if (encoded?.[1]) {
+    try {
+      return decodeURIComponent(encoded[1].trim().replace(/^"|"$/g, ""));
+    } catch {
+      // Fall through to the regular filename parameter when decoding fails.
+    }
+  }
+
+  const plain = header.match(/filename\s*=\s*(?:"([^"]+)"|([^;]+))/i);
+  return (plain?.[1] ?? plain?.[2])?.trim() || null;
+}
+
 interface CalibrationPanelProps {
   content: JSONContent;
   target: CalibrationTarget;
@@ -74,10 +90,34 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = await res.json().catch(() => ({}));
-      setExportStatus(
-        `HTTP ${res.status}: ${data.message ?? data.error ?? res.statusText}`,
-      );
+      const blob = await res.blob();
+      if (!res.ok) {
+        let message = res.statusText;
+        try {
+          const data = JSON.parse(await blob.text()) as {
+            message?: string;
+            error?: string;
+          };
+          message = data.message ?? data.error ?? message;
+        } catch {
+          // Keep the HTTP status when the error response is not JSON.
+        }
+        setExportStatus(`HTTP ${res.status}: ${message}`);
+        return;
+      }
+
+      const filename =
+        filenameFromContentDisposition(res.headers.get("Content-Disposition")) ??
+        `sermon-export.${format}`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      setExportStatus(`Downloaded ${filename}`);
     } catch (err) {
       setExportStatus(
         `Network error: ${err instanceof Error ? err.message : String(err)}`,
