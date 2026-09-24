@@ -81,9 +81,8 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
   );
 
   async function postExport(format: "docx" | "pdf") {
-    setExportStatus(`Posting calibrated ${format.toUpperCase()} snapshot…`);
+    setExportStatus(`Downloading ${format.toUpperCase()}…`);
     const payload = { ...snapshot, format };
-    console.log("[export stub] CalibratedSnapshot", payload);
     try {
       const res = await fetch("/api/export", {
         method: "POST",
@@ -249,14 +248,14 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
           className={styles.exportBtn}
           onClick={() => postExport("docx")}
         >
-          Export DOCX (stub)
+          Export DOCX
         </button>
         <button
           type="button"
           className={styles.exportBtn}
           onClick={() => postExport("pdf")}
         >
-          Export PDF (stub)
+          Export PDF
         </button>
       </div>
       {exportStatus ? (
@@ -265,8 +264,7 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
         </p>
       ) : (
         <p className={styles.hint}>
-          Posts CalibratedSnapshot JSON to <code>/api/export</code> (501 until
-          Backend lands).
+          Download the calibrated sermon as a DOCX or PDF file.
         </p>
       )}
     </aside>

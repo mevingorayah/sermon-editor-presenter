@@ -9,7 +9,7 @@ export interface ParsedExportRequest {
 
 /**
  * Normalize Frontend POST bodies into snapshot + format.
- * Default format is docx (CalibrationPanel does not yet send format).
+ * Default format is docx when the request does not specify one.
  * Query `?format=pdf|docx` wins over body.format when provided.
  */
 export function parseExportRequest(
