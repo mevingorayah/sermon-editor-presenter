@@ -64,14 +64,15 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
     [target, typeScaleStep, lineHeight, theme, content, meta.kind],
   );
 
-  async function postExport() {
-    setExportStatus("Posting calibrated snapshot…");
-    console.log("[export stub] CalibratedSnapshot", snapshot);
+  async function postExport(format: "docx" | "pdf") {
+    setExportStatus(`Posting calibrated ${format.toUpperCase()} snapshot…`);
+    const payload = { ...snapshot, format };
+    console.log("[export stub] CalibratedSnapshot", payload);
     try {
       const res = await fetch("/api/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(snapshot),
+        body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));
       setExportStatus(
@@ -203,15 +204,19 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
       </div>
 
       <div className={styles.exportRow}>
-        <button type="button" className={styles.exportBtn} onClick={postExport}>
-          Export snapshot (stub)
+        <button
+          type="button"
+          className={styles.exportBtn}
+          onClick={() => postExport("docx")}
+        >
+          Export DOCX (stub)
         </button>
         <button
           type="button"
           className={styles.exportBtn}
-          onClick={postExport}
+          onClick={() => postExport("pdf")}
         >
-          DOCX / PDF (Backend)
+          Export PDF (stub)
         </button>
       </div>
       {exportStatus ? (
