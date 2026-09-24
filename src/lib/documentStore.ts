@@ -106,6 +106,28 @@ function migrateActiveIdStorage(): void {
   clearActiveSermonId();
 }
 
+/**
+ * Synchronously strip seed-* / non-UUID ids from localStorage BEFORE any async
+ * GET. Call at the top of resolveActiveDocument so a stale active-id can never
+ * race ahead of migrate into getSermon.
+ */
+export function purgeLegacySeedIdsFromStorage(): void {
+  if (typeof window === "undefined") return;
+  migrateActiveIdStorage();
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as SermonDocument;
+    if (!parsed || typeof parsed !== "object") return;
+    const migrated = migrateClientDocumentIds(parsed);
+    if (migrated.id !== parsed.id) {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+    }
+  } catch {
+    /* ignore corrupt / quota */
+  }
+}
+
 export function loadDocument(): SermonDocument {
   if (typeof window === "undefined") {
     return createSeedDocument();
@@ -230,22 +252,27 @@ export async function resolveActiveDocument(): Promise<{
   source: DocumentSource;
   sermons: Sermon[];
 }> {
+  // Sync purge first — never let a stale seed-* active-id survive into async work.
+  purgeLegacySeedIdsFromStorage();
   const local = loadDocument();
   const activeId = getActiveSermonId() ?? local.id;
+  // Belt: refuse to even consider get-by-id unless UUID (seed/local stay local).
+  const openId = isServerSermonId(activeId) ? activeId : null;
 
   try {
     const sermons = await listSermons();
 
     // Prefer last-active UUID when it still exists on the server.
-    if (isServerSermonId(activeId)) {
-      const match = sermons.find((s) => s.id === activeId);
+    // openId is UUID-only — seed-*/local-* never reach getSermon.
+    if (openId) {
+      const match = sermons.find((s) => s.id === openId);
       if (match) {
         const full = await getSermon(match.id);
         return persistServerDoc(full, local, sermons);
       }
       // List race / stale cache — try direct fetch only for UUIDs.
       try {
-        const full = await getSermon(activeId);
+        const full = await getSermon(openId);
         return persistServerDoc(full, local, sermons);
       } catch {
         /* fall through */

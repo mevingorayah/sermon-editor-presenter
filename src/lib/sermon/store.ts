@@ -30,8 +30,12 @@ async function ensureDataDir(): Promise<void> {
   await fs.mkdir(DATA_DIR, { recursive: true });
 }
 
+/** Path ids must be UUID — seed-* / local-* never reach the file store. */
+const SERVER_SERMON_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function assertSafeId(id: string): void {
-  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+  if (!SERVER_SERMON_ID_RE.test(id)) {
     throw new StoreError("Invalid sermon id", 400);
   }
 }

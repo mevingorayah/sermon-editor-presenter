@@ -11,6 +11,10 @@ import type {
 const SERVER_SERMON_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Matches /api/sermons/:id or /api/sermons/:id/content (id must be UUID). */
+const SERMON_BY_ID_PATH_RE =
+  /^\/api\/sermons\/([^/?#]+)(?:\/content)?\/?$/;
+
 export function isServerSermonId(id: string | null | undefined): boolean {
   return typeof id === "string" && SERVER_SERMON_ID_RE.test(id);
 }
@@ -41,6 +45,30 @@ function assertServerSermonId(id: string): void {
   }
 }
 
+/**
+ * Last-line defense: never let fetch hit /api/sermons/<non-UUID>, even if a
+ * caller forgets assertServerSermonId. Collection GET/POST /api/sermons is OK.
+ */
+function assertSafeSermonRequestUrl(input: string): void {
+  let pathname = input;
+  try {
+    if (/^https?:\/\//i.test(input)) {
+      pathname = new URL(input).pathname;
+    }
+  } catch {
+    /* keep raw */
+  }
+  const match = SERMON_BY_ID_PATH_RE.exec(pathname);
+  if (!match) return;
+  let id = match[1];
+  try {
+    id = decodeURIComponent(id);
+  } catch {
+    /* keep raw */
+  }
+  assertServerSermonId(id);
+}
+
 async function readError(res: Response): Promise<string> {
   try {
     const data = (await res.json()) as { error?: string; message?: string };
@@ -54,6 +82,7 @@ async function request<T>(
   input: string,
   init?: RequestInit,
 ): Promise<T> {
+  assertSafeSermonRequestUrl(input);
   const res = await fetch(input, {
     ...init,
     headers: {
