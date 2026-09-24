@@ -7,12 +7,37 @@ import type {
   UpdateSermonInput,
 } from "@/lib/sermon/types";
 
+/** Backend contract: sermon path ids are UUID-only (no seed-* / local-*). */
+const SERVER_SERMON_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isServerSermonId(id: string | null | undefined): boolean {
+  return typeof id === "string" && SERVER_SERMON_ID_RE.test(id);
+}
+
+export function isLocalDraftId(id: string | null | undefined): boolean {
+  return typeof id === "string" && id.startsWith("local-");
+}
+
+export function isLegacySeedId(id: string | null | undefined): boolean {
+  return typeof id === "string" && id.startsWith("seed-");
+}
+
 export class SermonApiError extends Error {
   status: number;
   constructor(message: string, status: number) {
     super(message);
     this.name = "SermonApiError";
     this.status = status;
+  }
+}
+
+function assertServerSermonId(id: string): void {
+  if (!isServerSermonId(id)) {
+    throw new SermonApiError(
+      `Refusing API call with non-UUID sermon id (${id || "empty"})`,
+      400,
+    );
   }
 }
 
@@ -49,6 +74,7 @@ export async function listSermons(): Promise<Sermon[]> {
 }
 
 export async function getSermon(id: string): Promise<Sermon> {
+  assertServerSermonId(id);
   const data = await request<{ sermon: Sermon }>(
     `/api/sermons/${encodeURIComponent(id)}`,
   );
@@ -69,6 +95,7 @@ export async function updateSermon(
   id: string,
   patch: UpdateSermonInput,
 ): Promise<Sermon> {
+  assertServerSermonId(id);
   const data = await request<{ sermon: Sermon }>(
     `/api/sermons/${encodeURIComponent(id)}`,
     {
@@ -80,6 +107,7 @@ export async function updateSermon(
 }
 
 export async function deleteSermon(id: string): Promise<void> {
+  assertServerSermonId(id);
   await request<{ ok: true }>(`/api/sermons/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
@@ -89,6 +117,7 @@ export async function autosaveContent(
   id: string,
   input: UpdateContentInput,
 ): Promise<Sermon> {
+  assertServerSermonId(id);
   const data = await request<{ sermon: Sermon }>(
     `/api/sermons/${encodeURIComponent(id)}/content`,
     {

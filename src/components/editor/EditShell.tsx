@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Editor, JSONContent } from "@tiptap/react";
 import {
   extractTitleFromContent,
+  promoteLocalDraftToServer,
   resolveActiveDocument,
   saveDocument,
   sermonToDocument,
@@ -15,6 +16,7 @@ import {
   createSermon,
   deleteSermon,
   getSermon,
+  isServerSermonId,
   listSermons,
   updateSermon,
 } from "@/lib/sermonApi";
@@ -100,24 +102,43 @@ export function EditShell() {
         if (!current || current.id !== next.id) return;
         setStatus("saving");
         try {
+          let working = current;
+          // Offline local-* / legacy seed ids must never PATCH the API.
+          if (!isServerSermonId(working.id)) {
+            working = await promoteLocalDraftToServer(working);
+            // Preserve in-flight editor content/title over the POST snapshot.
+            working = {
+              ...working,
+              content: current.content,
+              title:
+                extractTitleFromContent(current.content) ??
+                current.title ??
+                working.title,
+              notes: current.notes,
+              presentationSettings: current.presentationSettings,
+            };
+            setDoc(working);
+            saveDocument(working);
+            docRef.current = working;
+          }
           const title =
-            extractTitleFromContent(current.content) ?? current.title;
-          const saved = await autosaveContent(current.id, {
-            content: current.content,
+            extractTitleFromContent(working.content) ?? working.title;
+          const saved = await autosaveContent(working.id, {
+            content: working.content,
             title,
           });
           onlineRef.current = true;
-          const merged = sermonToDocument(saved, current);
+          const merged = sermonToDocument(saved, working);
           // Keep unsaved notes/presentation that may have raced.
           const withLocal: SermonDocument = {
             ...merged,
-            notes: current.notes,
-            presentationSettings: current.presentationSettings,
-            content: current.content,
+            notes: working.notes,
+            presentationSettings: working.presentationSettings,
+            content: working.content,
             title:
-              extractTitleFromContent(current.content) ??
+              extractTitleFromContent(working.content) ??
               merged.title ??
-              current.title,
+              working.title,
           };
           setDoc(withLocal);
           saveDocument(withLocal);
@@ -139,15 +160,29 @@ export function EditShell() {
       if (!current || current.id !== next.id) return;
       setStatus("saving");
       try {
-        const saved = await updateSermon(current.id, { notes: current.notes });
+        let working = current;
+        if (!isServerSermonId(working.id)) {
+          working = await promoteLocalDraftToServer(working);
+          working = {
+            ...working,
+            content: current.content,
+            title: current.title,
+            notes: current.notes,
+            presentationSettings: current.presentationSettings,
+          };
+          setDoc(working);
+          saveDocument(working);
+          docRef.current = working;
+        }
+        const saved = await updateSermon(working.id, { notes: working.notes });
         onlineRef.current = true;
-        const merged = sermonToDocument(saved, current);
+        const merged = sermonToDocument(saved, working);
         const withLocal: SermonDocument = {
           ...merged,
-          content: current.content,
-          presentationSettings: current.presentationSettings,
-          title: current.title,
-          notes: current.notes,
+          content: working.content,
+          presentationSettings: working.presentationSettings,
+          title: working.title,
+          notes: working.notes,
         };
         setDoc(withLocal);
         saveDocument(withLocal);
@@ -200,6 +235,7 @@ export function EditShell() {
   const openSermon = useCallback(
     async (id: string) => {
       if (docRef.current?.id === id) return;
+      if (!isServerSermonId(id)) return;
       setBusy(true);
       try {
         if (contentTimer.current) clearTimeout(contentTimer.current);
@@ -259,6 +295,7 @@ export function EditShell() {
 
   const onDelete = useCallback(
     async (id: string) => {
+      if (!isServerSermonId(id)) return;
       if (typeof window !== "undefined") {
         const title =
           sermons.find((s) => s.id === id)?.meta.title ?? "this sermon";

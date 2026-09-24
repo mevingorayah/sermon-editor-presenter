@@ -11,6 +11,9 @@ import { createSeedDocument } from "@/lib/seed";
 import {
   createSermon,
   getSermon,
+  isLegacySeedId,
+  isLocalDraftId,
+  isServerSermonId,
   listSermons,
 } from "@/lib/sermonApi";
 
@@ -75,10 +78,39 @@ export function setActiveSermonId(id: string): void {
   }
 }
 
+function clearActiveSermonId(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(ACTIVE_ID_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Rewrite legacy seed-* (and other non-UUID / non-local) ids to local-seed
+ * so returning users never keep calling GET/PATCH with seed-* against the API.
+ */
+function migrateClientDocumentIds(doc: SermonDocument): SermonDocument {
+  if (isServerSermonId(doc.id) || isLocalDraftId(doc.id)) {
+    return doc;
+  }
+  return { ...doc, id: "local-seed" };
+}
+
+function migrateActiveIdStorage(): void {
+  const active = getActiveSermonId();
+  if (!active) return;
+  if (isServerSermonId(active) || isLocalDraftId(active)) return;
+  // seed-* or garbage (e.g. seed-philippians-4:0) — drop so resolve can migrate.
+  clearActiveSermonId();
+}
+
 export function loadDocument(): SermonDocument {
   if (typeof window === "undefined") {
     return createSeedDocument();
   }
+  migrateActiveIdStorage();
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) {
@@ -94,10 +126,17 @@ export function loadDocument(): SermonDocument {
       setActiveSermonId(seed.id);
       return seed;
     }
-    if (!getActiveSermonId()) {
-      setActiveSermonId(parsed.id);
+    const migrated = migrateClientDocumentIds(parsed);
+    if (migrated.id !== parsed.id) {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
     }
-    return parsed;
+    const active = getActiveSermonId();
+    if (!active) {
+      setActiveSermonId(migrated.id);
+    } else if (isLegacySeedId(active) || (!isServerSermonId(active) && !isLocalDraftId(active))) {
+      setActiveSermonId(migrated.id);
+    }
+    return migrated;
   } catch {
     const seed = createSeedDocument();
     try {
@@ -139,9 +178,52 @@ export function updatePresentationSettings(
 
 export type DocumentSource = "server" | "local";
 
+async function persistServerDoc(
+  sermon: Sermon,
+  local: SermonDocument | null,
+  sermons: Sermon[],
+): Promise<{
+  doc: SermonDocument;
+  source: DocumentSource;
+  sermons: Sermon[];
+}> {
+  const doc = sermonToDocument(sermon, local);
+  saveDocument(doc);
+  return { doc, source: "server", sermons };
+}
+
+async function createFromLocal(
+  local: SermonDocument,
+  sermons: Sermon[],
+): Promise<{
+  doc: SermonDocument;
+  source: DocumentSource;
+  sermons: Sermon[];
+}> {
+  const created = await createSermon({
+    title: local.title || "Untitled sermon",
+    content: local.content,
+    presentation: local.presentationSettings,
+    notes: local.notes,
+  });
+  const doc = sermonToDocument(created, local);
+  saveDocument(doc);
+  const nextList = sermons.some((s) => s.id === created.id)
+    ? sermons.map((s) => (s.id === created.id ? created : s))
+    : [...sermons, created];
+  return { doc, source: "server", sermons: nextList };
+}
+
 /**
  * Resolve the active sermon: server is source of truth when reachable;
  * localStorage is offline fallback + cache of last-open id/doc.
+ *
+ * Online first-load contract (UUID-only API):
+ * - GET /api/sermons
+ * - last-active UUID still in list → open it
+ * - else if list non-empty → open first
+ * - else POST seed/local content → use returned UUID
+ * - local-* drafts always POST+remap when online (never GET/PATCH local-/seed-*)
  */
 export async function resolveActiveDocument(): Promise<{
   doc: SermonDocument;
@@ -154,48 +236,73 @@ export async function resolveActiveDocument(): Promise<{
   try {
     const sermons = await listSermons();
 
-    if (activeId) {
+    // Prefer last-active UUID when it still exists on the server.
+    if (isServerSermonId(activeId)) {
       const match = sermons.find((s) => s.id === activeId);
       if (match) {
         const full = await getSermon(match.id);
-        const doc = sermonToDocument(full, local);
-        saveDocument(doc);
-        return { doc, source: "server", sermons };
+        return persistServerDoc(full, local, sermons);
       }
-      // Active id missing on server — try fetching directly (list race).
+      // List race / stale cache — try direct fetch only for UUIDs.
       try {
         const full = await getSermon(activeId);
-        const doc = sermonToDocument(full, local);
-        saveDocument(doc);
-        return { doc, source: "server", sermons };
+        return persistServerDoc(full, local, sermons);
       } catch {
         /* fall through */
       }
     }
 
-    if (sermons.length > 0) {
-      const full = await getSermon(sermons[0].id);
-      const doc = sermonToDocument(full, local);
-      saveDocument(doc);
-      return { doc, source: "server", sermons };
+    // Real offline drafts (local-<timestamp>) — POST to obtain a UUID and remap.
+    // Bootstrap `local-seed` / legacy seed-* is NOT a user draft: only POST when
+    // the server list is empty so we do not duplicate the sample sermon.
+    const draftId = isLocalDraftId(activeId)
+      ? activeId
+      : isLocalDraftId(local.id)
+        ? local.id
+        : null;
+    const isBootstrapSeed =
+      draftId === "local-seed" ||
+      isLegacySeedId(activeId) ||
+      isLegacySeedId(local.id);
+
+    if (draftId && !isBootstrapSeed) {
+      return createFromLocal(local, sermons);
     }
 
-    // Empty server store — seed from local cache so first visit is never blank.
-    const created = await createSermon({
-      title: local.title || "Untitled sermon",
-      content: local.content,
-      presentation: local.presentationSettings,
-      notes: local.notes,
-    });
-    const doc = sermonToDocument(created, local);
-    saveDocument(doc);
-    return {
-      doc,
-      source: "server",
-      sermons: [created],
-    };
+    if (sermons.length > 0) {
+      const full = await getSermon(sermons[0].id);
+      return persistServerDoc(full, local, sermons);
+    }
+
+    // Empty server store — seed from local cache (seed content) so first visit
+    // is never blank; returned id is always a UUID.
+    return createFromLocal(local, sermons);
   } catch {
-    saveDocument(local);
-    return { doc: local, source: "local", sermons: [] };
+    // Stay offline; keep local-* (never invent a fake server id).
+    const offlineDoc =
+      isServerSermonId(local.id) || isLocalDraftId(local.id)
+        ? local
+        : migrateClientDocumentIds(local);
+    saveDocument(offlineDoc);
+    return { doc: offlineDoc, source: "local", sermons: [] };
   }
+}
+
+/**
+ * When an offline local-* / legacy draft is edited while the API is reachable,
+ * POST once to obtain a UUID and remap the active document.
+ */
+export async function promoteLocalDraftToServer(
+  local: SermonDocument,
+): Promise<SermonDocument> {
+  if (isServerSermonId(local.id)) return local;
+  const created = await createSermon({
+    title: local.title || "Untitled sermon",
+    content: local.content,
+    presentation: local.presentationSettings,
+    notes: local.notes,
+  });
+  const doc = sermonToDocument(created, local);
+  saveDocument(doc);
+  return doc;
 }
