@@ -7,24 +7,31 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/lib/sermon/__tests__/schema.test.ts src/lib/sermon/__tests__/sanitize-store.test.ts src/lib/sermon/__tests__/export.test.ts"
   },
   "dependencies": {
     "@tiptap/extension-placeholder": "^3.31.3",
     "@tiptap/pm": "^3.31.3",
     "@tiptap/react": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
-    "next": "^15.5.4",
+    "docx": "^9.5.1",
+    "next": "^15.5.9",
+    "pdfkit": "^0.17.2",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@types/node": "^20",
+    "@types/pdfkit": "^0.17.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "^15.5.4",
+    "eslint-config-next": "^15.5.9",
+    "tsx": "^4.20.5",
     "typescript": "^5"
   }
 }

@@ -47,3 +47,15 @@ Frontend calibration posts that shape to `/api/export`. **Do not** include bioni
 ## DevOps / Cloud Run
 
 `next.config.ts` sets `output: "standalone"` so the light-shell Docker image can boot.
+
+## Backend API
+
+- Contract: [`docs/api-export-contract.md`](docs/api-export-contract.md) — uses Frontend `CalibratedSnapshot` from `src/types/document.ts`
+- Export: `POST /api/export` (optional `?format=docx|pdf`, default `docx`) → real DOCX/PDF binary
+- CRUD: `GET/POST /api/sermons`, `GET/PATCH/DELETE /api/sermons/[id]`, `PATCH /api/sermons/[id]/content`
+- Store: `data/sermons/` JSON files (`SERMON_DATA_DIR` override; swap for DB in prod)
+
+```bash
+npm run typecheck
+npm test
+```
