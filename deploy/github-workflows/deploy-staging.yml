@@ -1,0 +1,147 @@
+name: Deploy staging
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - "Dockerfile.export"
+      - "src/**"
+      - "package.json"
+      - "package-lock.json"
+      - "next.config.*"
+      - "deploy/**"
+      - ".github/workflows/deploy-staging.yml"
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: Build & deploy Cloud Run (staging)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require GCP config
+        id: gcp
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+          AR_REPO: ${{ vars.ARTIFACT_REGISTRY_REPO }}
+          WIF: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          SA: ${{ vars.GCP_SERVICE_ACCOUNT }}
+        run: |
+          missing=0
+          for v in PROJECT_ID REGION AR_REPO WIF SA; do
+            if [ -z "${!v}" ]; then
+              echo "::warning::$v is not set — staging deploy skipped. See docs/runbook-staging.md"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+          echo "project=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+          echo "region=${REGION:-europe-west2}" >> "$GITHUB_OUTPUT"
+          echo "ar_repo=$AR_REPO" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to Google Cloud
+        if: steps.gcp.outputs.ready == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        if: steps.gcp.outputs.ready == 'true'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        if: steps.gcp.outputs.ready == 'true'
+        run: gcloud auth configure-docker "${{ steps.gcp.outputs.region }}-docker.pkg.dev" --quiet
+
+      - name: Build & push images
+        if: steps.gcp.outputs.ready == 'true'
+        env:
+          REGION: ${{ steps.gcp.outputs.region }}
+          PROJECT: ${{ steps.gcp.outputs.project }}
+          AR_REPO: ${{ steps.gcp.outputs.ar_repo }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          BASE="${REGION}-docker.pkg.dev/${PROJECT}/${AR_REPO}"
+          docker build -f Dockerfile -t "${BASE}/shell:${SHA}" -t "${BASE}/shell:staging" .
+          docker build -f Dockerfile.export -t "${BASE}/export:${SHA}" -t "${BASE}/export:staging" .
+          docker push "${BASE}/shell:${SHA}"
+          docker push "${BASE}/shell:staging"
+          docker push "${BASE}/export:${SHA}"
+          docker push "${BASE}/export:staging"
+          echo "SHELL_IMAGE=${BASE}/shell:${SHA}" >> "$GITHUB_ENV"
+          echo "EXPORT_IMAGE=${BASE}/export:${SHA}" >> "$GITHUB_ENV"
+
+      - name: Deploy shell (light)
+        if: steps.gcp.outputs.ready == 'true'
+        env:
+          REGION: ${{ steps.gcp.outputs.region }}
+          PROJECT: ${{ steps.gcp.outputs.project }}
+        run: |
+          gcloud run deploy sermon-editor-shell-staging \
+            --project="$PROJECT" \
+            --region="$REGION" \
+            --image="$SHELL_IMAGE" \
+            --platform=managed \
+            --allow-unauthenticated \
+            --port=8080 \
+            --memory=512Mi \
+            --cpu=1 \
+            --min-instances=0 \
+            --max-instances=3 \
+            --concurrency=80 \
+            --set-env-vars="NODE_ENV=production,NEXT_TELEMETRY_DISABLED=1,EXPORT_SERVICE_URL=${{ vars.EXPORT_SERVICE_URL }}" \
+            --quiet
+
+      - name: Deploy export worker (heavier)
+        if: steps.gcp.outputs.ready == 'true'
+        env:
+          REGION: ${{ steps.gcp.outputs.region }}
+          PROJECT: ${{ steps.gcp.outputs.project }}
+        run: |
+          gcloud run deploy sermon-editor-export-staging \
+            --project="$PROJECT" \
+            --region="$REGION" \
+            --image="$EXPORT_IMAGE" \
+            --platform=managed \
+            --no-allow-unauthenticated \
+            --port=8080 \
+            --memory=2Gi \
+            --cpu=2 \
+            --min-instances=0 \
+            --max-instances=2 \
+            --concurrency=5 \
+            --timeout=300 \
+            --set-env-vars="NODE_ENV=production,NEXT_TELEMETRY_DISABLED=1,ROLE=export" \
+            --quiet
+
+      - name: Staging URLs
+        if: steps.gcp.outputs.ready == 'true'
+        env:
+          REGION: ${{ steps.gcp.outputs.region }}
+          PROJECT: ${{ steps.gcp.outputs.project }}
+        run: |
+          SHELL_URL=$(gcloud run services describe sermon-editor-shell-staging --project="$PROJECT" --region="$REGION" --format='value(status.url)')
+          EXPORT_URL=$(gcloud run services describe sermon-editor-export-staging --project="$PROJECT" --region="$REGION" --format='value(status.url)')
+          echo "### Staging deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Shell: $SHELL_URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Export (auth required): $EXPORT_URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "Promote to prod only after QA smoke + export gate are green (see Project Manager)." >> "$GITHUB_STEP_SUMMARY"

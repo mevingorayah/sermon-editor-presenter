@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  app:
+    name: Lint / test / build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect Next.js app
+        id: app
+        run: |
+          if [ -f package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "No package.json yet — skipping app jobs (scaffold pending)."
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.app.outputs.present == 'true'
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install
+        if: steps.app.outputs.present == 'true'
+        run: npm ci
+
+      - name: Lint
+        if: steps.app.outputs.present == 'true'
+        run: npm run lint --if-present
+
+      - name: Test
+        if: steps.app.outputs.present == 'true'
+        run: npm test --if-present
+
+      - name: Build
+        if: steps.app.outputs.present == 'true'
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+  container:
+    name: Docker build + image scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: app
+    if: always() && (needs.app.result == 'success' || needs.app.result == 'skipped')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: shell
+            file: Dockerfile
+            tag: sermon-editor-shell
+          - name: export
+            file: Dockerfile.export
+            tag: sermon-editor-export
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Dockerfile + app
+        id: df
+        run: |
+          if [ -f package.json ] && [ -f "${{ matrix.file }}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping image build — need package.json (Next scaffold) and ${{ matrix.file }}."
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.df.outputs.present == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        if: steps.df.outputs.present == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          push: false
+          load: true
+          tags: ${{ matrix.tag }}:ci
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          build-args: |
+            NEXT_TELEMETRY_DISABLED=1
+
+      - name: Scan image (Trivy)
+        if: steps.df.outputs.present == 'true'
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ matrix.tag }}:ci
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
