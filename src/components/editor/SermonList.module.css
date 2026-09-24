@@ -1,0 +1,136 @@
+.root {
+  font-size: 0.875rem;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.heading {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--edit-fg-muted);
+}
+
+.newBtn {
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid var(--edit-border);
+  background: var(--edit-bg);
+  color: var(--edit-fg);
+  cursor: pointer;
+}
+
+.newBtn:hover:not(:disabled),
+.newBtn:focus-visible {
+  border-color: var(--edit-accent);
+  outline: 2px solid var(--edit-focus);
+  outline-offset: 0;
+}
+
+.newBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.empty {
+  margin: 0;
+  color: var(--edit-fg-muted);
+  font-size: 0.8125rem;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 12rem;
+  overflow: auto;
+}
+
+.item {
+  display: flex;
+  align-items: stretch;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.link,
+.linkActive {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  text-align: left;
+  font: inherit;
+  color: var(--edit-fg);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 0.35rem 0.4rem;
+  cursor: pointer;
+  line-height: 1.35;
+}
+
+.linkActive {
+  background: color-mix(in srgb, var(--edit-accent) 12%, transparent);
+  font-weight: 600;
+}
+
+.link:hover:not(:disabled),
+.link:focus-visible,
+.linkActive:hover:not(:disabled),
+.linkActive:focus-visible {
+  background: color-mix(in srgb, var(--edit-accent) 18%, transparent);
+  outline: 2px solid var(--edit-focus);
+  outline-offset: 0;
+}
+
+.link:disabled,
+.linkActive:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deleteBtn {
+  flex-shrink: 0;
+  width: 1.75rem;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--edit-fg-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.deleteBtn:hover:not(:disabled),
+.deleteBtn:focus-visible {
+  color: #8b2e2e;
+  background: color-mix(in srgb, #8b2e2e 10%, transparent);
+  outline: 2px solid var(--edit-focus);
+  outline-offset: 0;
+}
+
+.deleteBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

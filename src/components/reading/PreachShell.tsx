@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { loadDocument, updatePresentationSettings } from "@/lib/documentStore";
+import {
+  resolveActiveDocument,
+  updatePresentationSettings,
+} from "@/lib/documentStore";
 import { typeScaleMultiplier } from "@/lib/calibration";
 import type {
   CalibrationTarget,
@@ -24,7 +27,15 @@ export function PreachShell() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setDoc(loadDocument());
+    let cancelled = false;
+    (async () => {
+      const resolved = await resolveActiveDocument();
+      if (cancelled) return;
+      setDoc(resolved.doc);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const patchSettings = useCallback(
