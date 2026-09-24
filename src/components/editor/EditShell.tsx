@@ -383,6 +383,13 @@ export function EditShell() {
           <span className={styles.saved} aria-live="polite">
             {statusLabel}
           </span>
+          <Link
+            href="/preach?calibrate=1"
+            className={styles.exportLink}
+            title="Document setup and export (opens Preach with Calibration)"
+          >
+            Export…
+          </Link>
           <Link href="/preach" className={styles.preachBtn}>
             Enter Preaching
           </Link>

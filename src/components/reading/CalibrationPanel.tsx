@@ -1,6 +1,13 @@
 "use client";
 
-import { useMemo, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import type { JSONContent } from "@tiptap/react";
 import {
   CALIBRATION_TARGETS,
@@ -8,8 +15,19 @@ import {
   marginsFor,
   typeScaleMultiplier,
 } from "@/lib/calibration";
+import {
+  EXPORT_FORMATS,
+  buildExportPayload,
+  defaultFilenameStem,
+  fallbackFilename,
+  filenameFromContentDisposition,
+  formatMeta,
+  sanitizeFilenameStem,
+} from "@/lib/export-client/payload";
+import { browserCssVarResolver } from "@/lib/export-client/flattenColors";
 import type {
   CalibrationTarget,
+  ExportFormat,
   LineHeightOption,
   ReadingTheme,
   TypeScaleStep,
@@ -17,29 +35,22 @@ import type {
 import { ReadingView } from "./ReadingView";
 import styles from "./CalibrationPanel.module.css";
 
-function filenameFromContentDisposition(header: string | null): string | null {
-  if (!header) return null;
-
-  const encoded = header.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
-  if (encoded?.[1]) {
-    try {
-      return decodeURIComponent(encoded[1].trim().replace(/^"|"$/g, ""));
-    } catch {
-      // Fall through to the regular filename parameter when decoding fails.
-    }
-  }
-
-  const plain = header.match(/filename\s*=\s*(?:"([^"]+)"|([^;]+))/i);
-  return (plain?.[1] ?? plain?.[2])?.trim() || null;
-}
+/** Backend schema cap for `filenameStem`. */
+const STEM_MAX = 200;
 
 interface CalibrationPanelProps {
   content: JSONContent;
+  /** Sermon title — default Save-as filename stem. */
+  title: string;
+  /** Study notes — sent only when "Include study notes" is on (DOCX/PDF). */
+  notes: string;
   target: CalibrationTarget;
   typeScaleStep: TypeScaleStep;
   lineHeight: LineHeightOption;
   /** Live reading theme; print targets default preview to light. */
   theme: ReadingTheme;
+  /** Move focus into the panel on mount (deep link `?calibrate=1`). */
+  autoFocus?: boolean;
   onTargetChange: (t: CalibrationTarget) => void;
   onTypeScaleChange: (s: TypeScaleStep) => void;
   onLineHeightChange: (lh: LineHeightOption) => void;
@@ -50,10 +61,13 @@ interface CalibrationPanelProps {
 export function CalibrationPanel(props: CalibrationPanelProps) {
   const {
     content,
+    title,
+    notes,
     target,
     typeScaleStep,
     lineHeight,
     theme,
+    autoFocus = false,
     onTargetChange,
     onTypeScaleChange,
     onLineHeightChange,
@@ -61,12 +75,26 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
     onClose,
   } = props;
 
+  const ids = useId();
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [busyFormat, setBusyFormat] = useState<ExportFormat | null>(null);
+  // null = untouched → follow the sermon title; string = user-edited stem.
+  const [stemDraft, setStemDraft] = useState<string | null>(null);
+  const [includeNotes, setIncludeNotes] = useState(false);
+
   const meta = CALIBRATION_TARGETS.find((t) => t.id === target)!;
   const margins = marginsFor(target);
   const previewTheme: ReadingTheme =
     meta.kind === "paper" ? "light" : theme;
   const scale = typeScaleMultiplier(typeScaleStep);
+  const stem = stemDraft ?? defaultFilenameStem(title);
+  const savedStem = sanitizeFilenameStem(stem);
+  const hasNotes = notes.trim().length > 0;
+
+  useEffect(() => {
+    if (autoFocus) headingRef.current?.focus();
+  }, [autoFocus]);
 
   const snapshot = useMemo(
     () =>
@@ -80,34 +108,55 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
     [target, typeScaleStep, lineHeight, theme, content, meta.kind],
   );
 
-  async function postExport(format: "docx" | "pdf") {
-    setExportStatus(`Downloading ${format.toUpperCase()}…`);
-    const payload = { ...snapshot, format };
+  async function postExport(format: ExportFormat) {
+    if (busyFormat) return;
+    const fmt = formatMeta(format);
+    const upper = fmt.ext.toUpperCase();
+    setBusyFormat(format);
+    setExportStatus(`Downloading ${upper}…`);
     try {
-      const res = await fetch("/api/export", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+      const payload = buildExportPayload({
+        snapshot,
+        format,
+        filenameStem: stem,
+        includeNotes,
+        notes,
+        resolveVar: browserCssVarResolver(),
       });
+      const res = await fetch(
+        `/api/export?format=${encodeURIComponent(format)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
       const blob = await res.blob();
       if (!res.ok) {
         let message = res.statusText;
+        let code: string | undefined;
         try {
           const data = JSON.parse(await blob.text()) as {
             message?: string;
             error?: string;
+            code?: string;
           };
           message = data.message ?? data.error ?? message;
+          code = data.code;
         } catch {
           // Keep the HTTP status when the error response is not JSON.
         }
-        setExportStatus(`HTTP ${res.status}: ${message}`);
+        setExportStatus(
+          res.status === 501 || code === "NOT_IMPLEMENTED"
+            ? `${upper} export isn’t available yet (${message}).`
+            : `HTTP ${res.status}: ${message}`,
+        );
         return;
       }
 
       const filename =
         filenameFromContentDisposition(res.headers.get("Content-Disposition")) ??
-        `sermon-export.${format}`;
+        fallbackFilename(stem, format);
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -121,14 +170,32 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
       setExportStatus(
         `Network error: ${err instanceof Error ? err.message : String(err)}`,
       );
+    } finally {
+      setBusyFormat(null);
     }
   }
 
   return (
-    <aside className={styles.panel} aria-label="Calibration panel">
+    <aside
+      className={styles.panel}
+      aria-labelledby={`${ids}-heading`}
+      data-testid="calibration-panel"
+    >
       <div className={styles.header}>
-        <h2 className={styles.title}>Calibration</h2>
-        <button type="button" className={styles.close} onClick={onClose}>
+        <h2
+          id={`${ids}-heading`}
+          ref={headingRef}
+          tabIndex={-1}
+          className={styles.title}
+        >
+          Document setup &amp; export
+        </h2>
+        <button
+          type="button"
+          className={styles.close}
+          onClick={onClose}
+          aria-label="Close document setup"
+        >
           Close
         </button>
       </div>
@@ -207,6 +274,42 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
         </p>
       </div>
 
+      <fieldset className={styles.saveAs}>
+        <legend className={styles.legend}>Save as</legend>
+        <label className={styles.label} htmlFor={`${ids}-stem`}>
+          Filename
+        </label>
+        <input
+          id={`${ids}-stem`}
+          type="text"
+          className={styles.input}
+          value={stem}
+          maxLength={STEM_MAX}
+          spellCheck={false}
+          autoComplete="off"
+          aria-describedby={`${ids}-stem-hint`}
+          onChange={(e) => setStemDraft(e.target.value)}
+        />
+        <p id={`${ids}-stem-hint`} className={styles.fieldHint}>
+          Saves as <strong>{savedStem}</strong>.docx / .pdf / .png / .pptx
+        </p>
+
+        <label className={styles.check}>
+          <input
+            type="checkbox"
+            className={styles.checkbox}
+            checked={includeNotes}
+            aria-describedby={`${ids}-notes-hint`}
+            onChange={(e) => setIncludeNotes(e.target.checked)}
+          />
+          Include study notes
+        </label>
+        <p id={`${ids}-notes-hint`} className={styles.fieldHint}>
+          DOCX and PDF only, added as a final section.
+          {hasNotes ? "" : " This sermon has no study notes yet."}
+        </p>
+      </fieldset>
+
       <div className={styles.previewWrap}>
         <p className={styles.previewLabel}>Live preview (gradient flattened)</p>
         <div
@@ -242,31 +345,34 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
         </div>
       </div>
 
-      <div className={styles.exportRow}>
-        <button
-          type="button"
-          className={styles.exportBtn}
-          onClick={() => postExport("docx")}
-        >
-          Export DOCX
-        </button>
-        <button
-          type="button"
-          className={styles.exportBtn}
-          onClick={() => postExport("pdf")}
-        >
-          Export PDF
-        </button>
+      <div
+        className={styles.exportRow}
+        role="group"
+        aria-label="Export format"
+        aria-busy={busyFormat ? true : undefined}
+      >
+        {EXPORT_FORMATS.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            className={
+              f.print ? styles.exportBtn : `${styles.exportBtn} ${styles.exportBtnSecondary}`
+            }
+            aria-disabled={busyFormat ? true : undefined}
+            onClick={() => postExport(f.id)}
+          >
+            {f.label}
+          </button>
+        ))}
       </div>
-      {exportStatus ? (
-        <p className={styles.status} role="status">
-          {exportStatus}
-        </p>
-      ) : (
-        <p className={styles.hint}>
-          Download the calibrated sermon as a DOCX or PDF file.
-        </p>
-      )}
+      {/* Single persistent live region: hint until an export runs, then status. */}
+      <p
+        className={exportStatus ? styles.status : styles.hint}
+        role="status"
+      >
+        {exportStatus ??
+          "DOCX and PDF print in light ink. PNG (one image of the frame) and PowerPoint (a slide per H1) follow the target and theme above."}
+      </p>
     </aside>
   );
 }

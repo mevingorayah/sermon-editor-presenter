@@ -24,7 +24,18 @@ export function PreachShell() {
   const [doc, setDoc] = useState<SermonDocument | null>(null);
   const [progress, setProgress] = useState(0);
   const [calibrationOpen, setCalibrationOpen] = useState(false);
+  // Deep link from Edit's "Export…": /preach?calibrate=1 opens Document setup.
+  const [calibrationDeepLink, setCalibrationDeepLink] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Read on the client only (no useSearchParams → no Suspense/CSR bailout).
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("calibrate") === "1") {
+      setCalibrationOpen(true);
+      setCalibrationDeepLink(true);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,7 +104,10 @@ export function PreachShell() {
           patchSettings({ lineHeight })
         }
         onBionicChange={(bionic: boolean) => patchSettings({ bionic })}
-        onToggleCalibration={() => setCalibrationOpen((v) => !v)}
+        onToggleCalibration={() => {
+          setCalibrationDeepLink(false);
+          setCalibrationOpen((v) => !v);
+        }}
       />
 
       <div className={styles.body}>
@@ -104,6 +118,9 @@ export function PreachShell() {
         {calibrationOpen ? (
           <CalibrationPanel
             content={doc.content}
+            title={doc.title}
+            notes={doc.notes ?? ""}
+            autoFocus={calibrationDeepLink}
             target={ps.calibrationTarget}
             typeScaleStep={ps.typeScaleStep}
             lineHeight={ps.lineHeight}
@@ -118,7 +135,10 @@ export function PreachShell() {
               patchSettings({ lineHeight })
             }
             onThemeChange={(theme: ReadingTheme) => patchSettings({ theme })}
-            onClose={() => setCalibrationOpen(false)}
+            onClose={() => {
+              setCalibrationOpen(false);
+              setCalibrationDeepLink(false);
+            }}
           />
         ) : null}
       </div>

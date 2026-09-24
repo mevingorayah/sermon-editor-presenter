@@ -87,6 +87,29 @@
   outline-offset: 2px;
 }
 
+.exportLink {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--edit-border);
+  background: var(--edit-bg-elevated);
+  color: var(--edit-fg);
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.exportLink:hover {
+  border-color: var(--edit-accent);
+}
+
+.exportLink:focus-visible {
+  border-color: var(--edit-accent);
+  outline: 2px solid var(--edit-accent);
+  outline-offset: 2px;
+}
+
 .main {
   display: grid;
   grid-template-columns: minmax(14rem, 18rem) 1fr;
