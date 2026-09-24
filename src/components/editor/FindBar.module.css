@@ -1,0 +1,29 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--edit-fg-muted);
+}
+
+.input {
+  font: inherit;
+  font-size: 0.875rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid var(--edit-border);
+  background: var(--edit-bg);
+  color: var(--edit-fg);
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--edit-focus);
+  outline-offset: 1px;
+  border-color: var(--edit-accent);
+}

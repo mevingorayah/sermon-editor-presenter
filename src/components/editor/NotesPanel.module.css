@@ -1,0 +1,35 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0;
+}
+
+.heading {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--edit-fg-muted);
+}
+
+.area {
+  flex: 1;
+  min-height: 8rem;
+  resize: vertical;
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid var(--edit-border);
+  background: var(--edit-bg);
+  color: var(--edit-fg);
+}
+
+.area:focus-visible {
+  outline: 2px solid var(--edit-focus);
+  outline-offset: 1px;
+  border-color: var(--edit-accent);
+}

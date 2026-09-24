@@ -1,0 +1,118 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+  flex: 1;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--edit-border);
+}
+
+.toolBtn {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid var(--edit-border);
+  background: var(--edit-bg-elevated);
+  color: var(--edit-fg);
+  cursor: pointer;
+}
+
+.toolBtn:hover,
+.toolBtn:focus-visible {
+  border-color: var(--edit-accent);
+  outline: 2px solid var(--edit-focus);
+  outline-offset: 1px;
+}
+
+.loading {
+  color: var(--edit-fg-muted);
+  padding: 2rem;
+}
+
+.prose {
+  min-height: 20rem;
+  padding: 0.25rem 0.15rem 2rem;
+  outline: none;
+  font-family: var(--edit-font-body);
+  font-size: 1.05rem;
+  line-height: 1.65;
+  color: var(--edit-fg);
+}
+
+.prose :global(.sermon-title) {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0 0 1rem;
+}
+
+.prose :global(h1) {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 1.25rem 0 0.5rem;
+}
+
+.prose :global(h2) {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 1rem 0 0.4rem;
+  padding-left: 0.75rem;
+}
+
+.prose :global(p) {
+  margin: 0 0 0.85rem;
+}
+
+.prose :global(.sermon-scripture) {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border-left: 3px solid var(--edit-accent);
+  background: var(--edit-bg-elevated);
+  border-radius: 0 8px 8px 0;
+}
+
+.prose :global(.sermon-scripture.is-selected) {
+  outline: 2px solid var(--edit-focus);
+}
+
+.prose :global(.sermon-scripture-citation-input) {
+  display: block;
+  width: 100%;
+  margin-bottom: 0.4rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--edit-fg-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed var(--edit-border);
+  padding: 0.15rem 0;
+}
+
+.prose :global(.sermon-scripture-citation-input:focus-visible) {
+  outline: none;
+  border-bottom-color: var(--edit-accent);
+  color: var(--edit-fg);
+}
+
+.prose :global(.sermon-scripture-quote) {
+  display: block;
+  margin: 0;
+}
+
+.prose :global(.is-empty::before) {
+  color: var(--edit-fg-muted);
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
