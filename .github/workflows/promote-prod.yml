@@ -2,7 +2,7 @@ name: Promote to prod
 
 # Manual only. Deploys the staging-verified image digests pinned in
 # deploy/prod-release.env. No rebuild. Gated by the `production` Environment
-# (required reviewer) and by PROD_STORAGE_READY (durable sermon store).
+# (required reviewer) and by LOCAL_STORAGE_GATE_PASSED (local-only storage + Back up/Restore passed QA).
 
 on:
   workflow_dispatch:
@@ -51,7 +51,7 @@ jobs:
           WIF: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           SA: ${{ vars.GCP_SERVICE_ACCOUNT }}
           RUNTIME_SA: ${{ vars.PROD_RUNTIME_SERVICE_ACCOUNT }}
-          STORAGE_READY: ${{ vars.PROD_STORAGE_READY }}
+          STORAGE_READY: ${{ vars.LOCAL_STORAGE_GATE_PASSED }}
         run: |
           set -euo pipefail
           missing=0
@@ -60,7 +60,7 @@ jobs:
           done
           [ "$missing" -eq 0 ] || exit 1
           if [ "$STORAGE_READY" != "true" ]; then
-            echo "::error::PROD_STORAGE_READY is not true. Sermons are still saved to container disk; prod is blocked until the durable store ships and QA's durability gate passes."
+            echo "::error::LOCAL_STORAGE_GATE_PASSED is not true. Prod is blocked until local-only saving and Back up/Restore ship and QA's local storage gate passes."
             exit 1
           fi
 
