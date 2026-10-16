@@ -67,6 +67,12 @@ async function stubPicker(page: Page) {
 
 async function freshStart(page: Page) {
   await page.goto("/edit");
+  // Let the app finish booting first, or its async folder load can re-write
+  // localStorage after the wipe below (test race, not app behaviour).
+  await expect(page.getByTestId("first-run").or(page.getByTestId("save-status"))).toBeVisible({ timeout: 20_000 });
+  if (await page.getByTestId("save-status").count()) {
+    await expect(page.getByTestId("save-status")).toHaveAttribute("data-saved", "true", { timeout: 20_000 });
+  }
   await page.evaluate(async () => {
     localStorage.clear();
     const root = await navigator.storage.getDirectory();
@@ -179,13 +185,16 @@ test.describe("local-only storage", () => {
     await expect(nav.getByTestId("conflict-copy-tag")).toHaveCount(1);
     await expect(nav.getByRole("listitem").filter({ hasText: "DRIVECOPY" })).toContainText("possible conflict copy");
 
-    await nav.getByRole("button", { name: /DRIVECOPY/ }).click();
+    await nav.getByRole("button", { name: /DRIVECOPY possible conflict copy/ }).click();
     await expect(page.locator(".ProseMirror")).toBeVisible();
     await typeAtEnd(page, "edited the drive copy");
     await expect(page.getByTestId("save-status")).toHaveText("Saved to Sermons folder", { timeout: 20_000 });
     const files = await folderFiles(page);
     expect(Object.keys(files).filter((n) => n.endsWith(".sermon")).sort()).toEqual([origName, copyName].sort());
-    expect(files[origName]).toBe(origText);
+    // The original may be re-saved by its own tab (editor normalisation), but never with the copy's content.
+    expect(files[origName]).not.toContain("edited the drive copy");
+    expect(files[origName]).not.toContain("DRIVECOPY");
+    expect(JSON.parse(files[origName]).sermon.id).toBe(JSON.parse(origText).sermon.id);
     expect(files[copyName]).toContain("edited the drive copy");
     expect(hits).toEqual([]);
   });
@@ -285,6 +294,7 @@ test.describe("local-only storage", () => {
     await typeAtEnd(page, "unsaved three");
     await restoreFrom(page, backup);
     dialog = page.getByRole("dialog", { name: "Restore from backup" });
+    page.once("dialog", (d) => void d.accept());
     await dialog.getByRole("radio", { name: "Replace" }).check();
     await expect(dialog.getByTestId("restore-unsaved-warning")).toBeVisible();
     await dialog.getByRole("button", { name: "Restore", exact: true }).click();
@@ -295,6 +305,108 @@ test.describe("local-only storage", () => {
     expect(mine, "open-tab edits preserved").toBeTruthy();
     expect(JSON.stringify(mine.content)).toContain("unsaved three");
     expect(hits).toEqual([]);
+  });
+
+  test("ST9: opening a sermon already open in another tab warns both tabs before any save", async ({ page, context }) => {
+    await freshStart(page);
+    await pickFolder(page);
+    await expect(page.getByTestId("open-elsewhere")).toHaveCount(0);
+    const other = await context.newPage();
+    await other.goto("/edit");
+    await expect(other.locator(".ProseMirror")).toBeVisible({ timeout: 20_000 });
+    await expect(other.getByTestId("open-elsewhere")).toContainText("This sermon is open in another tab");
+    await expect(page.getByTestId("open-elsewhere")).toContainText("This sermon is open in another tab");
+    await other.close();
+    await expect(page.getByTestId("open-elsewhere")).toHaveCount(0);
+  });
+
+  test("ST18: Replace asks per sermon; Cancel changes nothing; legend is visible", async ({ page }, testInfo) => {
+    await freshStart(page);
+    await pickFolder(page);
+    const backup = await backupTo(page, testInfo);
+    const title = JSON.parse(readFileSync(backup, "utf8")).sermons[0].title as string;
+    await typeAtEnd(page, "changed after backup");
+    await expect(page.getByTestId("save-status")).toHaveText("Saved to Sermons folder");
+    const before = await folderFiles(page);
+    await restoreFrom(page, backup);
+    const dialog = page.getByRole("dialog", { name: "Restore from backup" });
+    await expect(dialog.locator("legend")).toBeVisible();
+    await expect(dialog.locator("legend")).toContainText("a different version is already here");
+    const seen: string[] = [];
+    page.once("dialog", (d) => {
+      seen.push(d.message());
+      void d.dismiss();
+    });
+    await dialog.getByRole("radio", { name: "Replace" }).click();
+    await expect(dialog.getByRole("radio", { name: "Keep both" })).toBeChecked();
+    expect(seen).toEqual([`Replace your copy of ${title}? Your current version will be lost.`]);
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    expect(await folderFiles(page)).toEqual(before);
+    await restoreFrom(page, backup);
+    page.once("dialog", (d) => void d.accept());
+    await page.getByRole("dialog", { name: "Restore from backup" }).getByRole("radio", { name: "Replace" }).click();
+    await expect(page.getByRole("dialog", { name: "Restore from backup" }).getByRole("radio", { name: "Replace" })).toBeChecked();
+  });
+
+  test("ST20: restore is all-or-nothing when the 2nd of 3 writes fails", async ({ page }, testInfo) => {
+    await freshStart(page);
+    await pickFolder(page);
+    const before = await folderFiles(page);
+    const base = JSON.parse(Object.values(before)[0]).sermon;
+    const sermons = [1, 2, 3].map((i) => ({ ...base, id: `st20-${i}`, title: `ST20 sermon ${i}` }));
+    const path = testInfo.outputPath("three.sermon-backup");
+    writeFileSync(path, JSON.stringify({ kind: "sermon-editor-presenter/backup", schemaVersion: 1, savedAt: new Date().toISOString(), sermons }));
+    await page.evaluate(() => {
+      let n = 0;
+      const orig = FileSystemFileHandle.prototype.createWritable;
+      FileSystemFileHandle.prototype.createWritable = async function (this: FileSystemFileHandle, ...a: unknown[]) {
+        const w = await (orig as (...x: unknown[]) => Promise<FileSystemWritableFileStream>).apply(this, a);
+        if (!this.name.endsWith(".tmp")) return w;
+        n += 1;
+        if (n !== 2) return w;
+        const close = w.close.bind(w);
+        w.close = async () => {
+          await w.abort();
+          void close;
+          throw new DOMException("Disk full (test)", "QuotaExceededError");
+        };
+        return w;
+      };
+    });
+    await restoreFrom(page, path);
+    const dialog = page.getByRole("dialog", { name: "Restore from backup" });
+    await expect(dialog.getByTestId("restore-summary")).toContainText("has 3 sermons");
+    await dialog.getByRole("button", { name: "Restore", exact: true }).click();
+    const msg = page.getByRole("dialog", { name: "Restore" }).getByRole("alert");
+    await expect(msg).toContainText("Nothing was restored");
+    await expect(msg).toContainText("ST20 sermon 2");
+    await expect(msg).not.toContainText("Restored 3");
+    expect(await folderFiles(page)).toEqual(before);
+    await page.getByRole("button", { name: "OK" }).click();
+    await expect(page.getByRole("navigation", { name: "Sermons" }).getByText(/ST20 sermon/)).toHaveCount(0);
+  });
+
+  test("Restore accepts a single .sermon file; dialogs are native modals that return focus", async ({ page }, testInfo) => {
+    await freshStart(page);
+    await pickFolder(page);
+    await expect(page.getByTestId("restore-input")).toHaveAttribute("accept", /\.sermon(,|$)/);
+    const f = JSON.parse(Object.values(await folderFiles(page))[0]);
+    f.sermon.id = "single-file-1";
+    f.sermon.title = "Single File Sermon";
+    const path = testInfo.outputPath("Single File Sermon.sermon");
+    writeFileSync(path, JSON.stringify(f));
+    await restoreFrom(page, path);
+    const dialog = page.getByRole("dialog", { name: "Restore from backup" });
+    await expect(dialog).toBeVisible();
+    expect(await dialog.evaluate((d) => d.tagName === "DIALOG" && (d as HTMLDialogElement).matches(":modal"))).toBe(true);
+    expect(await dialog.evaluate((d) => d.contains(document.activeElement))).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Document" })).toBeFocused();
+    await restoreFrom(page, path);
+    await page.getByRole("dialog", { name: "Restore from backup" }).getByRole("button", { name: "Restore", exact: true }).click();
+    await page.getByRole("button", { name: "OK" }).click();
+    await expect(page.getByRole("navigation", { name: "Sermons" }).getByRole("button", { name: /^Single File Sermon/ })).toHaveCount(1);
   });
 
   test("two tabs: a newer copy saved elsewhere is never overwritten silently", async ({ page, context }) => {
@@ -315,6 +427,7 @@ test.describe("local-only storage", () => {
     });
     await typeAtEnd(page, "mine A");
     await expect(page.getByRole("alertdialog", { name: "Sermon changed elsewhere" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Keep mine" })).toBeFocused();
     await expect(page.getByTestId("save-status")).not.toHaveText("Saved to Sermons folder");
     expect(Object.values(await folderFiles(page)).join("")).not.toContain("mine A");
     await page.getByRole("button", { name: "Keep mine" }).click();
@@ -364,6 +477,7 @@ test("browser-only fallback when the folder API is absent", async ({ page }, tes
   await expect(page.getByTestId("browser-only-note")).toContainText("kept in this browser");
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByTestId("save-status")).toHaveText("Saved in this browser", { timeout: 20_000 });
+  await expect(page.getByTestId("browser-only-banner")).toContainText("Saved in this browser only. Back up regularly.");
   await typeAtEnd(page, ACCENTED);
   await expect(page.getByTestId("save-status")).toHaveText("Saved in this browser");
   await page.reload();
@@ -403,4 +517,24 @@ test("backup reminder after 7 days: Edit only, dismissible, never in Preach", as
   await page.reload();
   await expect(page.locator(".ProseMirror")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("backup-reminder")).toHaveCount(0);
+});
+
+test("ST2/ST15: browser-only banner warns more strongly when persist() is refused", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "showDirectoryPicker", { value: undefined, configurable: true });
+    const st = navigator.storage as StorageManager & { persist: () => Promise<boolean>; persisted: () => Promise<boolean> };
+    (window as unknown as { __persistCalls: number }).__persistCalls = 0;
+    st.persisted = async () => false;
+    st.persist = async () => {
+      (window as unknown as { __persistCalls: number }).__persistCalls += 1;
+      return false;
+    };
+    localStorage.setItem("sermon-editor-presenter:storage-mode:v1", "browser");
+  });
+  await page.goto("/edit");
+  const banner = page.getByTestId("browser-only-banner");
+  await expect(banner).toContainText("Saved in this browser only. Back up regularly.", { timeout: 20_000 });
+  await expect(banner).toHaveAttribute("data-strong", "true");
+  await expect(banner).toContainText("may clear them");
+  expect(await page.evaluate(() => (window as unknown as { __persistCalls: number }).__persistCalls)).toBeGreaterThan(0);
 });

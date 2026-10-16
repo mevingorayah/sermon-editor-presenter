@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { ConflictChoice, RestorePreview } from "@/lib/localStore/backup";
+import { replaceConfirmText, type ConflictChoice, type RestorePreview } from "@/lib/localStore/backup";
+import { OPEN_ELSEWHERE_TEXT } from "@/lib/localStore/conflict";
+import { browserModeBanner } from "@/lib/localStore/status";
 import styles from "./StoragePanels.module.css";
 
 export function FirstRunScreen({
@@ -64,13 +66,17 @@ export function ConflictPrompt({
   onKeepMine: () => void;
   onLoadTheirs: () => void;
 }) {
+  const keep = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    keep.current?.focus();
+  }, []);
   return (
     <div className={styles.conflict} role="alertdialog" aria-label="Sermon changed elsewhere">
       <span>
         This sermon was changed in another tab or window. Your latest edits haven&apos;t been
         saved yet.
       </span>
-      <button type="button" onClick={onKeepMine}>
+      <button type="button" ref={keep} onClick={onKeepMine}>
         Keep mine
       </button>
       <button type="button" onClick={onLoadTheirs}>
@@ -94,6 +100,32 @@ export function BackupBanner({ onBackup, onDismiss }: { onBackup: () => void; on
   );
 }
 
+export function OpenElsewhereBanner() {
+  return (
+    <div className={styles.conflict} role="alert" data-testid="open-elsewhere">
+      <span>{OPEN_ELSEWHERE_TEXT}. Edit in one tab only, or changes may clash.</span>
+    </div>
+  );
+}
+
+export function BrowserOnlyBanner({ persisted, onBackup }: { persisted: boolean | null; onBackup: () => void }) {
+  const b = browserModeBanner(persisted);
+  return (
+    <div
+      className={b.strong ? `${styles.banner} ${styles.warn}` : styles.banner}
+      role={b.strong ? "alert" : "status"}
+      data-testid="browser-only-banner"
+      data-strong={b.strong ? "true" : "false"}
+    >
+      <span>{b.text}</span>
+      <button type="button" onClick={onBackup}>
+        Back up now
+      </button>
+    </div>
+  );
+}
+
+/** Native modal <dialog>: the browser traps focus; focus returns to the trigger on close. */
 function Dialog({
   label,
   children,
@@ -103,20 +135,42 @@ function Dialog({
   children: React.ReactNode;
   onClose: () => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDialogElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
-    ref.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    const d = ref.current;
+    if (!d) return;
+    const trigger = document.activeElement as HTMLElement | null;
+    if (!d.open) {
+      if (typeof d.showModal === "function") d.showModal();
+      else d.setAttribute("open", "");
+    }
+    const onCancel = (e: Event) => {
+      e.preventDefault();
+      closeRef.current();
+    };
+    d.addEventListener("cancel", onCancel);
+    return () => {
+      d.removeEventListener("cancel", onCancel);
+      if (d.open) d.close?.();
+      const back =
+        trigger && trigger.isConnected && trigger !== document.body
+          ? trigger
+          : document.querySelector<HTMLElement>('[aria-haspopup="menu"]');
+      back?.focus();
+    };
+  }, []);
   return (
-    <div className={styles.backdrop}>
-      <div className={styles.dialog} role="dialog" aria-modal="true" aria-label={label} tabIndex={-1} ref={ref}>
-        {children}
-      </div>
-    </div>
+    <dialog className={styles.dialog} aria-label={label} ref={ref}>
+      {children}
+    </dialog>
   );
+}
+
+/** Per-sermon confirmation before Replace (ST18). Cancel leaves Keep both selected. */
+function confirmReplace(title: string): boolean {
+  return typeof window === "undefined" ? false : window.confirm(replaceConfirmText(title));
 }
 
 const CHANGE_LABEL = {
@@ -167,7 +221,8 @@ export function RestorePreviewDialog({
               · {fmt(i.updatedAt)} · {CHANGE_LABEL[i.change]}
             </span>
             {i.conflict ? (
-              <fieldset className={styles.choice} aria-label={`${i.title}: a different version is already here`}>
+              <fieldset className={styles.choice}>
+                <legend className={styles.legend}>{`${i.title || "Untitled sermon"}: a different version is already here`}</legend>
                 <label>
                   <input
                     type="radio"
@@ -182,7 +237,9 @@ export function RestorePreviewDialog({
                     type="radio"
                     name={`c-${i.id}`}
                     checked={choices[i.id] === "replace"}
-                    onChange={() => onChoice(i.id, "replace")}
+                    onChange={() => {
+                      if (confirmReplace(i.title)) onChoice(i.id, "replace");
+                    }}
                   />{" "}
                   Replace
                 </label>

@@ -103,7 +103,13 @@ export function uniqueFileName(title: string, taken: Iterable<string>): string {
   }
 }
 
-export async function readFolderFile(dir: DirHandleLike, fileName: string): Promise<SermonFile | null> {
+/**
+ * Read one sermon file. `asId` is the library id the caller knows it by: a
+ * conflict copy still holds the original's id on disk until its first save,
+ * so the in-app id is re-applied (otherwise its edits would be routed to the
+ * original's file).
+ */
+export async function readFolderFile(dir: DirHandleLike, fileName: string, asId?: string): Promise<SermonFile | null> {
   let h: FileHandleLike;
   try {
     h = await dir.getFileHandle(fileName);
@@ -115,7 +121,8 @@ export async function readFolderFile(dir: DirHandleLike, fileName: string): Prom
     }
     throw err;
   }
-  return parseSermonFile(await readText(h));
+  const f = parseSermonFile(await readText(h));
+  return asId && f.sermon.id !== asId ? { ...f, sermon: { ...f.sermon, id: asId } } : f;
 }
 
 /** Throws NotFoundError when the folder was moved or deleted. */
@@ -179,4 +186,106 @@ export async function removeSermonFile(dir: DirHandleLike, fileName: string): Pr
   } catch (err) {
     if ((err as { name?: string })?.name !== "NotFoundError") throw err;
   }
+}
+
+export class RestoreWriteError extends Error {
+  constructor(public fileName: string, public title: string, public cause: unknown) {
+    super(`Couldn't save "${title}": ${cause instanceof Error ? cause.message : String(cause)}`);
+    this.name = "RestoreWriteError";
+  }
+}
+
+async function writeText(dir: DirHandleLike, name: string, text: string): Promise<void> {
+  const h = await dir.getFileHandle(name, { create: true });
+  const w = await h.createWritable();
+  try {
+    await w.write(text);
+    await w.close();
+  } catch (err) {
+    try {
+      await w.abort?.(err);
+    } catch {
+      /* already failed */
+    }
+    throw err;
+  }
+}
+
+async function readOrNull(dir: DirHandleLike, name: string): Promise<string | null> {
+  try {
+    return await readText(await dir.getFileHandle(name));
+  } catch (err) {
+    if ((err as { name?: string })?.name === "NotFoundError") return null;
+    throw err;
+  }
+}
+
+async function renameTemp(dir: DirHandleLike, tmp: string, finalName: string, text: string): Promise<void> {
+  const h = await dir.getFileHandle(tmp);
+  if (typeof h.move === "function") {
+    // move() refuses to replace on some builds: clear the target first.
+    await removeSermonFile(dir, finalName);
+    await h.move(finalName);
+    return;
+  }
+  await writeText(dir, finalName, text);
+  await removeSermonFile(dir, tmp);
+}
+
+/**
+ * All-or-nothing multi-file write (Restore). Every sermon is first written to
+ * a temp file (not ending in .sermon, so it is never listed); only when every
+ * temp write succeeded are they renamed into place. Any failure removes the
+ * temps and puts back any file already replaced, then throws
+ * RestoreWriteError naming the sermon. Returns savedAt per file name.
+ */
+export async function writeSermonFilesAtomically(
+  dir: DirHandleLike,
+  items: { fileName: string; doc: SermonDocument }[],
+  now: Date = new Date(),
+): Promise<Record<string, string>> {
+  const savedAt = now.toISOString();
+  const tag = Math.random().toString(36).slice(2, 8);
+  const staged: { tmp: string; fileName: string; text: string; title: string }[] = [];
+  const cleanup = async () => {
+    for (const s of staged) {
+      try {
+        await removeSermonFile(dir, s.tmp);
+      } catch {
+        /* best effort */
+      }
+    }
+  };
+  for (const [i, it] of items.entries()) {
+    const tmp = `.${it.fileName}.${tag}-${i}.tmp`;
+    const text = serializeSermonFile(it.doc, now);
+    try {
+      await writeText(dir, tmp, text);
+      staged.push({ tmp, fileName: it.fileName, text, title: it.doc.title || "Untitled sermon" });
+    } catch (err) {
+      staged.push({ tmp, fileName: it.fileName, text, title: it.doc.title });
+      await cleanup();
+      throw new RestoreWriteError(it.fileName, it.doc.title || "Untitled sermon", err);
+    }
+  }
+  const done: { fileName: string; previous: string | null }[] = [];
+  for (const s of staged) {
+    try {
+      const previous = await readOrNull(dir, s.fileName);
+      await renameTemp(dir, s.tmp, s.fileName, s.text);
+      done.push({ fileName: s.fileName, previous });
+    } catch (err) {
+      for (const d of done.reverse()) {
+        try {
+          if (d.previous === null) await removeSermonFile(dir, d.fileName);
+          else await writeText(dir, d.fileName, d.previous);
+        } catch {
+          /* best effort */
+        }
+      }
+      await cleanup();
+      throw new RestoreWriteError(s.fileName, s.title, err);
+    }
+  }
+  return Object.fromEntries(items.map((it) => [it.fileName, savedAt]));
 }
