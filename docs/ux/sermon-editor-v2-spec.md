@@ -720,7 +720,7 @@ User marks (colour, highlight, font) still work inside these blocks. Quote, Inte
 #### OPEN note for Backend (Oct 2026 decisions; UI UX doesn't edit §5)
 
 > **RESOLVED in §5 (Backend, see 5.1–5.4).** Original note:
-> - **Prayer prompts removed entirely:** drop `prayerPrompts` from the schema and the optional prayer page from the export contract (§5.3) and the export table.
+> - ~~**Prayer prompts removed entirely:** drop `prayerPrompts` from the schema and the optional prayer page from the export contract.~~ **Resolved in `502fc63`:** prayer prompts are gone from the UI and the export contract; old files keep the `prayerPrompts` field untouched (see §5.2).
 > - **Deferred:** blocks with drag handles, sections/columns/images and boards (§4.10, §4.16c, §4.16d). Decide whether `blockId`, `section`/`column`/`image` and `board` stay in the schema or move out, and mark their §5.4 rows deferred. The §5 note that images arrive in "Step A3" is out of date (images and the `.zip` backup are deferred).
 > - **Page sizes:** add `"tablet-landscape"` (16:10 landscape) to the page `size` values; default `"a4"`.
 > - **Bibles:** KJV out. Bundle LSG 1910 and the eBible.org updated World English Bible (Strong's-tagged, unmodified) in `data/sources/lsg1910/` and `data/sources/web/` with NOTICE.md. Scripture blocks need the translation in the citation (e.g. a `translation` attr) so pasted ESV/NIV/NASB1995/Segond 21/Semeur text keeps it.

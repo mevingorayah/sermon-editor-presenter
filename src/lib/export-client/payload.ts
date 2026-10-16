@@ -5,8 +5,9 @@ import type {
 } from "@/types/document";
 import { sanitizeFilenameStem } from "@/lib/sermon/export/filename";
 import {
-  EDIT_ACCENT_HEX,
   flattenContentColors,
+  resolveEditAccentHex,
+  toHex,
   type CssVarResolver,
 } from "./flattenColors";
 
@@ -50,6 +51,7 @@ export interface BuildExportPayloadInput {
   includeNotes: boolean;
   notes: string;
   resolveVar?: CssVarResolver;
+  /** Explicit accent override (normalized to hex; ignored if not a color). */
   accentHex?: string;
 }
 
@@ -73,7 +75,10 @@ export function buildExportPayload(input: BuildExportPayloadInput): ExportPayloa
     format: input.format,
     filenameStem: input.filenameStem,
     includeNotes: withNotes,
-    resolvedColors: { accent: input.accentHex ?? EDIT_ACCENT_HEX },
+    // Read --edit-accent at export time; always hex (fallback #5c4a1f).
+    resolvedColors: {
+      accent: toHex(input.accentHex) ?? resolveEditAccentHex(input.resolveVar),
+    },
   };
   if (withNotes) payload.notes = input.notes;
   return payload;

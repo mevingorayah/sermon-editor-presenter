@@ -242,6 +242,43 @@ describe("sanitizeFilenameStem", () => {
     assert.equal(sanitizeFilenameStem(""), "sermon-export");
     assert.equal(sanitizeFilenameStem("   "), "sermon-export");
     assert.equal(sanitizeFilenameStem(undefined), "sermon-export");
+    assert.equal(sanitizeFilenameStem("...---___"), "sermon-export");
+    assert.equal(sanitizeFilenameStem(".pdf"), "sermon-export");
+  });
+
+  it("transliterates Kreol / French accents instead of dropping letters", () => {
+    assert.equal(sanitizeFilenameStem("Ésaïe 40"), "Esaie-40");
+    assert.equal(sanitizeFilenameStem("Leçon façile"), "Lecon-facile");
+    assert.equal(sanitizeFilenameStem("Cœur brisé"), "Coeur-brise");
+    assert.equal(sanitizeFilenameStem("Bondie ek nou lavi"), "Bondie-ek-nou-lavi");
+  });
+
+  it("removes apostrophes and quotes without adding a dash", () => {
+    assert.equal(sanitizeFilenameStem("l'Évangile"), "lEvangile");
+    assert.equal(sanitizeFilenameStem("L’amour de Dieu"), "Lamour-de-Dieu");
+    assert.equal(sanitizeFilenameStem("«Le Berger»"), "Le-Berger");
+  });
+
+  it("turns other runs into one dash and trims - . _ at the ends", () => {
+    assert.equal(sanitizeFilenameStem("Philippians 4:4–7"), "Philippians-4-4-7");
+    assert.equal(sanitizeFilenameStem("Joy - Part 2"), "Joy-Part-2");
+    assert.equal(sanitizeFilenameStem("_.draft.-"), "draft");
+  });
+
+  it("drops one trailing export extension, any case", () => {
+    assert.equal(sanitizeFilenameStem("notes.pdf"), "notes");
+    assert.equal(sanitizeFilenameStem("Sermon.DOCX"), "Sermon");
+    assert.equal(sanitizeFilenameStem("slides.pptx.pptx"), "slides.pptx");
+    assert.equal(sanitizeFilenameStem("v1.2"), "v1.2");
+  });
+
+  it("caps at 80 chars, cutting at the last dash", () => {
+    const long = Array.from({ length: 20 }, (_, i) => `word${i}`).join(" ");
+    const out = sanitizeFilenameStem(long);
+    assert.ok(out.length <= 80);
+    assert.match(out, /^word0-word1-.*word\d+$/);
+    assert.equal(out.endsWith("-"), false);
+    assert.equal(sanitizeFilenameStem("a".repeat(120)), "a".repeat(80));
   });
 });
 

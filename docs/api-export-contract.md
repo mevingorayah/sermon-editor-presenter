@@ -74,7 +74,7 @@ Accepted on the same POST alongside the snapshot:
 | Field | Rules |
 |-------|--------|
 | `format` | `docx` \| `pdf` \| `png` \| `pptx`. Invalid → **400**. |
-| `filenameStem` | Sanitized to `[A-Za-z0-9._-]`; empty/whitespace → `sermon-export`. Used in `Content-Disposition`. When omitted, Backend derives from Title block / `"sermon-export"`. |
+| `filenameStem` | Sanitized by the shared `sanitizeFilenameStem` (slice 2 Q2): accents transliterated (`Ésaïe 40` → `Esaie-40`), apostrophes/quotes removed (`l'Évangile` → `lEvangile`), other runs → one `-`, `-._` trimmed from ends, one trailing `.docx/.pdf/.png/.pptx` removed, max 80 chars cut at the last `-`; empty → `sermon-export`. Frontend imports the same function for its "Will save as" preview. Used in `Content-Disposition`. When omitted, Backend derives from Title block / `"sermon-export"`. |
 | `includeNotes` | Default **false**. When **true**, appends a final **Study Notes** section in **DOCX/PDF only**. Ignored for **png** / **pptx**. Requires `notes` string from Frontend; empty/missing notes → no section added. |
 | `notes` | Free-form study notes (not part of `CalibratedSnapshot`). |
 | `resolvedColors.accent` | Concrete accent for Title / chrome (PNG accent bar, PPTX accents, DOCX/PDF title default). Same strict color rule. The canonical light accent is the Edit accent `#5c4a1f`; when omitted, PNG/PPTX fall back to `#5C4A1F` (light) or `#C4A35A` (dark screen targets). |

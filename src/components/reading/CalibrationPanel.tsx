@@ -25,6 +25,7 @@ import {
   sanitizeFilenameStem,
 } from "@/lib/export-client/payload";
 import { browserCssVarResolver } from "@/lib/export-client/flattenColors";
+import { formatExportError } from "@/lib/export-client/exportError";
 import type {
   CalibrationTarget,
   ExportFormat,
@@ -133,10 +134,11 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
       );
       const blob = await res.blob();
       if (!res.ok) {
+        const text = await blob.text().catch(() => "");
         let message = res.statusText;
         let code: string | undefined;
         try {
-          const data = JSON.parse(await blob.text()) as {
+          const data = JSON.parse(text) as {
             message?: string;
             error?: string;
             code?: string;
@@ -144,12 +146,13 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
           message = data.message ?? data.error ?? message;
           code = data.code;
         } catch {
-          // Keep the HTTP status when the error response is not JSON.
+          // Not JSON — formatExportError falls back to a generic message.
         }
         setExportStatus(
           res.status === 501 || code === "NOT_IMPLEMENTED"
             ? `${upper} export isn’t available yet (${message}).`
-            : `HTTP ${res.status}: ${message}`,
+            : // 400 → name the failing field(s) from Backend's zod issues.
+              formatExportError(res.status, text, res.statusText),
         );
         return;
       }
@@ -339,6 +342,7 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
             <ReadingView
               content={content}
               bionic={false}
+              theme={theme}
               flattenGradient
             />
           </div>
