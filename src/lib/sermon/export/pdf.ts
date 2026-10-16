@@ -8,6 +8,7 @@ import {
   type StyledBlock,
   type StyledRun,
   type TextAlign,
+  citationCaps,
 } from "./contentWalk";
 import { pdfkitFont, type FontFamilyId } from "./fonts";
 import { resolveMargins } from "./margins";
@@ -168,7 +169,7 @@ function writeBlock(
           .font("Times-Roman")
           .fontSize(fontSize(step, "caption"))
           .fillColor("#555555")
-          .text(block.citation, { align: "right" });
+          .text(citationCaps(block.citation), { align: "right" });
       }
       doc.moveDown(0.6);
       break;

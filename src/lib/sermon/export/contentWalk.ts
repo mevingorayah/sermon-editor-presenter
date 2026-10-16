@@ -10,6 +10,8 @@ export interface StyledRun {
   bold?: boolean;
   italic?: boolean;
   highlight?: boolean;
+  underline?: boolean;
+  strike?: boolean;
   color?: string; // #RRGGBB
   fontFamily: FontFamilyId;
 }
@@ -37,6 +39,8 @@ function runsFromNode(node: JSONContent): StyledRun[] {
       let bold = inherited.bold;
       let italic = inherited.italic;
       let highlight = inherited.highlight;
+      let underline = inherited.underline;
+      let strike = inherited.strike;
       let color = inherited.color;
       let fontFamily = inherited.fontFamily ?? ("sans" as FontFamilyId);
 
@@ -44,6 +48,8 @@ function runsFromNode(node: JSONContent): StyledRun[] {
         if (mark.type === "bold") bold = true;
         if (mark.type === "italic") italic = true;
         if (mark.type === "highlight") highlight = true;
+        if (mark.type === "underline") underline = true;
+        if (mark.type === "strike") strike = true;
         if (mark.type === "textStyle") {
           const attrs = mark.attrs ?? {};
           if (typeof attrs.color === "string") {
@@ -60,6 +66,8 @@ function runsFromNode(node: JSONContent): StyledRun[] {
         bold,
         italic,
         highlight,
+        underline,
+        strike,
         color,
         fontFamily,
       });
@@ -191,4 +199,9 @@ export function withNotesSection(
       runs: [{ text, fontFamily: "sans" }],
     },
   ];
+}
+
+/** Scripture citations print in capitals in every export, matching Preach (#5). */
+export function citationCaps(citation: string): string {
+  return citation.toLocaleUpperCase("fr");
 }

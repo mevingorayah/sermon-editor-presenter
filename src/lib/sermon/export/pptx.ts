@@ -11,6 +11,7 @@ import {
   titleTextFromSnapshot,
   type StyledBlock,
   type StyledRun,
+  citationCaps,
 } from "./contentWalk";
 import { docxFontName } from "./fonts";
 import { isPaperTarget } from "./margins";
@@ -73,6 +74,8 @@ function runsToPptxText(
       fontFace: docxFontName(run.fontFamily),
       bold: opts.bold || run.bold,
       italic: opts.forceItalic || run.italic,
+      underline: run.underline ? { style: "sng" } : undefined,
+      strike: run.strike ? "sngStrike" : undefined,
       color: (run.color || opts.defaultColor).replace(/^#/, ""),
       highlight: run.highlight
         ? HIGHLIGHT_AMBER.replace(/^#/, "")
@@ -215,7 +218,7 @@ export async function buildPptx(
         );
         y += 0.7;
         if (block.citation) {
-          slide.addText(block.citation, {
+          slide.addText(citationCaps(block.citation), {
             x: 0.6,
             y,
             w: 12,

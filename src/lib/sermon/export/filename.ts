@@ -65,9 +65,20 @@ export function sanitizeFilenameStem(raw: string | undefined | null): string {
   return s || FILENAME_STEM_FALLBACK;
 }
 
+/**
+ * Append the extension to a stem. A stem that is already clean (as the
+ * export route passes it) is used as-is, so a second extension is never
+ * stripped: "a.pdf.docx" -> stem "a.pdf" -> "a.pdf.docx", not "a.docx".
+ */
 export function filenameWithExt(
   stem: string | undefined | null,
   ext: string,
 ): string {
-  return `${sanitizeFilenameStem(stem)}.${ext}`;
+  const s = stem ?? "";
+  const clean =
+    s.length > 0 &&
+    s.length <= FILENAME_STEM_MAX &&
+    /^[A-Za-z0-9._-]+$/.test(s) &&
+    trimEnds(s) === s;
+  return `${clean ? s : sanitizeFilenameStem(s)}.${ext}`;
 }
