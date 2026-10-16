@@ -841,7 +841,7 @@ Every format keeps Kreol and French accents exactly, in the text and in the file
 
 ## 6. Phased plan
 
-Order set by Mevin (Oct 2026). The **first release** (current batch, file format #14, local save with Back up and Restore #15-ish, `/api/sermons` removal; §4.15 ST criteria) ships before Step A1. Steps A1–A6 then run in this order; later phases keep their old order after A6.
+Order set by Mevin (Oct 2026). The **first release** (current batch, file format #14, Frontend's local save with Back up and Restore, `/api/sermons` removal; §4.15 ST criteria) ships before Step A1. Steps A1–A6 then run in this order; later phases keep their old order after A6.
 
 | Step / phase | Scope | Frontend | Backend | QA |
 |---|---|---|---|---|
