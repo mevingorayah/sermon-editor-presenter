@@ -28,17 +28,24 @@ function firstColor(d: JSONContent): unknown {
   return d.content?.[0].content?.[0].marks?.[0].attrs?.color;
 }
 
-test("var(--edit-accent) maps to #5c4a1f without consulting the resolver", () => {
-  let called = false;
+test("var(--edit-accent) resolves from the live token, falling back to #5c4a1f", () => {
+  const seen: string[] = [];
   const out = flattenContentColors(doc(colored("var(--edit-accent)")), {
-    resolveVar: () => {
-      called = true;
-      return "#ffffff";
+    resolveVar: (name) => {
+      seen.push(name);
+      return "#FFFFFF";
     },
   });
-  assert.equal(firstColor(out), EDIT_ACCENT_HEX);
+  assert.equal(firstColor(out), "#ffffff");
+  assert.deepEqual(seen, ["--edit-accent"]);
+
+  const missing = flattenContentColors(doc(colored("var(--edit-accent)")), {
+    resolveVar: () => null,
+  });
+  assert.equal(firstColor(missing), EDIT_ACCENT_HEX);
   assert.equal(EDIT_ACCENT_HEX, "#5c4a1f");
-  assert.equal(called, false);
+  // No resolver (SSR / tests) → fallback too.
+  assert.equal(firstColor(flattenContentColors(doc(colored("var(--edit-accent)")))), "#5c4a1f");
 });
 
 test("other vars resolve via the runtime resolver and normalize to hex", () => {
@@ -117,11 +124,12 @@ test("walks nested nodes, mark.color, node attrs.color; input never mutated", ()
 
   assert.equal(JSON.stringify(input), snapshot, "input must not be mutated");
   assert.notEqual(out, input);
-  assert.equal(out.content![0].content![0].marks![0].attrs!.color, EDIT_ACCENT_HEX);
-  assert.equal(out.content![1].content![0].marks![0].attrs!.color, EDIT_ACCENT_HEX);
+  // --edit-accent is read from the (runtime) resolver like any other token.
+  assert.equal(out.content![0].content![0].marks![0].attrs!.color, "#010203");
+  assert.equal(out.content![1].content![0].marks![0].attrs!.color, "#010203");
   assert.equal((out.content![1].content![1].marks![0] as { color?: string }).color, "#010203");
   assert.equal(out.content![1].attrs!.citation, "Phil 4:4");
-  assert.equal(out.content![2].attrs!.color, EDIT_ACCENT_HEX);
+  assert.equal(out.content![2].attrs!.color, "#010203");
   // Backend's validator finds nothing left to reject.
   assert.deepEqual(findCssVarColorMarks(out), []);
   assert.ok(findCssVarColorMarks(input).length >= 3);
