@@ -1,4 +1,12 @@
-import { SERMON_BACKUP_EXTENSION, type SermonBackupFile } from "@/lib/sermon-file";
+import {
+  parseBackupFile,
+  parseSermonFile,
+  SERMON_BACKUP_EXTENSION,
+  SERMON_BACKUP_KIND,
+  SERMON_FILE_SCHEMA_VERSION,
+  SermonFileError,
+  type SermonBackupFile,
+} from "@/lib/sermon-file";
 import type { SermonDocument } from "@/types/document";
 
 export function backupFileName(now: Date = new Date()): string {
@@ -113,4 +121,33 @@ export function shouldShowBackupReminder(opts: {
     .filter((n) => !Number.isNaN(n));
   if (times.length === 0) return false;
   return opts.now - Math.max(...times) >= BACKUP_REMINDER_MS;
+}
+
+/**
+ * Restore accepts a backup or a single .sermon file. A single sermon file is
+ * treated as a one-sermon backup; anything else keeps the backup error.
+ */
+export function parseRestoreFile(text: string): SermonBackupFile {
+  try {
+    return parseBackupFile(text);
+  } catch (err) {
+    if (!(err instanceof SermonFileError) || err.code !== "WRONG_KIND") throw err;
+    let single;
+    try {
+      single = parseSermonFile(text);
+    } catch {
+      throw err;
+    }
+    return {
+      kind: SERMON_BACKUP_KIND,
+      schemaVersion: SERMON_FILE_SCHEMA_VERSION,
+      savedAt: single.savedAt,
+      sermons: [single.sermon],
+    };
+  }
+}
+
+/** ST18: per-sermon confirmation before Replace. */
+export function replaceConfirmText(title: string): string {
+  return `Replace your copy of ${title || "Untitled sermon"}? Your current version will be lost.`;
 }

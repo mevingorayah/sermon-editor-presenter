@@ -7,7 +7,6 @@ import { extractTitleFromContent, loadDocument } from "@/lib/documentStore";
 import { extractOutline } from "@/lib/outline";
 import { createSeedDocument } from "@/lib/seed";
 import {
-  parseBackupFile,
   serializeBackupFile,
   SermonFileError,
   type SermonBackupFile,
@@ -32,13 +31,15 @@ import {
 } from "@/lib/localStore/browserCache";
 import {
   isConflictCopyId,
+  RestoreWriteError,
+  writeSermonFilesAtomically,
   readFolderFile,
   removeSermonFile,
   uniqueFileName,
   writeSermonFile,
 } from "@/lib/localStore/folder";
 import { syncFolderAndCache } from "@/lib/localStore/sync";
-import { decideWrite, isStaleFor, SYNC_CHANNEL, type SyncMessage } from "@/lib/localStore/conflict";
+import { decideWrite, isStaleFor, presenceAction, SYNC_CHANNEL, type SyncMessage } from "@/lib/localStore/conflict";
 import {
   ACTION_LABELS,
   isSaved,
@@ -58,6 +59,7 @@ import {
   shouldShowBackupReminder,
   type ConflictChoice,
   type RestorePreview,
+  parseRestoreFile,
 } from "@/lib/localStore/backup";
 import type { SermonDocument } from "@/types/document";
 import { DEFAULT_PRESENTATION_SETTINGS } from "@/types/document";
@@ -68,7 +70,9 @@ import { NotesPanel } from "./NotesPanel";
 import { SermonList } from "./SermonList";
 import {
   BackupBanner,
+  BrowserOnlyBanner,
   ConflictPrompt,
+  OpenElsewhereBanner,
   FirstRunScreen,
   MessageDialog,
   RestorePreviewDialog,
@@ -131,6 +135,8 @@ export function EditShell() {
   const [restoreChoices, setRestoreChoices] = useState<Record<string, ConflictChoice>>({});
   const [showReminder, setShowReminder] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [openElsewhere, setOpenElsewhere] = useState(false);
+  const [persisted, setPersisted] = useState<boolean | null>(null);
 
   const docRef = useRef<SermonDocument | null>(null);
   const dirRef = useRef<DirHandleLike | null>(null);
@@ -156,6 +162,13 @@ export function EditShell() {
   }, []);
 
   const showDoc = useCallback((d: SermonDocument, savedAt: string | null) => {
+    const prevId = docRef.current?.id;
+    if (prevId !== d.id) {
+      if (prevId) channel.current?.postMessage({ type: "closed", id: prevId, tabId: tabId.current } satisfies SyncMessage);
+      setOpenElsewhere(false);
+    }
+    // Presence ping on open (ST9): a tab with the same sermon open warns and answers.
+    channel.current?.postMessage({ type: "opened", id: d.id, tabId: tabId.current } satisfies SyncMessage);
     docRef.current = d;
     loadedSavedAt.current = savedAt;
     savedSeq.current = editSeq.current;
@@ -492,7 +505,7 @@ export function EditShell() {
     const lib = readLibrary();
     const entry = lib[id];
     if (folderReadyRef.current && dirRef.current && entry?.fileName) {
-      const f = await readFolderFile(dirRef.current, entry.fileName);
+      const f = await readFolderFile(dirRef.current, entry.fileName, id);
       if (f) return { doc: f.sermon, savedAt: f.savedAt };
     }
     return entry ? { doc: entry.doc, savedAt: entry.savedAt } : null;
@@ -506,6 +519,13 @@ export function EditShell() {
     ch.onmessage = async (e: MessageEvent<SyncMessage>) => {
       const msg = e.data;
       if (msg.tabId === tabId.current) return;
+      const presence = presenceAction(msg, tabId.current, docRef.current?.id ?? null);
+      if (presence === "warn" || presence === "warn-and-reply") setOpenElsewhere(true);
+      if (presence === "clear") setOpenElsewhere(false);
+      if (presence === "warn-and-reply") {
+        ch.postMessage({ type: "here", id: msg.id, tabId: tabId.current } satisfies SyncMessage);
+      }
+      if (msg.type === "opened" || msg.type === "here" || msg.type === "closed") return;
       setLibrary(readLibrary());
       const d = docRef.current;
       if (!d || !isStaleFor(msg, tabId.current, d.id, loadedSavedAt.current)) return;
@@ -525,11 +545,36 @@ export function EditShell() {
         /* folder unreachable: the next write reports it */
       }
     };
+    if (docRef.current) ch.postMessage({ type: "opened", id: docRef.current.id, tabId: tabId.current } satisfies SyncMessage);
+    const onHide = () => {
+      if (docRef.current) ch.postMessage({ type: "closed", id: docRef.current.id, tabId: tabId.current } satisfies SyncMessage);
+    };
+    window.addEventListener("pagehide", onHide);
     return () => {
+      window.removeEventListener("pagehide", onHide);
       ch.close();
       channel.current = null;
     };
   }, [apply, readLatest, showDoc]);
+
+  // Ask the browser to keep local data (ST2/ST15). Refusal strengthens the browser-only banner.
+  useEffect(() => {
+    const st = typeof navigator !== "undefined" ? navigator.storage : undefined;
+    if (!st?.persist) return;
+    let live = true;
+    void (async () => {
+      try {
+        const already = st.persisted ? await st.persisted() : false;
+        const ok = already || (await st.persist());
+        if (live) setPersisted(ok);
+      } catch {
+        if (live) setPersisted(false);
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const keepMine = useCallback(() => {
     conflictRef.current = false;
@@ -721,7 +766,7 @@ export function EditShell() {
     async (file: File) => {
       restoreOpenDirty.current = hasUnsavedEdits() || !!timer.current || conflictRef.current;
       try {
-        const backup = parseBackupFile(await file.text());
+        const backup = parseRestoreFile(await file.text());
         const preview = previewRestore(await allSermons(), backup);
         setRestoreChoices({});
         setRestore({ backup, preview });
@@ -753,17 +798,19 @@ export function EditShell() {
       }
       const lib = readLibrary();
       const names = new Set(Object.values(lib).map((e) => e.fileName).filter((n): n is string => !!n));
-      for (const d of writes) {
-        if (folderReadyRef.current && dirRef.current) {
+      // All-or-nothing (ST20/ST11): temp files first, renamed only when every write succeeded.
+      if (folderReadyRef.current && dirRef.current) {
+        const items = writes.map((d) => {
           const fileName = lib[d.id]?.fileName ?? uniqueFileName(d.title, names);
           names.add(fileName);
-          const r = await writeSermonFile(dirRef.current, fileName, d, { loadedSavedAt: null, force: true });
-          if (r.status === "ok") lib[d.id] = { doc: d, savedAt: r.savedAt, fileName };
-        } else {
-          lib[d.id] = { doc: d, savedAt: new Date().toISOString(), dirty: true };
-        }
+          return { fileName, doc: d };
+        });
+        const saved = await writeSermonFilesAtomically(dirRef.current, items);
+        for (const it of items) lib[it.doc.id] = { doc: it.doc, savedAt: saved[it.fileName], fileName: it.fileName };
+      } else {
+        for (const d of writes) lib[d.id] = { doc: d, savedAt: new Date().toISOString(), dirty: true };
       }
-      writeLibrary(lib);
+      writeLibrary(lib); // one setItem: all or nothing in browser mode
       setLibrary(lib);
       broadcast({ type: "restored" });
       if (open && plan.replaced.includes(open.id)) {
@@ -777,8 +824,11 @@ export function EditShell() {
     } catch (err) {
       setMessage({
         title: "Restore",
-        message: "The restore couldn't finish. Nothing you had was deleted; try again.",
-        details: [err instanceof Error ? err.message : String(err)],
+        message:
+          err instanceof RestoreWriteError
+            ? `Nothing was restored. ${err.message} Your sermons are unchanged; try again.`
+            : "Nothing was restored. The restore couldn't finish; your sermons are unchanged, try again.",
+        details: [err instanceof RestoreWriteError ? String((err.cause as Error)?.message ?? err.cause) : err instanceof Error ? err.message : String(err)],
       });
     } finally {
       setBusy(false);
@@ -894,7 +944,7 @@ export function EditShell() {
             <input
               ref={fileInput}
               type="file"
-              accept=".sermon-backup,.json,application/json"
+              accept=".sermon-backup,.sermon,.json,application/json"
               hidden
               data-testid="restore-input"
               onChange={(e) => {
@@ -918,6 +968,8 @@ export function EditShell() {
       </header>
 
       {conflict ? <ConflictPrompt onKeepMine={keepMine} onLoadTheirs={loadTheirs} /> : null}
+      {openElsewhere ? <OpenElsewhereBanner /> : null}
+      {mode === "browser" ? <BrowserOnlyBanner persisted={persisted} onBackup={() => void onBackup()} /> : null}
       {showReminder ? (
         <BackupBanner
           onBackup={() => void onBackup()}

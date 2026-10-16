@@ -20,7 +20,8 @@ export function decideWrite(
 export const SYNC_CHANNEL = "sermon-editor-presenter:sync:v1";
 
 export interface SyncMessage {
-  type: "saved" | "deleted" | "restored";
+  /** opened/here/closed: presence pings so a second tab is warned on open (ST9). */
+  type: "saved" | "deleted" | "restored" | "opened" | "here" | "closed";
   id?: string;
   savedAt?: string;
   tabId: string;
@@ -34,8 +35,28 @@ export function isStaleFor(
   loadedSavedAt: string | null,
 ): boolean {
   if (msg.tabId === myTabId) return false;
+  if (msg.type === "opened" || msg.type === "here" || msg.type === "closed") return false;
   if (msg.type === "restored") return true;
   if (!openId || msg.id !== openId) return false;
   if (msg.type === "deleted") return true;
   return decideWrite(loadedSavedAt, msg.savedAt) === "conflict";
+}
+
+export const OPEN_ELSEWHERE_TEXT = "This sermon is open in another tab";
+
+/**
+ * Presence on open: a tab that opens a sermon says "opened"; a tab that has
+ * the same sermon open warns and answers "here", so both tabs warn at once,
+ * before anyone saves.
+ */
+export function presenceAction(
+  msg: SyncMessage,
+  myTabId: string,
+  openId: string | null,
+): "warn-and-reply" | "warn" | "clear" | null {
+  if (msg.tabId === myTabId || !openId || msg.id !== openId) return null;
+  if (msg.type === "opened") return "warn-and-reply";
+  if (msg.type === "here") return "warn";
+  if (msg.type === "closed" || msg.type === "deleted") return "clear";
+  return null;
 }
