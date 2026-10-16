@@ -19,7 +19,10 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=8080
 ENV HOSTNAME=0.0.0.0
 ENV SERMON_DATA_DIR=/app/data/sermons
+# Runtime only needs node; drop the bundled npm/yarn/corepack CLIs (Trivy HIGHs live there).
 RUN useradd --system --uid 1001 nextjs \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-* \
+    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg \
   && mkdir -p /app/data/sermons \
   && chown -R nextjs:nextjs /app/data
 COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
