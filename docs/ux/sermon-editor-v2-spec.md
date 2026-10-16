@@ -531,11 +531,11 @@ image { id, src: "assets/<sha256>.webp" | "data:…", alt, caption?, widthPct }
 
 **h. Scripture insert by reference.**
 - In the Scripture block or the subtitle, type a reference (`Philippiens 4:4-7`, `Phil 4.4–7`, `John 3:16`), then click "Insert". The verses arrive with the citation set (`Philippiens 4:4-7 LSG`).
-- Translations in Step A4: **Louis Segond 1910 (public domain)** and **KJV (public domain, UK Crown patent noted)**. Bundled as local JSON (about 4–5 MB each, lazy-loaded and cached for offline), so no API or server is needed.
+- Translations in Step A4: **Louis Segond 1910 (public domain)** and **KJV (public domain, UK Crown patent noted)**. Bundled with the app as local JSON (about 4–5 MB each, loaded from the app's own files when first needed), so they work offline from the first launch, with no API, server or online visit.
 - The parser accepts French and English book names and abbreviations.
 - Licensed translations (ESV, NIV, BDS, Segond 21) come later and need licences.
 - AC: `Phil 4:4-7` LSG inserts 4 verses offline with the correct citation.
-- AC (P-7): after a cold start offline, Scripture insert works because LSG/KJV were cached on the first online visit.
+- AC (P-7): with a fresh install and the network blocked from the very first launch (no online visit ever), `Phil 4:4-7` inserts from LSG 1910 and `John 3:16` from KJV, with the correct citations.
 
 **i. Document language.**
 - `en` / `fr` / `mfe` (Kreol Morisien) in Document ⚙ and the status bar. It sets the `lang` attribute on the editor and Preach.
@@ -701,11 +701,18 @@ User marks (colour, highlight, font) still work inside these blocks. Quote, Inte
 - DF5. The marker matches between Edit and Preach under A1 (dotted underline colour follows the dark rule; no change to the word's colour, weight or highlight beyond Bionic).
 - DF6. Removing the definition removes the mark and the list entry; deleting the word removes both, with Undo restoring both.
 - DF7. Hebrew entries show right-to-left script correctly inside the left-to-right popover (`dir="rtl"` on the original word).
-- DF8. **Credits:** the About screen shows the STEPBible credit line ("Greek and Hebrew lexicon data from STEPBible.org, Tyndale House, Cambridge, CC BY 4.0"). If any Open Scriptures Strong's data is shipped, a second credit line names it with CC BY-SA. A build check fails if lexicon data from either source is bundled without its credit line.
-- DF9. Copy/paste, cut/paste, duplicate, and cut then Undo of a defined word never leave two words sharing one definition `id` and never leave an orphaned definition. A paste creates a new `id` with a copy of the entry; definitions no word points to are pruned on save (§5.2). Checked by reading the file after each action.
+- DF8. **Credits:** the About screen shows the STEPBible credit line ("Greek and Hebrew lexicon data from STEPBible.org, Tyndale House, Cambridge, CC BY 4.0"). If any Open Scriptures Strong's data is shipped, a second credit line names it with CC BY-SA. A build check fails if lexicon data from either source is bundled without its credit line. **Ownership:** DevOps owns this CI check. Bundled source data and its licence notes live in one folder owned by Backend, `data/sources/<name>/NOTICE.md` (one subfolder per source, e.g. `stepbible`, `openscriptures-strongs`, `lsg1910`, `kjv`), and the About screen credits are built from those notes.
+- DF9. Copy/paste, cut/paste, duplicate, and cut then Undo of a defined word never leave two words sharing one definition `id` and never leave an orphaned definition: a paste creates a new `id` with a copy of the entry. **A file in which two words share one definition id is never refused.** On open, the file check repairs it by giving each word its own copy of the meaning with a new `id`; the file then opens, the repair is logged, and a short non-blocking note ("This sermon was repaired: …") lists the fixes, taken from the list of repairs the file check returns. Definitions no word points to are still pruned on save (§5.2). Checked by reading the file after each action and by opening a fixture with a shared id.
 - DF10. Phasing: **Define-1** (typed meaning) ships first and must pass DF2, DF3, DF5, DF6, DF9. **Define-2** (lexicon lookup) follows and must pass DF1, DF4, DF7, DF8 as well.
 - DF11. Shortcut check: the chosen Define shortcut does nothing else in Chrome, Edge and Firefox on Windows and macOS, and on French AZERTY. If any clash is found, no chord ships.
 - UP1. **File upgrade.** Opening an older file (`v1-flat.json` and a current-release `.sermon`) gives every block a unique `blockId` and an empty `definitions` list, with every other field, mark and character unchanged (canonical JSON compare after removing the new fields). The first save writes the new `schemaVersion`. An older app opening the newer file refuses it with "This sermon was saved by a newer version of the app" and doesn't change the file.
+- EX1–EX6 use `all-marks.sermon` extended with the §4.16 blocks: superscript and subscript runs, all four paragraph styles (one Illustration with a custom label "STORY"), a board with 3 boxes and 2 lines, and defined words in Greek (χάρις), Hebrew (חֶסֶד) and French with accents.
+- EX1. Superscript and subscript survive in DOCX (`w:vertAlign`), PDF, PPTX (baseline offset) and PNG (visual check).
+- EX2. In DOCX, Quote and Intense quote use Word's built-in **Quote** and **Intense Quote** styles. PDF, PPTX and PNG keep the Edit look (indent, italic, rules).
+- EX3. Citation is ALL CAPS in every format (text extracted is uppercase or the run has caps formatting, and it reads uppercase visually).
+- EX4. The Illustration block is a shaded box with its label, including the custom label "STORY", in DOCX, PDF, PPTX and PNG.
+- EX5. A board is a picture in DOCX, a vector drawing in PDF, and real shapes and connector lines in PPTX. In every format all 3 boxes, their text and both lines are present.
+- EX6. A defined word becomes a footnote with its meaning in DOCX and PDF, and is listed with its meaning in the PPTX speaker notes. PNG shows only the dotted underline. Greek and Hebrew script and accents come out intact in every format, with Hebrew right to left.
 
 #### 4.16f Confirmations
 
