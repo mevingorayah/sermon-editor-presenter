@@ -25,7 +25,15 @@ ENV PORT=8080
 ENV HOSTNAME=0.0.0.0
 ENV SERMON_DATA_DIR=/app/data/sermons
 # Runtime only needs node; drop the bundled npm/yarn/corepack CLIs (Trivy HIGHs live there).
-RUN useradd --system --uid 1001 nextjs \
+# System fonts match Dockerfile.export (Noto core covers Greek/Hebrew) so PNG export has no tofu.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    fonts-liberation \
+    fonts-noto-core \
+    fontconfig \
+  && rm -rf /var/lib/apt/lists/* \
+  && useradd --system --uid 1001 nextjs \
   && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-* \
     /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg \
   && mkdir -p /app/data/sermons \
@@ -33,6 +41,10 @@ RUN useradd --system --uid 1001 nextjs \
 COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nextjs /app/public ./public
+# App's own editor fonts (OFL), registered with fontconfig for the PNG renderer.
+COPY --chown=root:root assets/fonts /app/assets/fonts
+RUN printf '<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig><dir>/app/assets/fonts</dir></fontconfig>\n' > /etc/fonts/conf.d/50-app-fonts.conf \
+  && fc-cache -f
 USER nextjs
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
