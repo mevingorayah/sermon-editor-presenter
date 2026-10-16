@@ -24,6 +24,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=8080
 ENV HOSTNAME=0.0.0.0
 ENV SERMON_DATA_DIR=/app/data/sermons
+# nextjs has no home dir; give fontconfig a writable per-user cache (system cache is prebuilt).
+ENV XDG_CACHE_HOME=/tmp/.cache
 # Runtime only needs node; drop the bundled npm/yarn/corepack CLIs (Trivy HIGHs live there).
 # System fonts match Dockerfile.export (Noto core covers Greek/Hebrew) so PNG export has no tofu.
 RUN apt-get update \
