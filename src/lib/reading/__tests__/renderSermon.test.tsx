@@ -49,8 +49,8 @@ for (const bionic of [false, true]) {
     // The visible text is unchanged.
     assert.match(out.replace(/<[^>]+>/g, ""), /Grace abounds/);
     if (bionic) {
-      // Inside user bold, bionic adds weight via a span (never removes <strong>).
-      assert.match(out, /data-bionic="" style="font-weight:800">Gr/);
+      // A3: bionic adds nothing inside text the writer already bolded.
+      assert.doesNotMatch(out, /data-bionic/);
     }
   });
 }

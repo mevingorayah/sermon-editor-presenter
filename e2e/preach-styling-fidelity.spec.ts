@@ -91,6 +91,8 @@ async function seed(page: Page, theme: "light" | "dark", bionic: boolean) {
   await page.addInitScript(
     ([k, id]) => {
       localStorage.clear();
+      // Local-storage gate (#15): use browser storage, no folder picker.
+      localStorage.setItem("sermon-editor-presenter:storage-mode:v1", "browser");
       localStorage.setItem(k, id);
     },
     [ACTIVE_ID_KEY, sermon.id] as const,

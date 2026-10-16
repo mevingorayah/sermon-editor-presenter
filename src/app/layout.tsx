@@ -1,20 +1,8 @@
 import type { Metadata } from "next";
-import { Literata, Source_Serif_4 } from "next/font/google";
+import { fontVariables } from "./fonts";
 import "./globals.css";
 import "@/styles/reading-mode.css";
 import "@/styles/sermon-marks.css";
-
-const literata = Literata({
-  subsets: ["latin", "latin-ext"],
-  variable: "--font-literata",
-  display: "swap",
-});
-
-const sourceSerif = Source_Serif_4({
-  subsets: ["latin", "latin-ext"],
-  variable: "--font-source-serif",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "Sermon Editor / Presenter",
@@ -28,7 +16,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${literata.variable} ${sourceSerif.variable}`}>
+    <html lang="en" className={fontVariables}>
       <body>{children}</body>
     </html>
   );
