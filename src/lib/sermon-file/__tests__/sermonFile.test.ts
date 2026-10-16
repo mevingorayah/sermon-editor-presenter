@@ -203,3 +203,21 @@ describe("QA restore edge cases", () => {
     assert.ok(!sermonFileName(s.title).includes("/"));
   });
 });
+
+describe("forward compatibility with v2 fields", () => {
+  it("keeps blockId, definitions and new block types untouched", () => {
+    const s = {
+      ...sermon,
+      definitions: [{ id: "d1", word: "agapē", language: "grc", gloss: "love", source: "user" }],
+      content: {
+        type: "doc",
+        content: [
+          { type: "illustration", attrs: { blockId: "b1", label: "Story" }, content: [
+            { type: "text", text: "agapē", marks: [{ type: "definition", attrs: { id: "d1" } }] },
+          ] },
+        ],
+      },
+    } as unknown as SermonDocument;
+    assert.deepEqual(parseSermonFile(serializeSermonFile(s)).sermon, s);
+  });
+});
