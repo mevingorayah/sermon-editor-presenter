@@ -576,7 +576,7 @@ image { id, src: "assets/<sha256>.webp" | "data:…", alt, caption?, widthPct }
 - **Fallback** (Firefox, Safari, iPad, or permission denied): sermons are stored in the browser's IndexedDB with a persistent-storage request (`navigator.storage.persist()`). A banner says: "Saved in this browser only. Back up regularly."
 
 **Files.**
-- `<Folder>/<filename>.sermon` is UTF-8 JSON: `{ format: "sermon", schemaVersion: 2, id, meta, settings, presentation, status, timer, prayerPrompts, preached, points, connectors, content, notes }`.
+- `<Folder>/<filename>.sermon` is UTF-8 JSON in the envelope from PR #14: `{ kind: "sermon-editor-presenter/sermon", schemaVersion, savedAt, sermon }`. `sermon` holds the document fields in §5.
 - The filename follows the agreed sanitising rule (#10).
 - `<Folder>/assets/` holds images, and `<Folder>/.history/` holds versions (Phase E).
 - Writes are atomic (write a temp file, then replace) and the existing autosave controller is reused. Status shows exactly: **"Saved to Sermons folder"**, **"Saving…"**, or **"Couldn't save. Folder not found. [Choose folder]"**. "Saved" is never shown unless the file was actually written. The file format is defined in `docs/sermon-file-format.md` (PR #14), with the shared checker in `src/lib/sermon-file/`.
@@ -617,37 +617,98 @@ image { id, src: "assets/<sha256>.webp" | "data:…", alt, caption?, widthPct }
 
 ---
 
-## 5. Data model summary (`.sermon`, schemaVersion 2)
+## 5. Data model, file format and export contract (Backend)
+
+The server stores no sermons. `store.ts`, `/api/sermons*`, the #9 same-id restore and `SERMON_DATA_DIR` are deleted in every environment, dev included. The only sermon route left is `POST /api/export`, which builds the file in memory, returns it, and keeps nothing.
+
+### 5.1 File envelope (PR #14, `docs/sermon-file-format.md`)
 
 ```ts
-interface SermonFile {
-  format: "sermon"; schemaVersion: 2; id: string;            // uuid
-  meta: { title; subtitle?; author?; place?; date?; titleLayout?: "classic"|"left"|"minimal";
-          createdAt; updatedAt; series?; bibleBook? };
+interface SermonFile {            // <Folder>/<name>.sermon, UTF-8 JSON
+  kind: "sermon-editor-presenter/sermon";
+  schemaVersion: number;          // 1 = first release, 2 = v2 fields below
+  savedAt: string;                // ISO time of this write; drives isNewerOnDisk and Restore newer/older
+  sermon: SermonDocument;
+}
+interface BackupFile {            // first release: <name>.sermon-backup, UTF-8 JSON
+  kind: "sermon-editor-presenter/backup";
+  schemaVersion: number; savedAt: string;
+  sermons: SermonDocument[];      // all or nothing; duplicate ids rejected
+}
+```
+
+The shared checker in `src/lib/sermon-file/` (browser-safe, zod only) is the only place that reads or writes these. Error codes: `TOO_LARGE`, `NOT_JSON`, `WRONG_KIND`, `NEWER_VERSION`, `INVALID`. Limits are 20 MB per sermon and 200 MB per backup.
+
+**Backup format by phase.** The first release uses the single JSON `.sermon-backup` from #14, since there are no images yet. When images arrive in Phase B/D, Back up moves to the `.zip` in §4.15 (`.sermon` files, `assets/`, `manifest.json` with checksums). The `.zip` reader reuses the same checker for every file inside, and Restore still accepts `.sermon-backup` files.
+
+### 5.2 Document fields (`sermon`, schemaVersion 2)
+
+```ts
+interface SermonDocument {
+  id: string;                     // uuid; legacy local ids accepted
+  title: string; updatedAt: string;
+  meta: { subtitle?; author?; place?; date?; titleLayout?: "classic"|"left"|"minimal";
+          createdAt; series?; bibleBook? };
   status: "in_progress"|"on_pause"|"finalised"|"completed";
   settings: { page: { size; widthMm?; heightMm?; orientation: "portrait"|"landscape";
                       view: "single"|"spread"|"infinite"; margins: "narrow"|"normal"|"wide";
                       showPageNumbers: boolean };
               language: "en"|"fr"|"mfe"; smartQuotes: boolean; wpm: number;
               defaultFonts: { body: FontId; heading: FontId }; wakeLock: "timer"|"preach" };
-  presentation: { theme: "light"|"dark"; typeScaleStep; lineHeight;
-                  bionic: { enabled: boolean; strength: 0.3|0.45|0.6|0.7 } };
-  timer: { targetSec: number };                               // default 2700
+  presentationSettings: { theme: "light"|"dark"; typeScaleStep; lineHeight;
+                          bionic: { enabled: boolean; strength: 0.3|0.45|0.6|0.7 } };
+  timer: { targetSec: number };   // default 2700
   points: { headingId: string; minutes: number }[];
-  prayerPrompts?: { items: string[]; source: "manual"|"ai"|"mixed"; approvedAt: string; needsReview?: boolean };
+  prayerPrompts?: { items: string[]; source: "manual"; approvedAt: string; needsReview?: boolean };
   preached: { at: string; place?: string; durationSec: number }[];
   connectors: { id; fromAnchorId; toAnchorId; style: {...}; label? }[];
-  content: TipTapJSON;   // doc → titleBlock, section+ → column+ → blocks; marks: bold, italic,
-                         // underline, strike, link, textStyle{color,preset,fontFamily(FontId),fontSize},
-                         // highlight{color,preset}, gradient{from,to,angle,preset}, anchor{id}
-  notes?: string;
+  content: TipTapJSON;            // doc, titleBlock, section+, column+, blocks
+  notes: string;
 }
 type FontId = "lora"|"merriweather"|"playfair-display"|"source-serif-4"|"literata"
             |"inter"|"open-sans"|"lato"|"montserrat"|"nunito-sans"|"jetbrains-mono";
 ```
-Migrations v1→v2: wrap flat content into one section; first `title` node → `meta.title`/`titleBlock`; `bionic: boolean` → `{enabled, strength: 0.45}`; font stacks → FontId; status defaults to `in_progress`; timer 2700.
 
-Export contract changes (Backend, `docs/api-export-contract.md`): accept FontId and `fontSize`, `underline`, multicolour `highlight`, `gradient` with per-format `gradientMode`, `section/column/image` nodes (images inlined as data URLs in the request, since the server has no store), `titleBlock`, and optional `prayerPrompts` page. `bionic` stays `false`.
+`prayerPrompts.source` is `"manual"` only while AI stays off (§7). `"ai"` and `"mixed"` are added only if Mevin turns AI on after a Security review.
+
+**Upgrades** run in the checker's `upgradeSermon`, one step per version:
+- v0 to v1 (in #14): a bare localStorage document or the old server shape.
+- v1 to v2: wrap flat content into one section with one column; first `title` node to `title`/`titleBlock`; `bionic: boolean` to `{enabled, strength: 0.45}`; font stacks to FontId; `status` defaults to `in_progress`; `timer.targetSec` 2700. The upgrade is idempotent, and the file is only rewritten as v2 on the first real edit.
+
+A file with a higher `schemaVersion` than the app knows is refused with "saved by a newer version of the app" and left untouched.
+
+### 5.3 Export contract changes (`docs/api-export-contract.md`)
+
+The request carries only the current sermon. The body is never logged and no temp files are kept. New in v2:
+- FontId and `fontSize`, `underline`, multicolour `highlight{color}`, `gradient{from,to,angle}` with a per-format `gradientMode`.
+- `section`, `column` and `image` nodes. Images are sent inline as data URLs in the request, since the server has no store. Oversize requests get `413` with a clear message (ST16).
+- `titleBlock`, page size and orientation, `countdownPageNumbers` (PDF, DOCX), and an optional prayer prompts page.
+- `bionic` is always `false`, and colours are always the light-theme values. Colours stay strict: `#RRGGBB` or `rgb(r,g,b)`.
+
+### 5.4 Export fidelity per mark
+
+QA tests each cell. **Kept** means it looks the same as Edit in light theme. Any other entry is the agreed fallback.
+
+| Mark or node | DOCX | PDF | PPTX | PNG |
+|---|---|---|---|---|
+| Bold, italic, strike | Kept | Kept | Kept | Kept |
+| Underline | Kept | Kept | Kept | Kept |
+| Text colour | Kept | Kept | Kept | Kept |
+| Highlight (6 presets and hex) | Kept (nearest Word highlight replaced by shading with the exact hex) | Kept | Kept | Kept |
+| Font (FontId) | Font name set; embedded where licence allows, else Word substitutes | Embedded | Font name set; PowerPoint substitutes if missing | Rendered |
+| Font size | Kept | Kept | Kept | Kept |
+| Link | Clickable | Clickable | Clickable | Underlined colour only |
+| Alignment, incl. justify | Kept | Kept | Kept | Kept |
+| Lists | Native lists | Kept | Native bullets | Kept |
+| Scripture block and citation | Kept; citation ALL CAPS caption | Kept; ALL CAPS | Kept; ALL CAPS | Kept; ALL CAPS |
+| Gradient text | Solid `from` colour | `gradientMode` | Solid `from` colour | Kept |
+| Sections and columns | Native columns | Kept | One slide per section | Kept |
+| Images | Kept | Kept | Kept | Kept |
+| Connector lines | Small markers (Mevin decision 5) | Kept | Small markers | Kept |
+| Bionic | Never | Never | Never | Never |
+| Dark theme | Never; light colours | Never | Never | Never |
+
+Every format keeps Kreol and French accents exactly, in the text and in the filename (#10 rule).
 
 ---
 
