@@ -366,6 +366,7 @@ Each field can be styled with the normal marks (font, colour, gradient on the Ti
 - **Completed** is set by the STOP flow (§4.8) or by hand.
 
 **AI provider options** (the server is stateless, Mevin's choice is pending):
+- **Default (free): no AI.** Prompts are written by hand. The AI proxy is not deployed until Mevin opts in.
 
 | Option | Why | Cost | Notes |
 |---|---|---|---|
@@ -601,7 +602,7 @@ The Project Manager may reorder C before B's Scripture insert. **A1 is first and
 
 ## 7. Open decisions for Mevin
 
-1. **AI provider for prayer prompts:** A Gemini via Vertex (recommended), B OpenAI, or C Claude. Plus a budget cap (for example US$5 per month).
+1. **Prayer prompts, default is free:** v1 ships **hand-written prompts only (no AI, $0)**; the whole Finalised, approve, STOP flow works without AI and the 'Suggest with AI' button is hidden unless AI is switched on. Optional later: A Gemini API free tier through Google AI Studio (no billing, but rate-limited, and Google may use free-tier inputs to improve its products, so sermon text would not be private); B Gemini via Vertex (paid, private); C OpenAI or Claude (paid). Paid AI is opt-in with a budget cap.
 2. **Default page size:** A4 (proposed) or Letter. Also, should page numbers in **printed** exports also descend? (Proposed: no, print ascends.)
 3. **Bible translations beyond LSG 1910 and KJV:** is a licence for Segond 21, BDS or an English modern version worth it later?
 4. **Edit lock auto-relock** after 60 s while the timer runs: keep it, or stay unlocked until tapped again?
