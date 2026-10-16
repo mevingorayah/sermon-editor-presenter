@@ -12,7 +12,7 @@ import { DEFAULT_PRESENTATION_SETTINGS, STORAGE_KEY } from "@/types/document";
 import { isConflictCopyId, listFolder, RestoreWriteError, writeSermonFilesAtomically, readFolderFile, uniqueFileName, writeSermonFile } from "../folder";
 import { decideWrite, isStaleFor, OPEN_ELSEWHERE_TEXT, presenceAction } from "../conflict";
 import { browserModeBanner, BROWSER_ONLY_TEXT } from "../status";
-import { parseRestoreFile, replaceConfirmText } from "../backup";
+import { parseRestoreFile, replaceConfirmText, resolveReplaceConfirm } from "../backup";
 import { classifyWriteError, isSaved, nextStatus, statusAction, statusLabel, type SaveStatus } from "../status";
 import {
   backupFileName,
@@ -363,6 +363,11 @@ describe("ST9 presence on open", () => {
 describe("ST18 replace confirmation text", () => {
   test("names the sermon", () => {
     assert.equal(replaceConfirmText("Grace"), "Replace your copy of Grace? Your current version will be lost.");
+    assert.equal(replaceConfirmText(""), "Replace your copy of Untitled sermon? Your current version will be lost.");
+  });
+  test("only an explicit Replace switches the choice; Cancel/Escape keeps both", () => {
+    assert.equal(resolveReplaceConfirm(true), "replace");
+    assert.equal(resolveReplaceConfirm(false), "keep-both");
   });
 });
 

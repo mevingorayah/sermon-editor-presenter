@@ -294,8 +294,9 @@ test.describe("local-only storage", () => {
     await typeAtEnd(page, "unsaved three");
     await restoreFrom(page, backup);
     dialog = page.getByRole("dialog", { name: "Restore from backup" });
-    page.once("dialog", (d) => void d.accept());
-    await dialog.getByRole("radio", { name: "Replace" }).check();
+    await dialog.getByRole("radio", { name: "Replace" }).click();
+    await page.getByTestId("replace-confirm").getByRole("button", { name: "Replace" }).click();
+    await expect(dialog.getByRole("radio", { name: "Replace" })).toBeChecked();
     await expect(dialog.getByTestId("restore-unsaved-warning")).toBeVisible();
     await dialog.getByRole("button", { name: "Restore", exact: true }).click();
     await page.getByRole("button", { name: "OK" }).click();
@@ -332,20 +333,46 @@ test.describe("local-only storage", () => {
     const dialog = page.getByRole("dialog", { name: "Restore from backup" });
     await expect(dialog.locator("legend")).toBeVisible();
     await expect(dialog.locator("legend")).toContainText("a different version is already here");
-    const seen: string[] = [];
-    page.once("dialog", (d) => {
-      seen.push(d.message());
+    const replaceRadio = dialog.getByRole("radio", { name: "Replace" });
+    const confirm = page.getByTestId("replace-confirm");
+    let nativeDialogs = 0;
+    page.on("dialog", (d) => {
+      nativeDialogs += 1;
       void d.dismiss();
     });
-    await dialog.getByRole("radio", { name: "Replace" }).click();
+
+    // Cancel path: native modal, focus on Cancel, nothing changes, focus back on the radio.
+    await replaceRadio.click();
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toHaveAttribute("role", "alertdialog");
+    expect(await confirm.evaluate((d) => d.tagName === "DIALOG" && d.matches(":modal"))).toBe(true);
+    await expect(confirm).toContainText(`Replace your copy of ${title}? Your current version will be lost.`);
+    await expect(confirm.getByRole("button", { name: "Cancel" })).toBeFocused();
+    const bg = await confirm.getByRole("button", { name: "Replace" }).evaluate((b) => getComputedStyle(b).backgroundColor);
+    expect(bg).toBe("rgb(179, 38, 30)");
+    await confirm.getByRole("button", { name: "Cancel" }).click();
+    await expect(confirm).toHaveCount(0);
     await expect(dialog.getByRole("radio", { name: "Keep both" })).toBeChecked();
-    expect(seen).toEqual([`Replace your copy of ${title}? Your current version will be lost.`]);
+    await expect(replaceRadio).toBeFocused();
+
+    // Escape path: same as Cancel, and the Restore dialog stays open.
+    await replaceRadio.click();
+    await expect(confirm.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(confirm).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("radio", { name: "Keep both" })).toBeChecked();
+    await expect(replaceRadio).toBeFocused();
     await dialog.getByRole("button", { name: "Cancel" }).click();
     expect(await folderFiles(page)).toEqual(before);
+
+    // Accept path.
     await restoreFrom(page, backup);
-    page.once("dialog", (d) => void d.accept());
     await page.getByRole("dialog", { name: "Restore from backup" }).getByRole("radio", { name: "Replace" }).click();
+    await confirm.getByRole("button", { name: "Replace" }).click();
+    await expect(confirm).toHaveCount(0);
     await expect(page.getByRole("dialog", { name: "Restore from backup" }).getByRole("radio", { name: "Replace" })).toBeChecked();
+    expect(nativeDialogs, "no browser confirm()").toBe(0);
   });
 
   test("ST20: restore is all-or-nothing when the 2nd of 3 writes fails", async ({ page }, testInfo) => {
