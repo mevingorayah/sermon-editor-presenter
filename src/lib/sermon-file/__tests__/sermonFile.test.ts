@@ -184,3 +184,22 @@ describe("helpers", () => {
     assert.match(sermonFileName("Joy Without Ceasing"), /^Joy-Without-Ceasing\.sermon$/);
   });
 });
+
+describe("QA restore edge cases", () => {
+  it("rejects a truncated file as NOT_JSON", () => {
+    const text = serializeSermonFile(sermon);
+    assert.equal(code(() => parseSermonFile(text.slice(0, Math.floor(text.length / 2)))), "NOT_JSON");
+  });
+
+  it("opens a file with Windows line endings and a BOM", () => {
+    const text = "\uFEFF" + serializeSermonFile(sermon).replace(/\n/g, "\r\n");
+    assert.deepEqual(parseSermonFile(text).sermon, sermon);
+  });
+
+  it("keeps emoji with Kreol/French accents in title and notes", () => {
+    const s = { ...sermon, title: "Lafwa 🙏 Ésaïe ç è ï", notes: "Priyé 🕊️ pou lafami — é" };
+    assert.deepEqual(parseSermonFile(serializeSermonFile(s)).sermon, s);
+    assert.ok(sermonFileName(s.title).endsWith(".sermon"));
+    assert.ok(!sermonFileName(s.title).includes("/"));
+  });
+});
