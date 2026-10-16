@@ -12,6 +12,56 @@ import { decideWrite } from "./conflict";
 export interface FolderEntry {
   fileName: string;
   file: SermonFile;
+  /** Set when this file holds the same sermon id as another file (e.g. a Google Drive "Sermon (1).sermon" conflict copy). */
+  conflictCopyOf?: string;
+}
+
+/** Marker in the in-app id of a conflict copy; it is written into the file on its first save. */
+export const CONFLICT_COPY_MARK = ":conflict-copy-";
+
+export function isConflictCopyId(id: string): boolean {
+  return id.includes(CONFLICT_COPY_MARK);
+}
+
+function shortHash(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+
+const RENAMED_COPY = /\s\(\d+\)\.sermon$/i;
+
+/**
+ * Two files with the same sermon id (sync tools copy instead of overwrite).
+ * Keep both: the original keeps its id; every other file gets a stable,
+ * file-specific id so the library lists it separately and saving it only
+ * ever touches its own file. The original is the un-renamed file, then the
+ * oldest save.
+ */
+function separateDuplicateIds(entries: FolderEntry[]): void {
+  const groups = new Map<string, FolderEntry[]>();
+  for (const e of entries) {
+    const g = groups.get(e.file.sermon.id);
+    if (g) g.push(e);
+    else groups.set(e.file.sermon.id, [e]);
+  }
+  const used = new Set(groups.keys());
+  for (const [id, group] of groups) {
+    if (group.length < 2) continue;
+    const ordered = [...group].sort(
+      (a, b) =>
+        Number(RENAMED_COPY.test(a.fileName)) - Number(RENAMED_COPY.test(b.fileName)) ||
+        Date.parse(a.file.savedAt) - Date.parse(b.file.savedAt) ||
+        a.fileName.localeCompare(b.fileName),
+    );
+    for (const e of ordered.slice(1)) {
+      let newId = `${id.slice(0, 100)}${CONFLICT_COPY_MARK}${shortHash(e.fileName.toLowerCase())}`;
+      while (used.has(newId)) newId += "x";
+      used.add(newId);
+      e.conflictCopyOf = id;
+      e.file = { ...e.file, sermon: { ...e.file.sermon, id: newId } };
+    }
+  }
 }
 
 export interface FolderListing {
@@ -36,6 +86,7 @@ export async function listFolder(dir: DirHandleLike): Promise<FolderListing> {
       unreadable.push({ fileName: h.name, message: err instanceof Error ? err.message : String(err) });
     }
   }
+  separateDuplicateIds(entries);
   entries.sort((a, b) => Date.parse(b.file.sermon.updatedAt) - Date.parse(a.file.sermon.updatedAt));
   return { entries, unreadable };
 }
