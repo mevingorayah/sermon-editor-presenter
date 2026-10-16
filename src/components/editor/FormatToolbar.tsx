@@ -1,43 +1,34 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useState, type ChangeEvent } from "react";
 import { useEditorState, type Editor } from "@tiptap/react";
+import {
+  FONTS,
+  FONT_SIZES_PT,
+  BODY_PT,
+  HIGHLIGHT_PRESETS,
+  TEXT_PRESETS,
+  fontFamilyCss,
+  fontIdOf,
+  fontSizePt,
+} from "@/lib/marks/presets";
+import { ColorPopover } from "./ColorPopover";
 import styles from "./SermonEditor.module.css";
 
-const FONT_SANS = 'system-ui, -apple-system, "Segoe UI", sans-serif';
-const FONT_SERIF = "ui-serif, Georgia, serif";
-const FONT_MONO = "ui-monospace, monospace";
+/** @deprecated kept for imports; the 6 presets live in lib/marks/presets. */
+export const TEXT_COLORS = TEXT_PRESETS.map((p) => ({ id: p.id, label: p.label, value: p.light }));
 
-const FONT_OPTIONS = [
-  { id: "sans", label: "Sans", value: FONT_SANS },
-  { id: "serif", label: "Serif", value: FONT_SERIF },
-  { id: "mono", label: "Mono", value: FONT_MONO },
+const MARKS = [
+  { name: "bold", label: "Bold", glyph: "B", keys: "Ctrl/Cmd+B", cls: "markBold" },
+  { name: "italic", label: "Italic", glyph: "I", keys: "Ctrl/Cmd+I", cls: "markItalic" },
+  { name: "underline", label: "Underline", glyph: "U", keys: "Ctrl/Cmd+U", cls: "markUnderline" },
+  { name: "strike", label: "Strikethrough", glyph: "S", keys: "Ctrl/Cmd+Shift+X", cls: "markStrike" },
+  { name: "superscript", label: "Superscript", glyph: "x²", keys: "Ctrl/Cmd+.", cls: "" },
+  { name: "subscript", label: "Subscript", glyph: "x₂", keys: "Ctrl/Cmd+,", cls: "" },
 ] as const;
+type MarkName = (typeof MARKS)[number]["name"];
 
-/** Soft mid-tones readable on dark edit chrome and light cream. */
-export const TEXT_COLORS = [
-  { id: "muted", label: "Muted gray", value: "#9a948a" },
-  { id: "accent", label: "Accent", value: "#5c4a1f" },
-  { id: "red", label: "Soft red", value: "#d47870" },
-  { id: "blue", label: "Soft blue", value: "#6a9fc4" },
-  { id: "green", label: "Soft green", value: "#6aaa7a" },
-] as const;
-
-function normalizeFont(family: string | undefined | null): string {
-  return (family ?? "").replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-function activeFontId(fontFamily: string | undefined | null): string {
-  const n = normalizeFont(fontFamily);
-  if (!n) return "sans";
-  if (n.includes("monospace") || n.includes("mono")) return "mono";
-  if (n.includes("georgia") || n.includes("ui-serif") || n.includes("serif")) {
-    return "serif";
-  }
-  return "sans";
-}
-
-function AlignIcon({ kind }: { kind: "left" | "center" | "right" }) {
+function AlignIcon({ kind }: { kind: "left" | "center" | "right" | "justify" }) {
   const lines =
     kind === "left"
       ? [
@@ -53,12 +44,19 @@ function AlignIcon({ kind }: { kind: "left" | "center" | "right" }) {
             [2, 12, 16],
             [5, 16, 10],
           ]
-        : [
-            [2, 4, 16],
-            [6, 8, 12],
-            [2, 12, 16],
-            [8, 16, 10],
-          ];
+        : kind === "right"
+          ? [
+              [2, 4, 16],
+              [6, 8, 12],
+              [2, 12, 16],
+              [8, 16, 10],
+            ]
+          : [
+              [2, 4, 16],
+              [2, 8, 16],
+              [2, 12, 16],
+              [2, 16, 16],
+            ];
   return (
     <svg
       width="16"
@@ -82,71 +80,79 @@ interface FormatToolbarProps {
 export function FormatToolbar({ editor }: FormatToolbarProps) {
   const state = useEditorState({
     editor,
-    selector: ({ editor: ed }) => ({
-      canUndo: ed.can().undo(),
-      canRedo: ed.can().redo(),
-      italic: ed.isActive("italic"),
-      highlight: ed.isActive("highlight"),
-      alignLeft: ed.isActive({ textAlign: "left" }),
-      alignCenter: ed.isActive({ textAlign: "center" }),
-      alignRight: ed.isActive({ textAlign: "right" }),
-      fontFamily: (ed.getAttributes("textStyle").fontFamily as string) || "",
-      color: (ed.getAttributes("textStyle").color as string) || "",
-    }),
+    selector: ({ editor: ed }) => {
+      const ts = ed.getAttributes("textStyle");
+      const hl = ed.getAttributes("highlight");
+      return {
+        canUndo: ed.can().undo(),
+        canRedo: ed.can().redo(),
+        bold: ed.isActive("bold"),
+        italic: ed.isActive("italic"),
+        underline: ed.isActive("underline"),
+        strike: ed.isActive("strike"),
+        superscript: ed.isActive("superscript"),
+        subscript: ed.isActive("subscript"),
+        alignLeft: ed.isActive({ textAlign: "left" }),
+        alignCenter: ed.isActive({ textAlign: "center" }),
+        alignRight: ed.isActive({ textAlign: "right" }),
+        alignJustify: ed.isActive({ textAlign: "justify" }),
+        fontFamily: (ts.fontFamily as string) || "",
+        fontSize: (ts.fontSize as string) || "",
+        color: ((ts.color as string) || "").toUpperCase(),
+        colorPreset: (ts.preset as string) || null,
+        highlight: ed.isActive("highlight"),
+        highlightColor: ((hl.color as string) || "").toUpperCase(),
+        highlightPreset: (hl.preset as string) || null,
+      };
+    },
   });
 
-  const [colorOpen, setColorOpen] = useState(false);
-  const colorWrapRef = useRef<HTMLDivElement>(null);
-  const colorMenuId = useId();
+  const [sizeDraft, setSizeDraft] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!colorOpen) return;
-    const onDoc = (e: MouseEvent) => {
-      if (
-        colorWrapRef.current &&
-        !colorWrapRef.current.contains(e.target as Node)
-      ) {
-        setColorOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setColorOpen(false);
-        editor.chain().focus().run();
-      }
-    };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [colorOpen, editor]);
+  const toggle = useCallback(
+    (name: MarkName) => {
+      const c = editor.chain().focus();
+      const cmds = {
+        bold: () => c.toggleBold(),
+        italic: () => c.toggleItalic(),
+        underline: () => c.toggleUnderline(),
+        strike: () => c.toggleStrike(),
+        superscript: () => c.toggleSuperscript(),
+        subscript: () => c.toggleSubscript(),
+      } as const;
+      cmds[name]().run();
+    },
+    [editor],
+  );
 
-  const fontId = activeFontId(state.fontFamily);
-  const currentColor = state.color || "";
-  const underlineColor = currentColor || "#1a1814";
+  const fontId = fontIdOf(state.fontFamily) ?? "";
+  const sizePt = fontSizePt(state.fontSize);
 
   const onFontChange = useCallback(
     (e: ChangeEvent<HTMLSelectElement>) => {
-      const opt = FONT_OPTIONS.find((f) => f.id === e.target.value);
-      if (!opt) return;
-      editor.chain().focus().setFontFamily(opt.value).run();
+      const id = e.target.value;
+      if (!id) editor.chain().focus().unsetFontId().run();
+      else editor.chain().focus().setFontId(id).run();
     },
     [editor],
   );
 
-  const applyColor = useCallback(
-    (value: string | null) => {
-      if (value === null) {
-        editor.chain().focus().unsetColor().run();
-      } else {
-        editor.chain().focus().setColor(value).run();
+  const applySize = useCallback(
+    (raw: string) => {
+      setSizeDraft(null);
+      if (!raw.trim()) {
+        editor.chain().focus().unsetFontSizePt().run();
+        return;
       }
-      setColorOpen(false);
+      const n = fontSizePt(raw);
+      if (n === null) return;
+      if (n === BODY_PT) editor.chain().focus().unsetFontSizePt().run();
+      else editor.chain().focus().setFontSizePt(n).run();
     },
     [editor],
   );
+
+  const refocus = useCallback(() => editor.commands.focus(), [editor]);
 
   return (
     <>
@@ -178,71 +184,20 @@ export function FormatToolbar({ editor }: FormatToolbarProps) {
       <div className={styles.toolDivider} aria-hidden="true" />
 
       <div className={styles.toolGroup} role="group" aria-label="Inline marks">
-        <button
-          type="button"
-          className={`${styles.toolBtn} ${styles.toolBtnItalic}${
-            state.italic ? ` ${styles.toolBtnActive}` : ""
-          }`}
-          aria-label="Italic"
-          title="Italic (Ctrl/Cmd+I)"
-          aria-pressed={state.italic}
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-        >
-          I
-        </button>
-        <button
-          type="button"
-          className={`${styles.toolBtn} ${styles.toolBtnHighlight}${
-            state.highlight ? ` ${styles.toolBtnActive}` : ""
-          }`}
-          aria-label="Highlight"
-          title="Highlight"
-          aria-pressed={state.highlight}
-          onClick={() => editor.chain().focus().toggleHighlight().run()}
-        >
-          ▮
-        </button>
-      </div>
-
-      <div className={styles.toolDivider} aria-hidden="true" />
-
-      <div className={styles.toolGroup} role="group" aria-label="Alignment">
-        <button
-          type="button"
-          className={`${styles.toolBtn}${
-            state.alignLeft ? ` ${styles.toolBtnActive}` : ""
-          }`}
-          aria-label="Align left"
-          title="Align left"
-          aria-pressed={state.alignLeft}
-          onClick={() => editor.chain().focus().setTextAlign("left").run()}
-        >
-          <AlignIcon kind="left" />
-        </button>
-        <button
-          type="button"
-          className={`${styles.toolBtn}${
-            state.alignCenter ? ` ${styles.toolBtnActive}` : ""
-          }`}
-          aria-label="Align center"
-          title="Align center"
-          aria-pressed={state.alignCenter}
-          onClick={() => editor.chain().focus().setTextAlign("center").run()}
-        >
-          <AlignIcon kind="center" />
-        </button>
-        <button
-          type="button"
-          className={`${styles.toolBtn}${
-            state.alignRight ? ` ${styles.toolBtnActive}` : ""
-          }`}
-          aria-label="Align right"
-          title="Align right"
-          aria-pressed={state.alignRight}
-          onClick={() => editor.chain().focus().setTextAlign("right").run()}
-        >
-          <AlignIcon kind="right" />
-        </button>
+        {MARKS.map((m) => (
+          <button
+            key={m.name}
+            type="button"
+            className={`${styles.toolBtn}${m.cls ? ` ${styles[m.cls]}` : ""}${state[m.name] ? ` ${styles.toolBtnActive}` : ""}`}
+            aria-label={m.label}
+            title={`${m.label} (${m.keys})`}
+            aria-pressed={state[m.name]}
+            data-mark={m.name}
+            onClick={() => toggle(m.name)}
+          >
+            {m.glyph}
+          </button>
+        ))}
       </div>
 
       <div className={styles.toolDivider} aria-hidden="true" />
@@ -256,86 +211,117 @@ export function FormatToolbar({ editor }: FormatToolbarProps) {
             aria-label="Font family"
             title="Font"
             onChange={onFontChange}
-            onMouseDown={(e) => {
-              // Keep selection; focus returns after change via chain().focus()
-              e.stopPropagation();
-            }}
+            onMouseDown={(e) => e.stopPropagation()}
           >
-            {FONT_OPTIONS.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.label}
-              </option>
+            <option value="">Document default</option>
+            {(["serif", "sans", "mono"] as const).map((g) => (
+              <optgroup key={g} label={g === "serif" ? "Serif" : g === "sans" ? "Sans" : "Code"}>
+                {FONTS.filter((f) => f.group === g).map((f) => (
+                  <option key={f.id} value={f.id} style={{ fontFamily: fontFamilyCss(f.id) ?? undefined }}>
+                    {f.label}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
+        </label>
+        <label className={styles.fontLabel}>
+          <span className="visually-hidden">Font size</span>
+          <input
+            className={styles.sizeInput}
+            aria-label="Font size (pt)"
+            title="Font size (8–96 pt)"
+            list="sermon-font-sizes"
+            inputMode="numeric"
+            value={sizeDraft ?? String(sizePt ?? BODY_PT)}
+            onChange={(e) => setSizeDraft(e.target.value)}
+            onBlur={() => sizeDraft !== null && applySize(sizeDraft)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                applySize(sizeDraft ?? String(sizePt ?? BODY_PT));
+              } else if (e.key === "Escape") {
+                setSizeDraft(null);
+                refocus();
+              }
+            }}
+          />
+          <datalist id="sermon-font-sizes">
+            {FONT_SIZES_PT.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
         </label>
       </div>
 
       <div className={styles.toolDivider} aria-hidden="true" />
 
-      <div
-        className={`${styles.toolGroup} ${styles.colorGroup}`}
-        role="group"
-        aria-label="Text color"
-        ref={colorWrapRef}
-      >
-        <button
-          type="button"
-          className={`${styles.toolBtn} ${styles.colorTrigger}${
-            colorOpen ? ` ${styles.toolBtnActive}` : ""
-          }`}
-          aria-label="Text color"
-          title="Text color"
-          aria-haspopup="listbox"
-          aria-expanded={colorOpen}
-          aria-controls={colorMenuId}
-          onClick={() => setColorOpen((o) => !o)}
-        >
-          <span className={styles.colorLetter} aria-hidden="true">
-            A
-          </span>
+      <ColorPopover
+        testId="text-color"
+        label="Text colour"
+        trigger={
+          <>
+            <span className={styles.colorLetter} aria-hidden="true">A</span>
+            <span
+              className={styles.colorUnderline}
+              style={{ background: state.color || "#1A1814" }}
+              aria-hidden="true"
+            />
+          </>
+        }
+        presets={TEXT_PRESETS}
+        noneLabel="Default"
+        activePreset={state.colorPreset}
+        activeColor={state.color}
+        allowCustom
+        onApply={(color, preset) => {
+          if (color === null) editor.chain().focus().unsetColor().setMark("textStyle", { preset: null }).removeEmptyTextStyle().run();
+          else editor.chain().focus().setTextColor(color, preset).run();
+        }}
+      />
+
+      <ColorPopover
+        testId="highlight-color"
+        label="Highlight"
+        trigger={
           <span
-            className={styles.colorUnderline}
-            style={{ background: underlineColor }}
+            className={styles.highlightLetter}
             aria-hidden="true"
-          />
-        </button>
-        {colorOpen ? (
-          <div
-            id={colorMenuId}
-            className={styles.swatchMenu}
-            role="listbox"
-            aria-label="Color palette"
+            style={{ background: state.highlightColor || HIGHLIGHT_PRESETS[0].light }}
           >
+            ▮
+          </span>
+        }
+        presets={HIGHLIGHT_PRESETS}
+        noneLabel="None"
+        activePreset={state.highlightPreset}
+        activeColor={state.highlight ? state.highlightColor || HIGHLIGHT_PRESETS[0].light : ""}
+        onApply={(color, preset) => {
+          if (color === null) editor.chain().focus().unsetHighlight().run();
+          else editor.chain().focus().setHighlight({ color, preset } as { color: string }).run();
+        }}
+      />
+
+      <div className={styles.toolDivider} aria-hidden="true" />
+
+      <div className={styles.toolGroup} role="group" aria-label="Alignment">
+        {(["left", "center", "right", "justify"] as const).map((k) => {
+          const key = `align${k[0].toUpperCase()}${k.slice(1)}` as "alignLeft" | "alignCenter" | "alignRight" | "alignJustify";
+          const label = k === "justify" ? "Justify" : `Align ${k}`;
+          return (
             <button
+              key={k}
               type="button"
-              role="option"
-              aria-selected={!currentColor}
-              className={`${styles.swatch} ${styles.swatchDefault}${
-                !currentColor ? ` ${styles.swatchActive}` : ""
-              }`}
-              title="Default"
-              aria-label="Default color"
-              onClick={() => applyColor(null)}
+              className={`${styles.toolBtn}${state[key] ? ` ${styles.toolBtnActive}` : ""}`}
+              aria-label={label}
+              title={label}
+              aria-pressed={state[key]}
+              onClick={() => editor.chain().focus().setTextAlign(k).run()}
             >
-              Default
+              <AlignIcon kind={k} />
             </button>
-            {TEXT_COLORS.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                role="option"
-                aria-selected={currentColor === c.value}
-                className={`${styles.swatch}${
-                  currentColor === c.value ? ` ${styles.swatchActive}` : ""
-                }`}
-                title={c.label}
-                aria-label={c.label}
-                style={{ background: c.value }}
-                onClick={() => applyColor(c.value)}
-              />
-            ))}
-          </div>
-        ) : null}
+          );
+        })}
       </div>
     </>
   );

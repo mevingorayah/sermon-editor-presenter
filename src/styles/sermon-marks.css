@@ -28,3 +28,49 @@ mark.sermon-highlight,
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.9em;
 }
+
+/* ---- A1 writing tools: shared by Edit (.ProseMirror) and Preach ---- */
+
+/* User bold is 800; Bionic weight stays below it (§4.1-3, §4.5). */
+.sermon-marks strong:not([data-bionic]),
+.sermon-marks b {
+  font-weight: 800;
+}
+.sermon-marks strong[data-bionic] {
+  font-weight: 600;
+}
+
+/* Superscript / subscript: same size ratio + vertical-align in both views (MK3). */
+.sermon-marks sup,
+.sermon-marks sub {
+  font-size: 0.7em;
+  line-height: 0;
+  position: static;
+}
+.sermon-marks sup {
+  vertical-align: super;
+}
+.sermon-marks sub {
+  vertical-align: sub;
+}
+
+.sermon-marks u {
+  text-decoration-line: underline;
+}
+.sermon-marks s {
+  text-decoration-line: line-through;
+}
+.sermon-marks u s,
+.sermon-marks s u {
+  text-decoration-line: underline line-through;
+}
+
+/* Justify kept as written, hyphenation from the document language (§4.4). */
+.sermon-marks [style*="text-align: justify"] {
+  hyphens: auto;
+}
+
+/* Preset highlights in dark Preach come inline from renderSermon; keep text readable. */
+mark.sermon-highlight[data-color] {
+  color: inherit;
+}

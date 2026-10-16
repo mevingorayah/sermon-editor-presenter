@@ -1,7 +1,13 @@
 import StarterKit from "@tiptap/starter-kit";
-import Highlight from "@tiptap/extension-highlight";
 import TextAlign from "@tiptap/extension-text-align";
-import { TextStyle, Color, FontFamily } from "@tiptap/extension-text-style";
+import { TextStyle, Color } from "@tiptap/extension-text-style";
+import {
+  SermonTextStyle,
+  SermonHighlight,
+  SermonStrike,
+  SermonSuperscript,
+  SermonSubscript,
+} from "./marks";
 import { Title } from "./Title";
 import { Scripture } from "./Scripture";
 
@@ -19,21 +25,20 @@ export function createSchemaExtensions() {
       heading: { levels: [1, 2] },
       codeBlock: false,
       blockquote: false,
+      strike: false,
     }),
     Title,
     Scripture,
     TextStyle,
     Color,
-    FontFamily,
-    Highlight.configure({
-      multicolor: false,
-      HTMLAttributes: {
-        class: "sermon-highlight",
-      },
-    }),
+    SermonTextStyle,
+    SermonHighlight,
+    SermonStrike,
+    SermonSuperscript,
+    SermonSubscript,
     TextAlign.configure({
       types: ALIGNED_TYPES,
-      alignments: ["left", "center", "right"],
+      alignments: ["left", "center", "right", "justify"],
       defaultAlignment: "left",
     }),
   ];

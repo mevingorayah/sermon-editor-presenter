@@ -28,7 +28,7 @@ export function SermonEditor({
     content,
     editorProps: {
       attributes: {
-        class: styles.prose,
+        class: `${styles.prose} sermon-marks`,
         "aria-label": "Sermon body editor",
       },
     },

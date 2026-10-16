@@ -38,6 +38,8 @@ async function openEdit(page: Page, activeId: string | null) {
       if (sessionStorage.getItem("__e2e_seeded")) return;
       sessionStorage.setItem("__e2e_seeded", "1");
       localStorage.clear();
+      // Local-storage gate (#15): use browser storage, no folder picker.
+      localStorage.setItem("sermon-editor-presenter:storage-mode:v1", "browser");
       if (id) localStorage.setItem(key, id);
     },
     [ACTIVE_ID_KEY, activeId] as const,

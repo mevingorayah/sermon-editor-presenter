@@ -3,6 +3,14 @@ import { Fragment, type CSSProperties, type ReactNode } from "react";
 import type { JSONContent } from "@tiptap/react";
 import { bionicParts } from "@/lib/bionic";
 import { readingHighlightColor, readingTextColor } from "./contrast";
+import {
+  HIGHLIGHT_PRESETS,
+  SCRIPT_NO_BIONIC_MAX,
+  TEXT_PRESETS,
+  findPreset,
+  fontFamilyCss,
+  fontSizeCss,
+} from "@/lib/marks/presets";
 
 /**
  * Preach renderer: walks the sermon's ProseMirror JSON (the shared schema in
@@ -49,7 +57,7 @@ export const RENDERED_NODES = [
 ];
 export const RENDERED_MARKS = [
   "bold", "italic", "underline", "strike", "code", "link", "textStyle",
-  "highlight",
+  "highlight", "superscript", "subscript",
 ];
 
 const TEXT_ALIGNS = new Set(["left", "center", "right", "justify"]);
@@ -68,29 +76,46 @@ function alignStyle(node: JSONContent): CSSProperties | undefined {
 
 const SAFE_HREF = /^(https?:|mailto:|tel:|#|\/)/i;
 
-function bionicLeaf(text: string, inBold: boolean): ReactNode {
-  return bionicParts(text).map((part, i) => {
-    if (!part.bold) return <span key={i}>{part.text}</span>;
-    // Inside a user bold mark, bionic adds weight contrast instead of a
-    // second <strong>, so the user's bold is never replaced.
-    return inBold ? (
-      <span key={i} data-bionic="" style={{ fontWeight: 800 }}>
-        {part.text}
-      </span>
-    ) : (
+function bionicLeaf(text: string): ReactNode {
+  return bionicParts(text).map((part, i) =>
+    part.bold ? (
       <strong key={i} data-bionic="">
         {part.text}
       </strong>
-    );
-  });
+    ) : (
+      <span key={i}>{part.text}</span>
+    ),
+  );
+}
+
+function graphemeCount(text: string): number {
+  if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
+    return Array.from(new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)).length;
+  }
+  return text.match(/\P{M}\p{M}*/gu)?.length ?? 0;
+}
+
+/**
+ * Bionic is skipped for: Scripture (ctx.plain); text the writer already
+ * bolded (A3: nothing is added inside user bold); and short superscript /
+ * subscript runs such as verse numbers or "1er" (MK4).
+ */
+function bionicApplies(text: string, marks: { type: string }[], ctx: Ctx): boolean {
+  if (!ctx.bionic || ctx.plain) return false;
+  if (marks.some((m) => m.type === "bold")) return false;
+  if (
+    marks.some((m) => m.type === "superscript" || m.type === "subscript") &&
+    graphemeCount(text.trim()) <= SCRIPT_NO_BIONIC_MAX
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function renderText(node: JSONContent, ctx: Ctx, key: string): ReactNode {
   const text = node.text ?? "";
   const marks = node.marks ?? [];
-  const inBold = marks.some((m) => m.type === "bold");
-  let out: ReactNode =
-    ctx.bionic && !ctx.plain ? bionicLeaf(text, inBold) : text;
+  let out: ReactNode = bionicApplies(text, marks, ctx) ? bionicLeaf(text) : text;
   // Wrap innermost-last so marks[0] is the outermost element, like ProseMirror.
   for (let i = marks.length - 1; i >= 0; i--) {
     out = wrapMark(marks[i], out, ctx, i);
@@ -126,17 +151,21 @@ function wrapMark(
         </a>
       );
     }
+    case "superscript":
+      return <sup key={i}>{children}</sup>;
+    case "subscript":
+      return <sub key={i}>{children}</sub>;
     case "textStyle": {
       const style: CSSProperties = {};
       if (typeof attrs.color === "string" && attrs.color) {
-        style.color = readingTextColor(attrs.color, ctx.theme);
+        const preset = findPreset(TEXT_PRESETS, attrs.preset, attrs.color);
+        style.color =
+          preset && ctx.theme === "dark" ? preset.dark : readingTextColor(attrs.color, ctx.theme);
       }
-      if (typeof attrs.fontFamily === "string" && attrs.fontFamily) {
-        style.fontFamily = attrs.fontFamily;
-      }
-      if (typeof attrs.fontSize === "string" && attrs.fontSize) {
-        style.fontSize = attrs.fontSize;
-      }
+      const family = fontFamilyCss(attrs.fontFamily);
+      if (family) style.fontFamily = family;
+      const size = fontSizeCss(attrs.fontSize);
+      if (size) style.fontSize = size;
       return Object.keys(style).length ? (
         <span key={i} style={style}>{children}</span>
       ) : (
@@ -145,12 +174,16 @@ function wrapMark(
     }
     case "highlight": {
       const color = typeof attrs.color === "string" && attrs.color ? attrs.color : null;
+      const preset = findPreset(HIGHLIGHT_PRESETS, attrs.preset, color);
+      const bg = preset
+        ? ctx.theme === "dark" ? preset.dark : preset.light
+        : color ? readingHighlightColor(color, ctx.theme) : null;
       return (
         <mark
           key={i}
           className="sermon-highlight"
           data-color={color ?? undefined}
-          style={color ? { backgroundColor: readingHighlightColor(color, ctx.theme) } : undefined}
+          style={bg ? { backgroundColor: bg } : undefined}
         >
           {children}
         </mark>

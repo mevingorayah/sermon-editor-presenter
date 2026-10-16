@@ -21,6 +21,8 @@ async function openFreshEdit(page: Page) {
     if (!sessionStorage.getItem("__e2e_seeded")) {
       sessionStorage.setItem("__e2e_seeded", "1");
       localStorage.clear();
+      // Local-storage gate (#15): use browser storage, no folder picker.
+      localStorage.setItem("sermon-editor-presenter:storage-mode:v1", "browser");
     }
     // Record every label the save indicator ever shows.
     const history: string[] = [];

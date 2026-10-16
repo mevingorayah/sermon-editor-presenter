@@ -26,6 +26,11 @@
   gap: var(--rm-gap-block);
 }
 
+/* 1 pt of a stored font size = Preach body size / 18 pt: proportional. */
+.column {
+  --doc-pt: calc(var(--rm-size-body) * var(--rm-scale) / 18);
+}
+
 .title {
   margin: 0 0 var(--rm-gap-title-body);
   font-size: calc(var(--rm-size-title) * var(--rm-scale));
