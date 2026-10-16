@@ -490,11 +490,11 @@ image { id, src: "assets/<sha256>.webp" | "data:…", alt, caption?, widthPct }
 - Single mode turns a page, and infinite mode scrolls one screen minus 2 lines.
 - AC: with a clicker that sends PageUp/PageDown and one that sends arrows, each press moves exactly one page, with no double turn. Holding a key (auto-repeat) turns one page only (one page per physical press). A pedal key learned in Settings persists after reload. With the lock off and the caret in text, Space/Enter type text and don't turn pages.
 
-**d. Edit lock.**
+**d. Edit lock (Step A6).**
 - Turns on **automatically when the timer starts**, shown as 🔒 Locked in the toolbar.
 - Locked: no text editing, no drag, taps don't move content, and page-turn taps still work.
 - **One tap on 🔒** unlocks it. **Decided (Mevin): while the timer runs, it re-locks automatically 60 s after an unlock if there's no input.** Manual toggle is available at any time.
-- AC: after Start, a tap on text doesn't place a cursor; one tap on the lock enables editing. After unlocking, 60 s with no input relocks while the timer runs. Unlocked after STOP stays unlocked.
+- AC (A6): after Start, a tap on text doesn't place a cursor; one tap on the lock enables editing. After unlocking, 60 s with no input relocks while the timer runs. Unlocked after STOP stays unlocked.
 
 **e. Point navigator.**
 - H1/H2 outline (extends `OutlineNav.tsx`) in Edit (left pane) and in Preach (☰ Points drawer).
@@ -513,7 +513,7 @@ image { id, src: "assets/<sha256>.webp" | "data:…", alt, caption?, widthPct }
 
 **h. Scripture insert by reference.**
 - In the Scripture block or the subtitle, type a reference (`Philippiens 4:4-7`, `Phil 4.4–7`, `John 3:16`), choose a translation, then click "Insert". The verses arrive with the citation set (`Philippiens 4:4-7 LSG`).
-- **Pending Mevin's confirmation.** Mevin asked for ESV, NIV, NASB1995, Segond 21 and Bible du Semeur without paying for licences. Those are copyrighted and can't be bundled, so the plan is:
+- **Bible plan (confirmed by Mevin, Oct 2026).** ESV, NIV, NASB1995, Segond 21 and Bible du Semeur are copyrighted and can't be bundled without paid licences, so:
   - **Bundled, free, offline from first launch:** **Louis Segond 1910 (LSG, public domain)** and the **World English Bible (WEB, public domain; the eBible.org updated, Strong's-tagged edition)**, as local JSON (about 4–5 MB each), with no API, server or online visit. The WEB text is never altered, and it is always called "World English Bible" (the name is a trademark and is only used for the unmodified text). KJV is removed.
   - **ESV, NIV, NASB1995, Segond 21, Bible du Semeur:** the Insert dialog offers **"Open on Bible Gateway"**, which opens biblegateway.com in a new tab at that reference and translation. The user copies the verses and pastes them into the Scripture block. The pasted text keeps the citation with the translation name (e.g. `Philippians 4:4-7 ESV`). The app never scrapes or fetches copyrighted text automatically.
 - The parser accepts French and English book names and abbreviations.
@@ -537,9 +537,9 @@ image { id, src: "assets/<sha256>.webp" | "data:…", alt, caption?, widthPct }
 - **Version history.** Snapshots are saved as `<SermonFolder>/.history/<id>/<timestamp>.sermon`. They're taken by hand ("Save version"), and hourly while editing (keeping the last 20 automatic ones). Compare view and Restore are included.
 - **Sermon library.** A home screen that indexes the sermon folder: full-text search, a **series** field ("Philippians, part 3"), **Bible book** (from the subtitle reference), status, and **where and when preached** (from the `preached[]` records written by STOP). There's a warning "Already preached at Église X on 12/05/2025".
 - **Template.** "New from template": Introduction, I/II/III points, Application, Conclusion, Prayer. Templates are saved as `.sermon-template` files in the folder.
-- **Multi-device sync via Google Drive (decided, Mevin).** No server. Mevin puts the sermons folder inside his **Google Drive for desktop** folder on the PC, and Drive syncs the files. The app detects external changes (polling `lastModified` on focus). On conflict, it keeps both copies and shows a compare dialog. Google Drive's own conflict copies (e.g. `Sermon (1).sermon`) are shown as their own library entries, marked "Possible conflict copy".
+- **Multi-device sync via Google Drive (decided, Mevin).** No server. Mevin puts the sermons folder inside his **Google Drive for desktop** folder on the PC, and Drive syncs the files. The app detects external changes (polling `lastModified` on focus). On conflict, it keeps both copies and shows a compare dialog. Google Drive's own conflict copies (e.g. `Sermon (1).sermon`) are shown as their own entries, marked "Possible conflict copy" (Step A6, E13).
 - **On the tablet (Samsung Galaxy Tab S10 Lite, Android, Chrome):** the folder picker isn't available, so there's no live folder. What works: open a `.sermon` file through the Android system file picker (which includes Google Drive), edit and preach it (a copy is kept in the browser), then save it back through the file picker to the same Drive location, or use Back up / Restore. Preach, the timer and Tablet landscape pages work fully offline once the file is open.
-- **Archive.** In the library, any sermon can be **archived** and **unarchived** (⋯ → Archive / Unarchive, also multi-select). Archiving sets `archivedAt` (an ISO time) in the file; the file stays where it is, with no subfolder. Archived sermons are hidden from the main library list and from search by default; an **Archive** view shows them, and search inside that view finds them. Archiving is never deletion.
+- **Archive (Step A6; works in the sermon list from the first release, and the Phase E library inherits it).** In the library, any sermon can be **archived** and **unarchived** (⋯ → Archive / Unarchive, also multi-select). Archiving sets `archivedAt` (an ISO time) in the file; the file stays where it is, with no subfolder. Archived sermons are hidden from the main list, but they still appear in search results, tagged **Archived**. An **Archive** view shows all of them. Archiving is never deletion.
 - **Second screen / projector:** future only. A Scripture-only audience window via the Presentation API, not in v2.
 
 **AC (Phase E).**
@@ -552,10 +552,10 @@ image { id, src: "assets/<sha256>.webp" | "data:…", alt, caption?, widthPct }
 - E7. A file changed outside the app (by the sync client) is detected when the window gets focus, and the open sermon reloads if it has no unsaved edits.
 - E8. (was ST5) Editing the same file from two machines through a synced folder produces `… (conflict from <DEVICE>).sermon` and a compare dialog, never data loss.
 - E9. On the Galaxy Tab S10 Lite (Android Chrome), a `.sermon` opened from Google Drive through the system file picker can be edited, preached offline and saved back to Drive through the picker, with accents intact, and the PC picks up the change.
-- E10. **Archive:** archiving a sermon sets `archivedAt` in its file and leaves the file in place with unchanged content; it disappears from the main list and default search, appears in the Archive view, and is found by search there.
-- E11. Unarchiving removes `archivedAt`, and the sermon reappears in the main list and default search.
-- E12. Archiving never deletes or moves a file: the folder has the same set of files before and after archiving and unarchiving. Back up includes archived sermons and Restore keeps their `archivedAt`.
-- E13. **Google Drive conflict copy:** when Drive creates `Sermon (1).sermon` (or a similar copy) next to `Sermon.sermon`, the library shows it as its own entry marked "Possible conflict copy". It is never ignored, hidden or overwritten. If its `id` matches another sermon's, the Keep both rule (§4.15) applies so both stay visible: the copy gets a new `id` and " (restored)" in its title.
+- E10 (A6). **Archive:** archiving a sermon sets `archivedAt` in its file and leaves the file in place with unchanged content. It disappears from the main list, appears in the Archive view, and still appears in search results with an "Archived" tag.
+- E11 (A6). Unarchiving removes `archivedAt`; the sermon reappears in the main list and loses the "Archived" tag in search results.
+- E12 (A6). Archiving never deletes or moves a file: the folder has the same set of files before and after archiving and unarchiving. Back up includes archived sermons and Restore keeps their `archivedAt`.
+- E13 (A6). **Google Drive conflict copy:** when Drive creates `Sermon (1).sermon` (or a similar copy) next to `Sermon.sermon`, the library shows it as its own entry marked "Possible conflict copy". It is never ignored, hidden or overwritten. If its `id` matches another sermon's, the Keep both rule (§4.15) applies so both stay visible: the copy gets a new `id` and " (restored)" in its title.
 
 ### 4.14 (reserved for numbering)
 
@@ -854,20 +854,21 @@ Every format keeps Kreol and French accents exactly, in the text and in the file
 
 ## 6. Phased plan
 
-Order set by Mevin (Oct 2026). The **first release** (current batch, file format #14, Frontend's local save with Back up and Restore, `/api/sermons` removal; §4.15 ST criteria) ships before Step A1. Steps A1–A5 then run in this order; later phases keep their old order after A5. Deferred items are listed under the table.
+Order set by Mevin (Oct 2026). The **first release** (current batch, file format #14, Frontend's local save with Back up and Restore, `/api/sermons` removal; §4.15 ST criteria) ships before Step A1. Steps A1–A6 then run in this order; later phases keep their old order after A6. Deferred items are listed under the table.
 
 | Step / phase | Scope | Frontend | Backend | QA |
 |---|---|---|---|---|
 | **First release** | Local-only storage, Save to folder, Back up / Restore (§4.15) | Repository layer, dialogs | File format #14, delete `/api/sermons*` | ST1–ST4, ST6–ST22 |
 | **A1: Writing tools** | **Shared schema + mark-preserving renderer + Bionic layer + shared mark CSS (§4.1), first and blocks the rest**; 10 fonts and justify (§4.4); colour popover with 6 presets and custom hex, 6 highlight colours (§4.2 minus gradient); bold, italic, underline, strike, superscript, subscript (§4.16a); size; accents, smart quotes and palette (§4.3); Bionic slider (§4.5) | Renderer, toolbar, popovers, fonts, Bionic | Export contract: FontId, size, marks, highlight; bundle fonts for PDF | A1–A4, R1–R7, W1, W2, W6, MK1–MK4, PG2, C1–C10, F1–F4, B1–B3; regression of slices 1–2 |
 | **A2: Text styles** | Quote, Intense quote, Citation, Illustration block (§4.16b) | Block styles, panel | Export of the new block types | PS1–PS4 |
-| **A3: Bible verse insert** | Scripture insert: bundled LSG 1910 and World English Bible; Open on Bible Gateway + paste for ESV/NIV/NASB1995/Segond 21/Semeur (§4.12h, pending Mevin's confirmation) | Parser, Bible data | None | §4.12h ACs incl. P-7, BG1–BG3 |
+| **A3: Bible verse insert** | Scripture insert: bundled LSG 1910 and World English Bible; Open on Bible Gateway + paste for ESV/NIV/NASB1995/Segond 21/Semeur (§4.12h, confirmed by Mevin) | Parser, Bible data | None | §4.12h ACs incl. P-7, BG1–BG3 |
 | **A4: Define** | Define-1: typed meaning; then Define-2: lexicon lookup, STEPBible primary (§4.16e) | Define dialog, marker, popover, lexicon data | Export of definition markers | DF1–DF12 (split per DF10), UP1 |
 | **A5: Page size and orientation** | Document settings, page sizes (A4 default, Tablet landscape), orientation in Preach, page numbers, infinite view (§4.6, §4.16f) | Pagination, page box | Export size and orientation | D1–D7, PG1 |
+| **A6: Archive and edit lock** | Archive / Unarchive with `archivedAt`, Archive view, "Archived" tag in search (§4.13 Archive); Google Drive conflict copies shown, never overwritten; edit lock with 60 s auto re-lock while the timer runs (§4.12d) | Sermon list archive, conflict-copy badge, lock | `archivedAt` in file module | E10–E13, §4.12d AC |
 | **B: Document** | Title block (§4.7); document language (§4.12i) | Title block, language | Title block export, filename rule | T1–T3, §4.12i AC |
-| **C: Pulpit** | Timer and STOP (§4.8); document status (§4.9, no prayer prompts, no AI); PWA offline, wake lock, page turning, edit lock, navigator, estimate, per-point timing (§4.12 a–g) | Preach chrome, timer, panels, SW | None | TM1–TM11, S1–S4, offline, clicker and wake-lock device tests |
+| **C: Pulpit** | Timer and STOP (§4.8); document status (§4.9, no prayer prompts, no AI); PWA offline, wake lock, page turning, navigator, estimate, per-point timing (§4.12 a–g) | Preach chrome, timer, panels, SW | None | TM1–TM11, S1–S4, offline, clicker and wake-lock device tests |
 | **D: Layout extras** | Gradient text (§4.2); connector lines between words in the text (§4.11, builds the connector engine) | Gradient, text anchors, overlay | Export: gradient modes, PDF connector paths | W3–W5, W7, L1–L4 |
-| **E: Library (later)** | Version history, library with Archive, templates, sync via Google Drive (§4.13) | Library UI, history, conflict UI | None (no server), except export | E1–E13 |
+| **E: Library (later)** | Version history, library (inherits A6 Archive), templates, sync via Google Drive (§4.13) | Library UI, history, conflict UI | None (no server), except export | E1–E9 |
 
 The shared renderer at the start of A1 blocks everything, because every later feature renders through it.
 
@@ -881,6 +882,6 @@ The shared renderer at the start of A1 blocks everything, because every later fe
 
 ## 7. Open decisions for Mevin
 
-Decided in Oct 2026 and removed from this list: prayer prompts (removed, no AI), A4 default page size (plus Tablet landscape), edit-lock auto-relock (yes, 60 s), connector markers in Word/PowerPoint (accepted), synced folder (Google Drive). The Bible plan in §4.12h is written up and pending Mevin's confirmation.
+Decided in Oct 2026 and removed from this list: prayer prompts (removed, no AI), A4 default page size (plus Tablet landscape), edit-lock auto-relock (yes, 60 s), connector markers in Word/PowerPoint (accepted), synced folder (Google Drive). Bible plan (LSG 1910 and World English Bible bundled; Bible Gateway + paste for the others) confirmed.
 
 1. Should page numbers in **printed** exports also descend? (Proposed: no, print ascends.)
