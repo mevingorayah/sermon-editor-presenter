@@ -18,10 +18,7 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=8080
 ENV HOSTNAME=0.0.0.0
-ENV SERMON_DATA_DIR=/app/data/sermons
-RUN useradd --system --uid 1001 nextjs \
-  && mkdir -p /app/data/sermons \
-  && chown -R nextjs:nextjs /app/data
+RUN useradd --system --uid 1001 nextjs
 COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nextjs /app/public ./public

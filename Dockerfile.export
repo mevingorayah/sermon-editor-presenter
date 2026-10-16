@@ -19,7 +19,6 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV ROLE=export
 ENV PORT=8080
 ENV HOSTNAME=0.0.0.0
-ENV SERMON_DATA_DIR=/app/data/sermons
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -28,9 +27,7 @@ RUN apt-get update \
     fontconfig \
   && rm -rf /var/lib/apt/lists/* \
   && fc-cache -f \
-  && useradd --system --uid 1001 nextjs \
-  && mkdir -p /app/data/sermons \
-  && chown -R nextjs:nextjs /app/data
+  && useradd --system --uid 1001 nextjs
 COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nextjs /app/public ./public
