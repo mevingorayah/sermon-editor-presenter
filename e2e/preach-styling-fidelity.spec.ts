@@ -135,7 +135,7 @@ for (const theme of ["light", "dark"] as const) {
       const markBg = await mark.evaluate((el) => getComputedStyle(el).backgroundColor);
       expect(markBg).not.toBe("rgba(0, 0, 0, 0)");
       const markFg = await mark.evaluate((el) => getComputedStyle(el).color);
-      const opaqueBg = theme === "dark" ? "rgb(90, 68, 21)" : bg;
+      const opaqueBg = theme === "dark" ? "rgb(61, 46, 14)" : bg;
       if (theme === "dark") expect(markBg).toBe(opaqueBg);
       expect(contrast(markFg, opaqueBg)).toBeGreaterThanOrEqual(4.5);
 
