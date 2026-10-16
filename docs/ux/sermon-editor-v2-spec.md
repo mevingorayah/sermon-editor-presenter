@@ -750,7 +750,7 @@ interface BackupFile {            // first release: <name>.sermon-backup, UTF-8 
 
 The shared checker in `src/lib/sermon-file/` (browser-safe, zod only) is the only place that reads or writes these. Error codes: `TOO_LARGE`, `NOT_JSON`, `WRONG_KIND`, `NEWER_VERSION`, `INVALID`. Limits are 20 MB per sermon and 200 MB per backup.
 
-**Backup format by phase.** The first release uses the single JSON `.sermon-backup` from #14, since there are no images yet. When images arrive in Phase B/D, Back up moves to the `.zip` in §4.15 (`.sermon` files, `assets/`, `manifest.json` with checksums). The `.zip` reader reuses the same checker for every file inside, and Restore still accepts `.sermon-backup` files.
+**Backup format by phase.** The first release uses the single JSON `.sermon-backup` from #14, since there are no images yet. When images arrive in Step A3, Back up moves to the `.zip` in §4.15 (`.sermon` files, `assets/`, `manifest.json` with checksums). The `.zip` reader reuses the same checker for every file inside, and Restore still accepts `.sermon-backup` files.
 
 ### 5.2 Document fields (`sermon`, schemaVersion 2)
 
@@ -794,7 +794,7 @@ type FontId = "lora"|"merriweather"|"playfair-display"|"source-serif-4"|"literat
 
 **Upgrades** run in the checker's `upgradeSermon`, one step per version:
 - v0 to v1 (in #14): a bare localStorage document or the old server shape.
-- v1 to v2: wrap flat content into one section with one column; first `title` node to `title`/`titleBlock`; `bionic: boolean` to `{enabled, strength: 0.45}`; font stacks to FontId; `status` defaults to `in_progress`; `timer.targetSec` 2700; every block gets a `blockId`; `definitions` starts empty. A `definition` mark whose id is missing from `definitions` is dropped (the word text stays). The upgrade is idempotent, and the file is only rewritten as v2 on the first real edit.
+- v1 to v2: wrap flat content into one section with one column; first `title` node to `title`/`titleBlock`; `bionic: boolean` to `{enabled, strength: 0.45}`; font stacks to FontId; `status` defaults to `in_progress`; `timer.targetSec` 2700; every block gets a `blockId`; `definitions` starts empty. A `definition` mark whose id is missing from `definitions` is dropped (the word text stays). If two words share one definition id, the checker repairs it by giving each later word its own copy with a new id; it never refuses the file for this. Definitions no word uses are removed on save. The upgrade is idempotent, and the file is only rewritten as v2 on the first real edit.
 
 A file with a higher `schemaVersion` than the app knows is refused with "saved by a newer version of the app" and left untouched.
 
