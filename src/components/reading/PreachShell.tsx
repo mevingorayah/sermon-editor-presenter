@@ -134,7 +134,7 @@ export function PreachShell() {
 
       <div className={styles.body}>
         <div className={styles.scroll} ref={scrollRef} onScroll={onScroll}>
-          <ReadingView content={doc.content} bionic={ps.bionic} />
+          <ReadingView content={doc.content} bionic={ps.bionic} theme={ps.theme} />
         </div>
 
         {calibrationOpen ? (

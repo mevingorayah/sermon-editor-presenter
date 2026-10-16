@@ -342,6 +342,7 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
             <ReadingView
               content={content}
               bionic={false}
+              theme={theme}
               flattenGradient
             />
           </div>
