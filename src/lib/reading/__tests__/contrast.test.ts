@@ -70,7 +70,7 @@ import {
 const TEXT_PRESETS = ["#9a948a", "#5c4a1f", "#d47870", "#6a9fc4", "#6aaa7a"];
 const DARK_HIGHLIGHTS = [
   HL_DEFAULT,
-  ...["#d4a84b", "#93c5fd", "#86efac", "#f9a8d4", "#c4b5fd"].map((c) => hlDark(c, "dark")),
+  ...["#fff176", "#fde68a", "#fef08a", "#d4a84b", "#93c5fd", "#86efac", "#f9a8d4", "#c4b5fd"].map((c) => hlDark(c, "dark")),
 ];
 
 test("every text preset reaches 4.5:1 on every dark highlight, keeping its hue", () => {
@@ -82,7 +82,7 @@ test("every text preset reaches 4.5:1 on every dark highlight, keeping its hue",
       const [h0, s0] = hslOf(rgbOf(c)!);
       const [h1, , l1] = hslOf(rgbOf(out)!);
       // Near-white outputs lose hue to 8-bit rounding; skip them and greys.
-      if (s0 > 0.15 && l1 < 0.95) assert.ok(Math.abs(h1 - h0) < 3, `${c} hue drift`);
+      if (s0 > 0.15 && l1 < 0.95) assert.ok(Math.abs(h1 - h0) < 4, `${c} hue drift`);
     }
   }
 });
@@ -92,4 +92,17 @@ test("effective background: highlight colour, default highlight, else the page",
   assert.equal(effectiveDarkBackground(null, true), "#3d2e0e");
   assert.equal(effectiveDarkBackground("#93c5fd", true), hlDark("#93c5fd", "dark"));
   assert.equal(textOn("#9a948a", "light", "#3d2e0e"), "#9a948a");
+});
+
+test("dark highlights: #17 yellow preset is exact; others darken until body text reaches 4.5:1", () => {
+  assert.equal(hlDark("#FFF176", "dark"), "#655F33");
+  assert.equal(hlDark("#123456", "dark", "yellow"), "#655F33");
+  assert.equal(hlDark("#fde68a", "light"), "#fde68a");
+  const fg = rgbOf("#ede8df")!;
+  for (const c of ["#fde68a", "#fef08a", "#86efac", "#ffffff", "#00ffff", "#d4a84b"]) {
+    const d = hlDark(c, "dark");
+    assert.ok(ratioOf(fg, rgbOf(d)!) >= 4.5, `${c} -> ${d}`);
+    const [h0, s0] = hslOf(rgbOf(c)!);
+    if (s0 > 0.15) assert.ok(Math.abs(hslOf(rgbOf(d)!)[0] - h0) < 4, `${c} hue`);
+  }
 });

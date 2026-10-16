@@ -93,7 +93,8 @@ function renderText(node: JSONContent, ctx: Ctx, key: string): ReactNode {
   const inBold = marks.some((m) => m.type === "bold");
   const hl = marks.find((m) => m.type === "highlight");
   const hlColor = typeof hl?.attrs?.color === "string" && hl.attrs.color ? hl.attrs.color : null;
-  ctx = { ...ctx, textBg: effectiveDarkBackground(hlColor, Boolean(hl)) };
+  const hlPreset = typeof hl?.attrs?.preset === "string" ? hl.attrs.preset : null;
+  ctx = { ...ctx, textBg: effectiveDarkBackground(hlColor, Boolean(hl), hlPreset) };
   let out: ReactNode =
     ctx.bionic && !ctx.plain ? bionicLeaf(text, inBold) : text;
   // Wrap innermost-last so marks[0] is the outermost element, like ProseMirror.
@@ -150,12 +151,13 @@ function wrapMark(
     }
     case "highlight": {
       const color = typeof attrs.color === "string" && attrs.color ? attrs.color : null;
+      const preset = typeof attrs.preset === "string" ? attrs.preset : null;
       return (
         <mark
           key={i}
           className="sermon-highlight"
           data-color={color ?? undefined}
-          style={color ? { backgroundColor: readingHighlightColor(color, ctx.theme) } : undefined}
+          style={color ? { backgroundColor: readingHighlightColor(color, ctx.theme, preset) } : undefined}
         >
           {children}
         </mark>

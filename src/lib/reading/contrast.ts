@@ -110,16 +110,44 @@ export function readingTextColor(
 }
 
 /** Dark-Preach background behind text: the highlight if present, else the page. */
-export function effectiveDarkBackground(highlightColor: string | null | undefined, highlighted: boolean): string {
+export function effectiveDarkBackground(
+  highlightColor: string | null | undefined,
+  highlighted: boolean,
+  preset?: string | null,
+): string {
   if (!highlighted) return DARK_STAGE_BG;
-  return highlightColor ? readingHighlightColor(highlightColor, "dark") : DARK_HIGHLIGHT_BG;
+  return highlightColor ? readingHighlightColor(highlightColor, "dark", preset) : DARK_HIGHLIGHT_BG;
 }
 
-/** Highlight background as shown in Preach: a dark variant in the dark theme. */
-export function readingHighlightColor(color: string, theme: "light" | "dark"): string {
+/** Dark Preach body text (--rm-fg, reading-mode.css). */
+export const DARK_BODY_FG = "#ede8df";
+/** #17 HIGHLIGHT_PRESETS yellow (light #FFF176) → its pre-mixed dark value. */
+export const DARK_YELLOW_PRESET = "#655F33";
+const YELLOW_PRESET_LIGHT = "#fff176";
+
+/**
+ * Highlight background as shown in Preach. Dark theme: #17's yellow preset
+ * maps to its dark value exactly; any other colour drops to lightness ≤ 0.3,
+ * then darkens further (same hue/saturation) until dark body text reaches 4.5:1.
+ */
+export function readingHighlightColor(
+  color: string,
+  theme: "light" | "dark",
+  preset?: string | null,
+): string {
   if (theme !== "dark") return color;
+  if (preset === "yellow" || color.trim().toLowerCase() === YELLOW_PRESET_LIGHT) {
+    return DARK_YELLOW_PRESET;
+  }
   const rgb = parseColor(color);
   if (!rgb) return color;
+  const fg = parseColor(DARK_BODY_FG)!;
   const [h, s, l] = rgbToHsl(rgb);
-  return toHex(hslToRgb(h, s, Math.min(l, 0.3)));
+  let L = Math.min(l, 0.3);
+  let out = hslToRgb(h, s, L);
+  while (contrastRatio(fg, out) < MIN_CONTRAST && L > 0) {
+    L = Math.max(0, L - 0.005);
+    out = hslToRgb(h, s, L);
+  }
+  return toHex(out);
 }
