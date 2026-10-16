@@ -29,11 +29,32 @@ export function isLegacySeedId(id: string | null | undefined): boolean {
 
 export class SermonApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** Optional structured error details (e.g. zod issues on 400). */
+  details?: unknown;
+  constructor(message: string, status: number, details?: unknown) {
     super(message);
     this.name = "SermonApiError";
     this.status = status;
+    this.details = details;
   }
+}
+
+/**
+ * The request never produced an HTTP response (fetch threw: DNS, offline,
+ * connection reset, CORS/abort). This is the only error the Edit shell should
+ * surface as "Offline"; any HTTP status (404, 5xx) means the server is reachable.
+ */
+export class SermonNetworkError extends Error {
+  cause?: unknown;
+  constructor(message: string, cause?: unknown) {
+    super(message);
+    this.name = "SermonNetworkError";
+    this.cause = cause;
+  }
+}
+
+export function isSermonNotFoundError(err: unknown): boolean {
+  return err instanceof SermonApiError && err.status === 404;
 }
 
 function assertServerSermonId(id: string): void {
@@ -69,12 +90,21 @@ function assertSafeSermonRequestUrl(input: string): void {
   assertServerSermonId(id);
 }
 
-async function readError(res: Response): Promise<string> {
+async function readError(
+  res: Response,
+): Promise<{ message: string; details?: unknown }> {
   try {
-    const data = (await res.json()) as { error?: string; message?: string };
-    return data.error ?? data.message ?? res.statusText;
+    const data = (await res.json()) as {
+      error?: string;
+      message?: string;
+      details?: unknown;
+    };
+    return {
+      message: data.error ?? data.message ?? res.statusText,
+      details: data.details,
+    };
   } catch {
-    return res.statusText || `HTTP ${res.status}`;
+    return { message: res.statusText || `HTTP ${res.status}` };
   }
 }
 
@@ -83,16 +113,25 @@ async function request<T>(
   init?: RequestInit,
 ): Promise<T> {
   assertSafeSermonRequestUrl(input);
-  const res = await fetch(input, {
-    ...init,
-    headers: {
-      Accept: "application/json",
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(input, {
+      ...init,
+      headers: {
+        Accept: "application/json",
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...init?.headers,
+      },
+    });
+  } catch (err) {
+    throw new SermonNetworkError(
+      err instanceof Error ? err.message : "Network request failed",
+      err,
+    );
+  }
   if (!res.ok) {
-    throw new SermonApiError(await readError(res), res.status);
+    const { message, details } = await readError(res);
+    throw new SermonApiError(message, res.status, details);
   }
   return (await res.json()) as T;
 }
@@ -110,9 +149,18 @@ export async function getSermon(id: string): Promise<Sermon> {
   return data.sermon;
 }
 
+/**
+ * POST body. `id` (UUID) is the restore-under-same-id contract: a new id
+ * creates the sermon under that id; an existing id → 409 (stored copy kept).
+ * Servers that predate it may reject the field (400) or ignore it and mint a
+ * fresh UUID, so callers must always read the id from the response.
+ */
+export type CreateSermonRequest = CreateSermonInput & { id?: string };
+
 export async function createSermon(
-  input: CreateSermonInput = {},
+  input: CreateSermonRequest = {},
 ): Promise<Sermon> {
+  if (input.id !== undefined) assertServerSermonId(input.id);
   const data = await request<{ sermon: Sermon }>("/api/sermons", {
     method: "POST",
     body: JSON.stringify(input),
