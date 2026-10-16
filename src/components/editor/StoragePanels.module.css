@@ -22,3 +22,6 @@
 .legend { font-size: 0.85rem; font-weight: 600; padding: 0; margin-bottom: 0.2rem; }
 .choice { flex-wrap: wrap; }
 .warn { background: #fdecea; color: #611a15; font-weight: 600; }
+/* Destructive action: white on #b3261e is 6.5:1 (WCAG AA). */
+.row .danger { border: 0; background: #b3261e; color: #fff; font-weight: 600; }
+.row .danger:hover, .row .danger:focus-visible { background: #8c1d18; }

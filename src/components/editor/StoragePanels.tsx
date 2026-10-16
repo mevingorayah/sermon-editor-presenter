@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { replaceConfirmText, type ConflictChoice, type RestorePreview } from "@/lib/localStore/backup";
+import { useEffect, useRef, useState } from "react";
+import { replaceConfirmText, resolveReplaceConfirm, type ConflictChoice, type RestorePreview } from "@/lib/localStore/backup";
 import { OPEN_ELSEWHERE_TEXT } from "@/lib/localStore/conflict";
 import { browserModeBanner } from "@/lib/localStore/status";
 import styles from "./StoragePanels.module.css";
@@ -130,14 +130,22 @@ function Dialog({
   label,
   children,
   onClose,
+  initialFocus,
+  role,
+  testId,
 }: {
   label: string;
   children: React.ReactNode;
   onClose: () => void;
+  /** Element to focus once the modal is open (default: the browser's choice). */
+  initialFocus?: React.RefObject<HTMLElement | null>;
+  role?: "alertdialog";
+  testId?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const focusRef = useRef(initialFocus);
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
@@ -146,6 +154,7 @@ function Dialog({
       if (typeof d.showModal === "function") d.showModal();
       else d.setAttribute("open", "");
     }
+    focusRef.current?.current?.focus();
     const onCancel = (e: Event) => {
       e.preventDefault();
       closeRef.current();
@@ -162,15 +171,36 @@ function Dialog({
     };
   }, []);
   return (
-    <dialog className={styles.dialog} aria-label={label} ref={ref}>
+    <dialog className={styles.dialog} aria-label={label} ref={ref} role={role} data-testid={testId}>
       {children}
     </dialog>
   );
 }
 
-/** Per-sermon confirmation before Replace (ST18). Cancel leaves Keep both selected. */
-function confirmReplace(title: string): boolean {
-  return typeof window === "undefined" ? false : window.confirm(replaceConfirmText(title));
+/** Per-sermon confirmation before Replace (ST18). Focus starts on Cancel; Escape = Cancel. */
+function ReplaceConfirmDialog({
+  title,
+  onReplace,
+  onCancel,
+}: {
+  title: string;
+  onReplace: () => void;
+  onCancel: () => void;
+}) {
+  const cancel = useRef<HTMLButtonElement>(null);
+  return (
+    <Dialog label="Replace sermon?" onClose={onCancel} initialFocus={cancel} role="alertdialog" testId="replace-confirm">
+      <p>{replaceConfirmText(title)}</p>
+      <div className={styles.row}>
+        <button type="button" ref={cancel} onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="button" className={styles.danger} onClick={onReplace}>
+          Replace
+        </button>
+      </div>
+    </Dialog>
+  );
 }
 
 const CHANGE_LABEL = {
@@ -204,6 +234,7 @@ export function RestorePreviewDialog({
   onApply: () => void;
   onCancel: () => void;
 }) {
+  const [confirming, setConfirming] = useState<{ id: string; title: string } | null>(null);
   const replacingOpen =
     !!openId && preview.items.some((i) => i.id === openId && i.conflict && choices[i.id] === "replace");
   return (
@@ -237,9 +268,7 @@ export function RestorePreviewDialog({
                     type="radio"
                     name={`c-${i.id}`}
                     checked={choices[i.id] === "replace"}
-                    onChange={() => {
-                      if (confirmReplace(i.title)) onChoice(i.id, "replace");
-                    }}
+                    onChange={() => setConfirming({ id: i.id, title: i.title })}
                   />{" "}
                   Replace
                 </label>
@@ -267,6 +296,16 @@ export function RestorePreviewDialog({
           Cancel
         </button>
       </div>
+      {confirming ? (
+        <ReplaceConfirmDialog
+          title={confirming.title}
+          onReplace={() => {
+            onChoice(confirming.id, resolveReplaceConfirm(true));
+            setConfirming(null);
+          }}
+          onCancel={() => setConfirming(null)}
+        />
+      ) : null}
     </Dialog>
   );
 }

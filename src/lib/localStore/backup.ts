@@ -151,3 +151,8 @@ export function parseRestoreFile(text: string): SermonBackupFile {
 export function replaceConfirmText(title: string): string {
   return `Replace your copy of ${title || "Untitled sermon"}? Your current version will be lost.`;
 }
+
+/** Outcome of the Replace confirmation: only an explicit Replace switches the choice. */
+export function resolveReplaceConfirm(confirmed: boolean): ConflictChoice {
+  return confirmed ? "replace" : "keep-both";
+}
