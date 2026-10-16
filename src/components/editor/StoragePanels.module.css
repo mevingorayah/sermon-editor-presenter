@@ -1,0 +1,18 @@
+.firstRun { min-height: 100dvh; display: grid; place-items: center; background: var(--edit-bg); color: var(--edit-fg); font-family: var(--edit-font-ui); padding: 1.5rem; }
+.card { max-width: 32rem; display: flex; flex-direction: column; gap: 0.9rem; padding: 2rem; border: 1px solid var(--edit-border); border-radius: 12px; background: var(--edit-bg-elevated); }
+.h1 { margin: 0; font-size: 1.35rem; }
+.h2 { margin: 0 0 0.5rem; font-size: 1.1rem; }
+.note, .muted { color: var(--edit-fg-muted); font-size: 0.85rem; }
+.error { color: #b42318; font-size: 0.85rem; }
+.primary { align-self: flex-start; padding: 0.5rem 1rem; border-radius: 8px; border: 0; background: var(--edit-accent); color: #fff; font-weight: 600; cursor: pointer; }
+.link { align-self: flex-start; background: none; border: 0; padding: 0; color: var(--edit-fg-muted); text-decoration: underline; cursor: pointer; font-size: 0.85rem; }
+.conflict, .banner { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 1.25rem; font-size: 0.85rem; border-bottom: 1px solid var(--edit-border); }
+.conflict { background: #fff4e5; color: #5c3a00; }
+.banner { background: var(--edit-bg-elevated); color: var(--edit-fg-muted); }
+.conflict button, .banner button, .row button { padding: 0.3rem 0.7rem; border-radius: 6px; border: 1px solid var(--edit-border); background: var(--edit-bg); color: inherit; cursor: pointer; }
+.backdrop { position: fixed; inset: 0; background: rgb(0 0 0 / 0.35); display: grid; place-items: center; z-index: 50; }
+.dialog { width: min(34rem, 92vw); max-height: 85vh; overflow: auto; padding: 1.25rem 1.5rem; border-radius: 12px; background: var(--edit-bg-elevated); color: var(--edit-fg); font-family: var(--edit-font-ui); outline: none; }
+.previewList { max-height: 14rem; overflow: auto; padding-left: 1.1rem; font-size: 0.9rem; }
+.row { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+.row .primary { border: 0; background: var(--edit-accent); color: #fff; }
+.choice { border: 0; margin: 0.25rem 0 0.4rem; padding: 0; display: flex; gap: 1rem; font-size: 0.85rem; }
