@@ -719,7 +719,7 @@ User marks (colour, highlight, font) still work inside these blocks. Quote, Inte
 
 #### OPEN note for Backend (Oct 2026 decisions; UI UX doesn't edit §5)
 
-> **OPEN — Backend to update §5:**
+> **RESOLVED in §5 (Backend, see 5.1–5.4).** Original note:
 > - **Prayer prompts removed entirely:** drop `prayerPrompts` from the schema and the optional prayer page from the export contract (§5.3) and the export table.
 > - **Deferred:** blocks with drag handles, sections/columns/images and boards (§4.10, §4.16c, §4.16d). Decide whether `blockId`, `section`/`column`/`image` and `board` stay in the schema or move out, and mark their §5.4 rows deferred. The §5 note that images arrive in "Step A3" is out of date (images and the `.zip` backup are deferred).
 > - **Page sizes:** add `"tablet-landscape"` (16:10 landscape) to the page `size` values; default `"a4"`.
@@ -762,7 +762,7 @@ interface BackupFile {            // first release: <name>.sermon-backup, UTF-8 
 
 The shared checker in `src/lib/sermon-file/` (browser-safe, zod only) is the only place that reads or writes these. Error codes: `TOO_LARGE`, `NOT_JSON`, `WRONG_KIND`, `NEWER_VERSION`, `INVALID`. Limits are 20 MB per sermon and 200 MB per backup.
 
-**Backup format by phase.** The first release uses the single JSON `.sermon-backup` from #14, since there are no images yet. When images arrive in Step A3, Back up moves to the `.zip` in §4.15 (`.sermon` files, `assets/`, `manifest.json` with checksums). The `.zip` reader reuses the same checker for every file inside, and Restore still accepts `.sermon-backup` files.
+**Backup format by phase.** The first release and Steps A1–A6 use the single JSON `.sermon-backup` from #14, since there are no images. Images and the `.zip` backup are deferred. When images arrive, Back up moves to the `.zip` in §4.15 (`.sermon` files, `assets/`, `manifest.json` with checksums). The `.zip` reader reuses the same checker for every file inside, and Restore still accepts `.sermon-backup` files.
 
 ### 5.2 Document fields (`sermon`, schemaVersion 2)
 
@@ -773,7 +773,8 @@ interface SermonDocument {
   meta: { subtitle?; author?; place?; date?; titleLayout?: "classic"|"left"|"minimal";
           createdAt; series?; bibleBook? };
   status: "in_progress"|"on_pause"|"finalised"|"completed";
-  settings: { page: { size; widthMm?; heightMm?; orientation: "portrait"|"landscape";
+  settings: { page: { size: "a4"|"letter"|"tablet-landscape"|"custom";  // default "a4"; tablet-landscape = 16:10
+                      widthMm?; heightMm?; orientation: "portrait"|"landscape";
                       view: "single"|"spread"|"infinite"; margins: "narrow"|"normal"|"wide";
                       showPageNumbers: boolean };
               language: "en"|"fr"|"mfe"; smartQuotes: boolean; wpm: number;
@@ -793,9 +794,11 @@ interface SermonDocument {
   notes: string;
 }
 // content details (§4.16):
-//  every block node has attrs.blockId (uuid); moves keep it, duplicates get a new one
-//  block types: paragraph, heading, scripture, quote, intenseQuote, citation,
-//               illustration{label?}, board{boxes: {id,x,y,w,h,text}[]}, section, column, image
+//  every block node has attrs.blockId (uuid); kept now so drag-and-drop needs no later upgrade
+//  block types: paragraph, heading, scripture{citation, translation?}, quote, intenseQuote,
+//               citation, illustration{label?}
+//  deferred (not written by Steps A1–A6, reserved names): section, column, image, board{boxes: {id,x,y,w,h,text}[]}
+//  scripture.translation: "LSG1910"|"WEB"|"ESV"|"NIV"|"NASB1995"|"S21"|"BDS" or free text, so pasted Bible Gateway text keeps its version
 //  marks: bold, italic, underline, strike, superscript, subscript, link,
 //         textStyle{color,fontFamily,fontSize}, highlight{color}, gradient, anchor{id},
 //         definition{id}   // id points into definitions[]; lines between board boxes reuse connectors
@@ -807,7 +810,7 @@ Prayer prompts are cut. Unknown fields, including an old `prayerPrompts`, are pr
 
 **Upgrades** run in the checker's `upgradeSermon`, one step per version:
 - v0 to v1 (in #14): a bare localStorage document or the old server shape.
-- v1 to v2: wrap flat content into one section with one column; first `title` node to `title`/`titleBlock`; `bionic: boolean` to `{enabled, strength: 0.45}`; font stacks to FontId; `status` defaults to `in_progress`; `timer.targetSec` 2700; every block gets a `blockId`; `definitions` starts empty. A `definition` mark whose id is missing from `definitions` is dropped (the word text stays). If two words share one definition id, the checker repairs it by giving each later word its own copy with a new id; it never refuses the file for this. Definitions no word uses are removed on save. The upgrade is idempotent, and the file is only rewritten as v2 on the first real edit.
+- v1 to v2: first `title` node to `title`/`titleBlock`; `bionic: boolean` to `{enabled, strength: 0.45}`; page size defaults to `a4`; font stacks to FontId; `status` defaults to `in_progress`; `timer.targetSec` 2700; every block gets a `blockId`; `definitions` starts empty. A `definition` mark whose id is missing from `definitions` is dropped (the word text stays). If two words share one definition id, the checker repairs it by giving each later word its own copy with a new id; it never refuses the file for this. Definitions no word uses are removed on save. Wrapping content into sections waits for the deferred sections step. The upgrade is idempotent, and the file is only rewritten as v2 on the first real edit.
 
 A file with a higher `schemaVersion` than the app knows is refused with "saved by a newer version of the app" and left untouched.
 
@@ -815,7 +818,8 @@ A file with a higher `schemaVersion` than the app knows is refused with "saved b
 
 The request carries only the current sermon. The body is never logged and no temp files are kept. New in v2:
 - FontId and `fontSize`, `underline`, multicolour `highlight{color}`, `gradient{from,to,angle}` with a per-format `gradientMode`.
-- `section`, `column` and `image` nodes. Images are sent inline as data URLs in the request, since the server has no store. Oversize requests get `413` with a clear message (ST16).
+- Page sizes `a4`, `letter`, `tablet-landscape` (16:10) and orientation; Scripture `translation` shown after the citation.
+- Deferred: `section`, `column` and `image` nodes (images inline as data URLs, `413` when oversize, ST16).
 - `titleBlock`, page size and orientation, `countdownPageNumbers` (PDF, DOCX).
 - `bionic` is always `false`, and colours are always the light-theme values. Colours stay strict: `#RRGGBB` or `rgb(r,g,b)`.
 
@@ -836,17 +840,20 @@ QA tests each cell. **Kept** means it looks the same as Edit in light theme. Any
 | Lists | Native lists | Kept | Native bullets | Kept |
 | Scripture block and citation | Kept; citation ALL CAPS caption | Kept; ALL CAPS | Kept; ALL CAPS | Kept; ALL CAPS |
 | Gradient text | Solid `from` colour | `gradientMode` | Solid `from` colour | Kept |
-| Sections and columns | Native columns | Kept | One slide per section | Kept |
-| Images | Kept | Kept | Kept | Kept |
-| Connector lines | Small markers (Mevin decision 5) | Kept | Small markers | Kept |
+| Sections and columns (deferred) | Native columns | Kept | One slide per section | Kept |
+| Images (deferred) | Kept | Kept | Kept | Kept |
+| Connector lines (deferred) | Small markers (Mevin decision 5) | Kept | Small markers | Kept |
 | Superscript, subscript | Kept | Kept | Kept | Kept |
 | Quote, intense quote | Word Quote / Intense Quote styles | Kept | Kept | Kept |
 | Citation block | Kept; ALL CAPS caption | Kept | Kept | Kept |
 | Illustration block (with label) | Shaded box with label | Kept | Kept | Kept |
-| Boards (boxes and lines) | Picture of the board | Kept as drawing | Native shapes and lines | Kept |
+| Boards (boxes and lines) (deferred) | Picture of the board | Kept as drawing | Native shapes and lines | Kept |
 | Definition words | Footnote with the meaning | Dotted underline plus footnote | Speaker notes list the meanings | Dotted underline only |
+| Scripture translation | Kept after citation | Kept | Kept | Kept |
 | Bionic | Never | Never | Never | Never |
 | Dark theme | Never; light colours | Never | Never | Never |
+
+Bundled Bible data lives in `data/sources/lsg1910/` and `data/sources/web/` (eBible.org updated WEB, Strong's-tagged, public domain, text unmodified, "World English Bible" trademark kept as is), each with `NOTICE.md`; the CI check (DF8) reads those. Lexicon data goes in `data/sources/stepbible/` (CC BY 4.0).
 
 Every format keeps Kreol and French accents exactly, in the text and in the filename (#10 rule).
 
