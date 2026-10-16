@@ -122,7 +122,7 @@ Responsive breakpoints: ≥1200 px shows three panes in Edit. 768–1199 px fold
 
 ## 4. Feature specs
 
-### 4.1 Styling fidelity (Phase A, item 1)
+### 4.1 Styling fidelity (Step A1, first item)
 
 **Purpose.** Everything styled in Edit looks the same in Preach and in export previews.
 
@@ -391,11 +391,11 @@ Each field can be styled with the normal marks (font, colour, gradient on the Ti
 - Choosing **Finalised** opens the **Prayer prompts** dialog:
   - An editable bullet list written by hand (3–7 recommended). There is no AI tab or "Suggest with AI" button.
   - **Approve** saves the final list and sets the status to Finalised. **Cancel saves nothing and puts the status back to what it was before.**
-  - No version snapshot is taken until Phase E exists (§4.13).
+  - No version snapshot is taken until Phase E (version history) exists (§4.13).
 - Editing a Finalised sermon shows a banner: "This sermon is finalised. Editing will set it back to In progress." Choosing to continue reverts the status. Prompts are kept but flagged "review".
 - **Completed** is set by the STOP flow (§4.8) or by hand.
 
-**AI rule (binding).** AI stays off. Prayer prompts are written by hand only. The AI proxy is excluded from Phases A, B and C and is not built or deployed. Turning AI on later is Mevin's decision and needs a Security review first, because sermon text would be sent to an outside company, which is a privacy concern. The options below are kept only as background for that later decision.
+**AI rule (binding).** AI stays off. Prayer prompts are written by hand only. The AI proxy is excluded from every step and phase up to and including Phase C (the pulpit) and is not built or deployed. Turning AI on later is Mevin's decision and needs a Security review first, because sermon text would be sent to an outside company, which is a privacy concern. The options below are kept only as background for that later decision.
 
 **AI provider options (later, only if Mevin opts in after a Security review):**
 
@@ -531,7 +531,7 @@ image { id, src: "assets/<sha256>.webp" | "data:…", alt, caption?, widthPct }
 
 **h. Scripture insert by reference.**
 - In the Scripture block or the subtitle, type a reference (`Philippiens 4:4-7`, `Phil 4.4–7`, `John 3:16`), then click "Insert". The verses arrive with the citation set (`Philippiens 4:4-7 LSG`).
-- Translations in Phase B: **Louis Segond 1910 (public domain)** and **KJV (public domain, UK Crown patent noted)**. Bundled as local JSON (about 4–5 MB each, lazy-loaded and cached for offline), so no API or server is needed.
+- Translations in Step A4: **Louis Segond 1910 (public domain)** and **KJV (public domain, UK Crown patent noted)**. Bundled as local JSON (about 4–5 MB each, lazy-loaded and cached for offline), so no API or server is needed.
 - The parser accepts French and English book names and abbreviations.
 - Licensed translations (ESV, NIV, BDS, Segond 21) come later and need licences.
 - AC: `Phil 4:4-7` LSG inserts 4 verses offline with the correct citation.
@@ -615,11 +615,11 @@ image { id, src: "assets/<sha256>.webp" | "data:…", alt, caption?, widthPct }
 - ST21. The backup reminder appears after 7 days with no backup (fake clock: not at 6 days 23 h, yes at 7 days), and never in Preach.
 - ST22. Export (E-2 to E-6): exports use light colours and no Bionic even from dark Preach; accented content and filenames are kept in each format; the "Use preaching countdown numbers" option works in PDF and DOCX; the request has only the current sermon and the export server leaves no temp files or logged body; offline export shows "Needs internet" with no data loss.
 
-### 4.16 Mevin's Edit requests (Oct 2026, Phases A and B)
+### 4.16 Mevin's Edit requests (Oct 2026, Steps A1–A6)
 
 All of these follow the Preach rule in §4.1-6: what you set in Edit shows the same in Preach, with only the allowed differences (uniform size scale, dark-theme colour lightening and dark highlights, Bionic weight only, Scripture plain). Anything else that differs is a bug. Field names are Backend's; the file changes are listed in the open note at the end of this section, and Backend writes them into §5.
 
-#### 4.16a More text marks (Phase A)
+#### 4.16a More text marks (Step A1)
 
 **UI.** Toolbar row 1 becomes `B I U S x² x₂`: bold, italic, underline, strikethrough, superscript, subscript. Shortcuts: Ctrl/Cmd+B, I, U; Ctrl/Cmd+Shift+X strikethrough; Ctrl/Cmd+. superscript; Ctrl/Cmd+, subscript. Superscript and subscript can't both be on: turning one on turns the other off. Each button shows `aria-pressed`.
 **Data.** Marks `italic`, `strike`, `superscript`, `subscript` (with `bold`, `underline`).
@@ -629,7 +629,7 @@ All of these follow the Preach rule in §4.1-6: what you set in Edit shows the s
 - MK3. In `all-marks.sermon`, superscript and subscript runs have the same `vertical-align` and font-size ratio to the body in Edit and Preach (A1 rule), in both themes.
 - MK4. Bionic doesn't split a superscript or subscript run of 3 characters or fewer (e.g. verse numbers, `1er`), and adds nothing inside user bold.
 
-#### 4.16b Paragraph styles (Phase A)
+#### 4.16b Paragraph styles (Step A2)
 
 **UI.** The block style menu (Title, H1, H2, H3, Body, Scripture) adds **Quote**, **Intense quote**, **Citation** and **Illustration**.
 - **Quote:** indented, italic, with a thin left rule in a muted colour.
@@ -641,28 +641,28 @@ User marks (colour, highlight, font) still work inside these blocks. Quote, Inte
 **Data.** Block types `quote`, `intenseQuote`, `citation`, `illustration` (with optional `label`).
 **AC.**
 - PS1. Each of the 4 styles can be applied from the menu and by keyboard, and the block type is stored in the file after reload.
-- PS2. For each style, Edit and Preach match on indent, font-style, alignment, rule colour, panel background and label text (A1 rule). In dark theme the panel and rule use their dark variants and text inside stays ≥4.5:1.
+- PS2. For each style, Edit and Preach match on indent, font-style, alignment, rule colour, panel background and label text (A1 rule). In dark theme the panel and rule use their dark variants and Illustration text is ≥4.5:1 measured against the panel tint (not the page), in both themes, including user colours (lightened per the dark rule if needed).
 - PS3. The Illustration label shows in Edit, Preach and every export, and a screen reader announces "Illustration" (or the custom label).
 - PS4. Citation blocks get no Bionic at any strength; Quote, Intense quote and Illustration get Bionic like body text.
 
-#### 4.16c Branch boards (mind-map boxes, Phase B)
+#### 4.16c Branch boards (mind-map boxes, Step A3, after blocks)
 
 **Purpose.** Inside a section, lay out ideas as boxes linked with lines, like a mind map.
 **UI.** "+ Section → Board" or "+ block → Board" inserts a board area inside a section. In it:
 - Double-click or "+ Box" adds a box. Drag a box to move it; drag its corner to resize. Type in a box to edit its text.
 - Link two boxes with **⟋ Connect** (the same tool and styles as §4.11). Lines stay attached when boxes move.
-- Keyboard: Tab moves between boxes; arrow keys move the focused box 8 px (Shift: 1 px); Ctrl/Cmd+Alt+L starts a link from the focused box, Tab to the target, Enter completes. Delete removes a box and its lines, with Undo.
+- Keyboard: Tab moves between boxes; arrow keys move the focused box 8 px (Shift: 1 px); with a box focused (not while typing in it), press **L** to start a link, Tab to the target box, Enter completes, Esc cancels. No Ctrl+Alt chord is used (Ctrl+Alt is AltGr on French AZERTY), and no Win/Cmd+L lock-screen combo. Delete removes a box and its lines, with Undo.
 - In Preach, boards show exactly as laid out (scaled with the page). Boxes can be moved only when the edit lock is off.
 **Accessibility.** The board is a `group` labelled "Board, 5 boxes". Each box is a focusable item; its links are listed as "linked to 'Grace', 'Faith'".
 **Data.** `board` nodes `{id, x, y, w, h, text}`; lines reuse `connectors`.
-**Dependency.** This brings the connector engine (§4.11) into Phase B for boards; text-to-text connectors stay in Phase D.
+**Dependency.** The connector engine (§4.11 SVG overlay, anchors, styles) is built inside Step A3 for boards. Drawing lines between words in the text (the rest of §4.11) comes in Phase D.
 **AC.**
 - BD1. Add, move, resize, edit text and delete boxes with mouse and with keyboard only; after reload the file's `board` nodes have the same `x, y, w, h, text`.
 - BD2. Linking two boxes stores a `connectors` entry; moving either box keeps the line endpoints within 4 px of the box edges.
 - BD3. In Preach, box positions and sizes match Edit after the uniform size scale (ratio within ±1%), and line styles match. With the lock on, a drag does nothing.
 - BD4. Deleting a box removes its lines; Undo restores both.
 
-#### 4.16d Every block is a module (Phase B)
+#### 4.16d Every block is a module (Step A3)
 
 **UI.** Every title, H1, H2, H3, body paragraph, list, quote, illustration, Scripture and board is a block. On hover or focus each shows a **⠿ drag handle** on the left and a **+** to add a block below (opening the same menu as + Section). This works inside sections and columns.
 - Edit: always available.
@@ -676,16 +676,16 @@ User marks (colour, highlight, font) still work inside these blocks. Quote, Inte
 - BK4. Every block in the file has a unique `blockId`; duplicating a block gives the copy a new `blockId` (and new anchor/definition ids) so nothing points at two places.
 - BK5. In Preach with the lock off, handles and + work and changes are saved; with the lock on they're hidden and a drag does nothing.
 
-#### 4.16e Define a word (Phase B)
+#### 4.16e Define a word (Step A5: Define-1 typed meaning first, then Define-2 lexicon)
 
 **Purpose.** Attach the meaning of a word, from the Greek or Hebrew lexicon or in your own words, so it's at hand in the pulpit.
 **UI.**
-- Select a word, right-click (or long-press, or Ctrl/Cmd+Shift+D) → **Define…**. A dialog has two tabs:
+- Select a word, right-click (or long-press, or the keyboard context-menu key / Shift+F10) → **Define…**. A direct shortcut is **Ctrl/Cmd+Shift+Y only if it passes DF11**; Ctrl+Shift+D is not used (it bookmarks all tabs in Chrome and Edge). Known risk: Ctrl+Shift+Y opens Downloads in Firefox on Windows/Linux, so if DF11 fails, there's no chord and the context menu is the keyboard route. A dialog has two tabs:
   - **Lexicon:** search by English/French word, transliteration or Strong's number. Results show the original word (Greek or Hebrew script), transliteration, Strong's number and a short gloss, with the source. Choose one to attach.
   - **My own meaning:** type a meaning (and optionally the original word).
 - The word gets a **subtle marker**: a dotted underline in a muted colour, plus a small dot after the word. It doesn't change the word's colour, weight or highlight.
 - In Edit, hover or click shows the definition card with Edit and Remove. In Preach, **tapping the word (or pressing Enter on it) shows a popover** with the original word, transliteration, Strong's number and gloss. Tap outside or Esc closes it. Tapping a defined word never turns the page.
-- Definitions are saved in the sermon file, so they work offline after saving. The lexicon data is bundled as local JSON and cached for offline use, like the Bible text (§4.12h).
+- Definitions are saved in the sermon file, so they work offline after saving. The lexicon data is bundled with the app, so lookups work offline from the first launch with no online visit.
 **Sources and licences.**
 - **Primary: STEPBible data (Tyndale House), CC BY 4.0.** Used for the Greek and Hebrew lexicons and tagged original-language texts. Requires one credit line on the About screen.
 - **Secondary option: Open Scriptures Strong's dictionaries, CC BY-SA.** Not public domain. Use only if STEPBible is missing an entry; it needs its own credit line, and share-alike applies to that dictionary data (any changed version of it we ship must be under CC BY-SA).
@@ -697,18 +697,22 @@ User marks (colour, highlight, font) still work inside these blocks. Quote, Inte
 - DF1. Select "grace", Define → Lexicon → choose G5485: the word gets the marker, and the file has a `definition` mark and a `definitions` entry with `word`, `lemma` χάρις, `strongs` G5485, `language: grc`, a gloss and `source: stepbible`.
 - DF2. Define → My own meaning stores an entry with `language: custom`, `source: user` and the typed gloss, accents intact (NFC).
 - DF3. In Preach, tapping (and Enter on) the defined word shows the popover with the original word, transliteration, Strong's number and gloss; Esc and tap-outside close it; the page doesn't turn and the timer isn't affected.
-- DF4. After saving, a cold start in airplane mode opens the sermon and the popover shows the full definition. The lexicon search also works offline after one online visit.
+- DF4. After saving, a cold start in airplane mode opens the sermon and the popover shows the full definition. The lexicon search also works offline from the very first launch, with no online visit ever made (fresh profile, network blocked before first load of the installed app).
 - DF5. The marker matches between Edit and Preach under A1 (dotted underline colour follows the dark rule; no change to the word's colour, weight or highlight beyond Bionic).
 - DF6. Removing the definition removes the mark and the list entry; deleting the word removes both, with Undo restoring both.
 - DF7. Hebrew entries show right-to-left script correctly inside the left-to-right popover (`dir="rtl"` on the original word).
 - DF8. **Credits:** the About screen shows the STEPBible credit line ("Greek and Hebrew lexicon data from STEPBible.org, Tyndale House, Cambridge, CC BY 4.0"). If any Open Scriptures Strong's data is shipped, a second credit line names it with CC BY-SA. A build check fails if lexicon data from either source is bundled without its credit line.
+- DF9. Copy/paste, cut/paste, duplicate, and cut then Undo of a defined word never leave two words sharing one definition `id` and never leave an orphaned definition. A paste creates a new `id` with a copy of the entry; definitions no word points to are pruned on save (§5.2). Checked by reading the file after each action.
+- DF10. Phasing: **Define-1** (typed meaning) ships first and must pass DF2, DF3, DF5, DF6, DF9. **Define-2** (lexicon lookup) follows and must pass DF1, DF4, DF7, DF8 as well.
+- DF11. Shortcut check: the chosen Define shortcut does nothing else in Chrome, Edge and Firefox on Windows and macOS, and on French AZERTY. If any clash is found, no chord ships.
+- UP1. **File upgrade.** Opening an older file (`v1-flat.json` and a current-release `.sermon`) gives every block a unique `blockId` and an empty `definitions` list, with every other field, mark and character unchanged (canonical JSON compare after removing the new fields). The first save writes the new `schemaVersion`. An older app opening the newer file refuses it with "This sermon was saved by a newer version of the app" and doesn't change the file.
 
 #### 4.16f Confirmations
 
-- **Page size and orientation apply in Preach.** The page box in Preach single and spread view uses the document's size and orientation (§4.6), scaled to fit the screen. Infinite view keeps the page width.
+- **Page size and orientation apply in Preach (Step A6).** The page box in Preach single and spread view uses the document's size and orientation (§4.6), scaled to fit the screen. Infinite view keeps the page width.
   - AC PG1. With A5 landscape, each Preach page box has a width:height ratio of 210:148 (±1%); switching to A4 portrait changes it to 210:297 and repaginates.
-- **In Phase A:** the 10-font list (§4.4), the 6 colour presets with custom hex (§4.2) and the 6 highlight colours (§4.2). The Phase A row in §6 lists them.
-  - AC PG2. The Phase A build offers exactly the 10 fonts plus JetBrains Mono for code, 6 colour presets plus custom hex and Default, and 6 highlight colours plus None, in Edit, and each shows correctly in Preach (A1).
+- **In Step A1:** the 10-font list (§4.4), the 6 colour presets with custom hex (§4.2) and the 6 highlight colours (§4.2). The Step A1 row in §6 lists them.
+  - AC PG2. The Step A1 build offers exactly the 10 fonts plus JetBrains Mono for code, 6 colour presets plus custom hex and Default, and 6 highlight colours plus None, in Edit, and each shows correctly in Preach (A1).
 
 #### Open note for Backend: file-format fields needed (not in §5 yet)
 
@@ -837,15 +841,23 @@ Every format keeps Kreol and French accents exactly, in the text and in the file
 
 ## 6. Phased plan
 
-| Phase | Scope | Frontend | Backend | QA |
+Order set by Mevin (Oct 2026). The **first release** (current batch, file format #14, local save with Back up and Restore #15-ish, `/api/sermons` removal; §4.15 ST criteria) ships before Step A1. Steps A1–A6 then run in this order; later phases keep their old order after A6.
+
+| Step / phase | Scope | Frontend | Backend | QA |
 |---|---|---|---|---|
-| **A: Fidelity and writing tools** | **A1 shared schema + mark-preserving renderer + Bionic layer + shared mark CSS (§4.1)**; B/I/U/S, superscript, subscript (§4.16a), paragraph styles Quote, Intense quote, Citation, Illustration (§4.16b); size, colour popover rebuild with 6 presets and custom hex, multicolour highlight with 6 colours (§4.2 minus gradient); 10 fonts and justify (§4.4); accents, smart quotes and palette (§4.3); Bionic slider (§4.5) | Renderer, toolbar, popovers, fonts, bionic | Export contract: FontId, size, underline, highlight; bundle fonts for PDF | A1–A4, R1–R7, W1, W2, W6, C1–C10, F1–F4, B1–B3, MK1–MK4, PS1–PS4, PG2; regression of slices 1–2 |
-| **B: Local storage and document** | Local-first storage, Back up / Restore (§4.15); title block (§4.7); document settings, page numbers, infinite (§4.6); language (§4.12i); Scripture insert LSG/KJV (§4.12h); every block a module (§4.16d); branch boards (§4.16c, brings in the connector engine); Define with lexicon (§4.16e); page size in Preach (§4.16f) | Repository layer, dialogs, pagination, Bible data | Delete the server store and `/api/sermons*`; export size and orientation, title block; filename rule | ST1–ST4, ST6–ST22, T1–T3, D1–D5, BK1–BK5, BD1–BD4, DF1–DF8, PG1 |
+| **First release** | Local-only storage, Save to folder, Back up / Restore (§4.15) | Repository layer, dialogs | File format #14, delete `/api/sermons*` | ST1–ST4, ST6–ST22 |
+| **A1: Writing tools** | **Shared schema + mark-preserving renderer + Bionic layer + shared mark CSS (§4.1), first and blocks the rest**; 10 fonts and justify (§4.4); colour popover with 6 presets and custom hex, 6 highlight colours (§4.2 minus gradient); bold, italic, underline, strike, superscript, subscript (§4.16a); size; accents, smart quotes and palette (§4.3); Bionic slider (§4.5) | Renderer, toolbar, popovers, fonts, Bionic | Export contract: FontId, size, marks, highlight; bundle fonts for PDF | A1–A4, R1–R7, W1, W2, W6, MK1–MK4, PG2, C1–C10, F1–F4, B1–B3; regression of slices 1–2 |
+| **A2: Text styles** | Quote, Intense quote, Citation, Illustration block (§4.16b) | Block styles, panel | Export of the new block types | PS1–PS4 |
+| **A3: Blocks, sections, then boards** | First: every block a module with handle and + (§4.16d); sections, columns and images (§4.10). Then: branch boards (§4.16c) with the connector engine (§4.11 overlay, anchors, styles) | Block DnD, section nodes, overlay, boards | Export: columns, images, boards; `blockId` upgrade | BK1–BK5, M1–M5, UP1, then BD1–BD4 |
+| **A4: Bible verse insert** | Scripture insert, LSG 1910 and KJV (§4.12h) | Parser, Bible data | None | §4.12h ACs incl. P-7 |
+| **A5: Define** | Define-1: typed meaning; then Define-2: lexicon lookup, STEPBible primary (§4.16e) | Define dialog, marker, popover, lexicon data | Export of definition markers | DF1–DF11 (split per DF10) |
+| **A6: Page size and orientation** | Document settings, page sizes, orientation in Preach, page numbers, infinite view (§4.6, §4.16f) | Pagination, page box | Export size and orientation | D1–D5, PG1 |
+| **B: Document** | Title block (§4.7); document language (§4.12i) | Title block, language | Title block export, filename rule | T1–T3, §4.12i AC |
 | **C: Pulpit** | Timer and STOP (§4.8); status and hand-written prayer prompts (§4.9, no AI); PWA offline, wake lock, page turning, edit lock, navigator, estimate, per-point timing (§4.12 a–g) | Preach chrome, timer, panels, SW | None (AI proxy excluded by the §4.9 AI rule) | TM1–TM11, S1–S4, offline, clicker and wake-lock device tests |
-| **D: Layout power** | Modular sections, columns and images (§4.10); gradient text (§4.2); connector lines (§4.11) | Section nodes, DnD, overlay | Export: columns, images, gradient modes, PDF connector paths | M1–M5, W3–W5, W7, L1–L4 |
+| **D: Layout extras** | Gradient text (§4.2); connector lines between words in the text (rest of §4.11, reusing the A3 engine) | Gradient, text anchors | Export: gradient modes, PDF connector paths | W3–W5, W7, L1–L4 |
 | **E: Library (later)** | Version history, library, templates, sync via a synced folder (§4.13) | Library UI, history, conflict UI | None (no server), except export | E1–E9 |
 
-The Project Manager may reorder C before B's Scripture insert. **A1 is first and blocks everything**, because every later feature renders through it.
+The shared renderer at the start of A1 blocks everything, because every later feature renders through it.
 
 ---
 
