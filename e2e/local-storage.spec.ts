@@ -155,6 +155,41 @@ test.describe("local-only storage", () => {
     expect(hits).toEqual([]);
   });
 
+  test("Drive conflict copy (same id, \"(1)\" file) is listed, tagged, and saved only to its own file", async ({ page }) => {
+    const hits = trackSermonApi(page);
+    await freshStart(page);
+    await pickFolder(page);
+    const [origName, origText] = Object.entries(await folderFiles(page)).find(([n]) => n.endsWith(".sermon"))!;
+    const copyName = origName.replace(/\.sermon$/, " (1).sermon");
+    const f = JSON.parse(origText);
+    f.savedAt = new Date(Date.parse(f.savedAt) + 60_000).toISOString();
+    f.sermon.title = `${f.sermon.title} DRIVECOPY`;
+    await page.evaluate(
+      async ([name, text]) => {
+        const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle("Sermons");
+        const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
+        await w.write(text);
+        await w.close();
+      },
+      [copyName, JSON.stringify(f)],
+    );
+    await page.reload();
+    const nav = page.getByRole("navigation", { name: "Sermons" });
+    await expect(nav.getByRole("listitem")).toHaveCount(2, { timeout: 20_000 });
+    await expect(nav.getByTestId("conflict-copy-tag")).toHaveCount(1);
+    await expect(nav.getByRole("listitem").filter({ hasText: "DRIVECOPY" })).toContainText("possible conflict copy");
+
+    await nav.getByRole("button", { name: /DRIVECOPY/ }).click();
+    await expect(page.locator(".ProseMirror")).toBeVisible();
+    await typeAtEnd(page, "edited the drive copy");
+    await expect(page.getByTestId("save-status")).toHaveText("Saved to Sermons folder", { timeout: 20_000 });
+    const files = await folderFiles(page);
+    expect(Object.keys(files).filter((n) => n.endsWith(".sermon")).sort()).toEqual([origName, copyName].sort());
+    expect(files[origName]).toBe(origText);
+    expect(files[copyName]).toContain("edited the drive copy");
+    expect(hits).toEqual([]);
+  });
+
   test("moved folder shows Couldn't save. Folder not found. [Choose folder]", async ({ page }) => {
     const hits = trackSermonApi(page);
     await freshStart(page);

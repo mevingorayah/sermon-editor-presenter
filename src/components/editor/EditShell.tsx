@@ -31,6 +31,7 @@ import {
   type Library,
 } from "@/lib/localStore/browserCache";
 import {
+  isConflictCopyId,
   readFolderFile,
   removeSermonFile,
   uniqueFileName,
@@ -789,10 +790,11 @@ export function EditShell() {
       id: e.doc.id,
       title: e.doc.title,
       updatedAt: e.doc.updatedAt,
+      conflictCopy: isConflictCopyId(e.doc.id),
     }));
     if (doc) {
       const i = items.findIndex((s) => s.id === doc.id);
-      const cur = { id: doc.id, title: doc.title, updatedAt: doc.updatedAt };
+      const cur = { id: doc.id, title: doc.title, updatedAt: doc.updatedAt, conflictCopy: isConflictCopyId(doc.id) };
       if (i >= 0) items[i] = cur;
       else items.unshift(cur);
     }
