@@ -7,6 +7,8 @@
 
 export const DARK_STAGE_BG = "#12110f"; // --rm-bg (dark), reading-mode.css
 export const MIN_CONTRAST = 4.5;
+/** Default dark-Preach highlight (mark.sermon-highlight, sermon-marks.css). */
+export const DARK_HIGHLIGHT_BG = "#3d2e0e";
 
 type RGB = [number, number, number];
 
@@ -98,8 +100,19 @@ export function ensureContrast(
 }
 
 /** Text colour as shown in Preach for the given theme. */
-export function readingTextColor(color: string, theme: "light" | "dark"): string {
-  return theme === "dark" ? ensureContrast(color) : color;
+export function readingTextColor(
+  color: string,
+  theme: "light" | "dark",
+  /** Effective background: the highlight's dark colour when one is present. */
+  background: string = DARK_STAGE_BG,
+): string {
+  return theme === "dark" ? ensureContrast(color, background) : color;
+}
+
+/** Dark-Preach background behind text: the highlight if present, else the page. */
+export function effectiveDarkBackground(highlightColor: string | null | undefined, highlighted: boolean): string {
+  if (!highlighted) return DARK_STAGE_BG;
+  return highlightColor ? readingHighlightColor(highlightColor, "dark") : DARK_HIGHLIGHT_BG;
 }
 
 /** Highlight background as shown in Preach: a dark variant in the dark theme. */

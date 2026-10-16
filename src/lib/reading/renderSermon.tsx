@@ -2,7 +2,7 @@
 import { Fragment, type CSSProperties, type ReactNode } from "react";
 import type { JSONContent } from "@tiptap/react";
 import { bionicParts } from "@/lib/bionic";
-import { readingHighlightColor, readingTextColor } from "./contrast";
+import { effectiveDarkBackground, readingHighlightColor, readingTextColor } from "./contrast";
 
 /**
  * Preach renderer: walks the sermon's ProseMirror JSON (the shared schema in
@@ -38,6 +38,8 @@ interface Ctx extends RenderOptions {
   classes: ReadingClassNames;
   /** Bionic disabled for this subtree (Scripture). */
   plain: boolean;
+  /** Dark-theme background behind the current text run (highlight or page). */
+  textBg?: string;
 }
 
 /** Every node/mark type this renderer handles explicitly (see drift test). */
@@ -89,6 +91,9 @@ function renderText(node: JSONContent, ctx: Ctx, key: string): ReactNode {
   const text = node.text ?? "";
   const marks = node.marks ?? [];
   const inBold = marks.some((m) => m.type === "bold");
+  const hl = marks.find((m) => m.type === "highlight");
+  const hlColor = typeof hl?.attrs?.color === "string" && hl.attrs.color ? hl.attrs.color : null;
+  ctx = { ...ctx, textBg: effectiveDarkBackground(hlColor, Boolean(hl)) };
   let out: ReactNode =
     ctx.bionic && !ctx.plain ? bionicLeaf(text, inBold) : text;
   // Wrap innermost-last so marks[0] is the outermost element, like ProseMirror.
@@ -129,7 +134,7 @@ function wrapMark(
     case "textStyle": {
       const style: CSSProperties = {};
       if (typeof attrs.color === "string" && attrs.color) {
-        style.color = readingTextColor(attrs.color, ctx.theme);
+        style.color = readingTextColor(attrs.color, ctx.theme, ctx.textBg);
       }
       if (typeof attrs.fontFamily === "string" && attrs.fontFamily) {
         style.fontFamily = attrs.fontFamily;

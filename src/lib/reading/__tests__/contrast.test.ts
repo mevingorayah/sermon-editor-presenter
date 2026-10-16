@@ -54,3 +54,42 @@ test("dark theme highlight uses a dark variant of the same hue", () => {
 test("unparseable colours pass through", () => {
   assert.equal(readingTextColor("var(--edit-accent)", "dark"), "var(--edit-accent)");
 });
+
+// Q3 / UI UX rule: text on a highlight in dark Preach reaches 4.5:1 against
+// that highlight's dark colour. Mirrors TEXT_COLORS in FormatToolbar.tsx.
+import {
+  DARK_HIGHLIGHT_BG as HL_DEFAULT,
+  effectiveDarkBackground,
+  readingHighlightColor as hlDark,
+  readingTextColor as textOn,
+  contrastRatio as ratioOf,
+  parseColor as rgbOf,
+  rgbToHsl as hslOf,
+} from "../contrast";
+
+const TEXT_PRESETS = ["#9a948a", "#5c4a1f", "#d47870", "#6a9fc4", "#6aaa7a"];
+const DARK_HIGHLIGHTS = [
+  HL_DEFAULT,
+  ...["#d4a84b", "#93c5fd", "#86efac", "#f9a8d4", "#c4b5fd"].map((c) => hlDark(c, "dark")),
+];
+
+test("every text preset reaches 4.5:1 on every dark highlight, keeping its hue", () => {
+  for (const bg of DARK_HIGHLIGHTS) {
+    for (const c of [...TEXT_PRESETS, "#1e3a8a"]) {
+      const out = textOn(c, "dark", bg);
+      const r = ratioOf(rgbOf(out)!, rgbOf(bg)!);
+      assert.ok(r >= 4.5, `${c} on ${bg} -> ${out} = ${r.toFixed(2)}`);
+      const [h0, s0] = hslOf(rgbOf(c)!);
+      const [h1, , l1] = hslOf(rgbOf(out)!);
+      // Near-white outputs lose hue to 8-bit rounding; skip them and greys.
+      if (s0 > 0.15 && l1 < 0.95) assert.ok(Math.abs(h1 - h0) < 3, `${c} hue drift`);
+    }
+  }
+});
+
+test("effective background: highlight colour, default highlight, else the page", () => {
+  assert.equal(effectiveDarkBackground(null, false), "#12110f");
+  assert.equal(effectiveDarkBackground(null, true), "#3d2e0e");
+  assert.equal(effectiveDarkBackground("#93c5fd", true), hlDark("#93c5fd", "dark"));
+  assert.equal(textOn("#9a948a", "light", "#3d2e0e"), "#9a948a");
+});
