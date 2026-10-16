@@ -24,7 +24,7 @@ The app is where a pastor writes a sermon and then carries it into the pulpit. E
 Principles:
 1. **Fidelity first.** One document model and one renderer for Edit, Preach and export previews.
 2. **The pulpit is hostile.** No Wi-Fi, a sleeping screen, stray taps, little time. Preach has to survive all of them.
-3. **Your sermons live on your PC.** Storage is local-first and free. The server is used only for exports and the AI prayer-prompt proxy (§3.15).
+3. **Your sermons live on your PC.** Storage is local-first and free. The server does exports only. There is no AI in v2 (see the AI rule in §4.9).
 4. **Scripture stays plain.** No Bionic, no gradients. The Word reads as the Word.
 5. **French, Kreol and English are first-class.** Every accent and symbol works everywhere.
 6. **Calm, not cluttered.** Tools appear when they're needed. Preach chrome is minimal and fades.
@@ -65,7 +65,7 @@ Frontend seeded a sermon with colour, font, highlight, italic, bold, underline, 
 - **Export:** `buildCalibratedSnapshot` always sends `flattenGradient: true` and `bionic: false` (`src/lib/calibration.ts:59-60`). The export contract maps fonts to Sans/Serif/Mono only (`docs/api-export-contract.md:89`), so the new fonts, sizes and gradients don't export.
 - **Bionic:** fixed at 45% (`bionic.ts:50`), with no strength control. Grapheme-aware via `Intl.Segmenter` (good), but it falls back to `Array.from`, which splits combining accents (e + U+0301) when Segmenter is missing.
 - **Bionic punctuation:** `[\p{P}\p{S}]` trimming (`bionic.ts:19-20`) treats an inner apostrophe correctly, but a leading `«` with NBSP (French spacing) becomes its own token. That's acceptable, but it needs a test.
-- **Storage:** the server file store (`src/lib/sermon/store.ts:19` `DATA_DIR`) is ephemeral on Cloud Run. **Mevin's decision is local-only storage** (§3.15), so this store stays only as a dev/test fixture.
+- **Storage:** the server file store (`src/lib/sermon/store.ts:19` `DATA_DIR`) is ephemeral on Cloud Run. **Mevin's decision is local-only storage** (§3.15), so `store.ts`, `/api/sermons*` and `SERMON_DATA_DIR` are deleted completely, including in dev (Backend's route-removal PR).
 - **Sanitiser:** `sanitizeHtml` runs over every JSON string (`sanitize.ts:35-37`) but does not entity-encode. Text such as `<God & me>` survives as text because TipTap escapes on render. AC in §3.3 locks this down.
 - **No metadata** beyond `title/createdAt/updatedAt` (`src/lib/sermon/types.ts:27-31`): no subtitle, author, place, date, status, timer, page settings or language.
 
@@ -77,7 +77,7 @@ Frontend seeded a sermon with colour, font, highlight, italic, bold, underline, 
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ ☰ Sermons   Philippians 4 — Joy        ● Saved to PC   Status: In progress ▾  │
+│ ☰ Sermons   Philippians 4 — Joy        Saved to Sermons folder  Status: In progress ▾  │
 │                                          [Document ⚙] [Back up] [Preach ▶]   │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │ Title H1 H2 Body Scripture │ ↶ ↷ │ B I U │ Size 18▾ │ Font Lora ▾ │ A▾ ▮▾ ◐▾ │
@@ -86,7 +86,7 @@ Frontend seeded a sermon with colour, font, highlight, italic, bold, underline, 
 │ POINTS        │   ┌──────────── page 1 of 8 ────────────┐    │ NOTES         │
 │ • Intro       │   │ REJOICE IN THE LORD                 │    │               │
 │ ▸ I. Joy      │   │ Philippians 4:4-7                   │    │ TARGET 45:00  │
-│   – a. always │   │ Mevin Gorayah · Église X · 18/10/26 │    │ EST.  ~38 min │
+│   – a. always │   │ Mevin Gorayah · Église X · 18 oct.  │    │ EST.  ~38 min │
 │ ▸ II. Peace   │   │ ┌ section ⠿ ─────────── [1|2|3] ✕ ┐ │    │ (130 wpm)     │
 │ • Conclusion  │   │ │ Body text … ───────╮           │ │    │               │
 │               │   │ └────────────────────│───────────┘ │    │ Per point:    │
@@ -129,10 +129,10 @@ Responsive breakpoints: ≥1200 px shows three panes in Edit. 768–1199 px fold
 **Design (engineering).** Based on Frontend's fix plan:
 1. Split `src/extensions/index.ts` into `createSchemaExtensions()` (StarterKit, Title, Scripture, TextStyle, Color, FontFamily, FontSize, Highlight multicolor, TextAlign, Underline, Gradient, Section/Column, Image, Anchor) and `createEditorExtras()` (Placeholder, SearchAndReplace, PasteCleanup, connector tool). **Edit and Preach both use `createSchemaExtensions()`**, so they can't drift apart.
 2. Preach renders through a **React node/mark renderer** (`src/lib/render/renderDoc.tsx`) driven by a mark→element map derived from the same extensions. It handles every node (lists, hardBreak, horizontalRule, image, section, column). There's no `default: return null`. An unknown node renders its children and logs a dev warning.
-3. **Bionic is a layer on text leaves, applied *after* the marks.** Output looks like `<span style="color"><em><Bionic/></em></span>`. When the run already carries user bold, Bionic uses weight contrast (800 vs 600) instead of a nested `<strong>`. Scripture always has Bionic off.
+3. **Bionic is a layer on text leaves, applied *after* the marks.** Output looks like `<span style="color"><em><Bionic/></em></span>`. Bionic adds nothing inside text the writer has already bolded. User bold is weight 800; Bionic's maximum weight stays below it (§4.5), so user bold always reads as bold. Scripture always has Bionic off.
 4. `textAlign` is applied to every TextAlign type (title, heading, paragraph, scripture), plus the new `justify` option.
 5. A new `src/styles/marks.css` holds highlight, underline, gradient and connector styles with `--rm-*` light and dark tokens. A shared `--doc-font-body` token is used by both Edit and Preach.
-6. **What Preach may change (the only allowed differences from Edit, as built in PR #12):** (a) one uniform size scale, keeping the same proportions between sizes; (b) dark theme: a user text colour below 4.5:1 on the background is lightened while keeping its hue, and highlights use their dark variant (the 6 presets have tuned light and dark values, §4.2); (c) Bionic only adds weight and never removes marks; Scripture stays plain. One deliberate styling exception: the Scripture citation is shown as a small ALL CAPS caption, right-aligned below the quote. Anything else that differs between Edit and Preach is a bug.
+6. **What Preach may change (the only allowed differences from Edit, as built in PR #12):** (a) one uniform size scale, keeping the same proportions between sizes; (b) dark theme: a user text colour below 4.5:1 on the background is lightened while keeping its hue, and highlights use their dark variant (the 6 presets have tuned light and dark values, §4.2); (c) Bionic only adds weight and never removes marks; Scripture stays plain. The Scripture citation is shown as a small ALL CAPS caption (`text-transform: uppercase`, not small caps), right-aligned under the quote. There is no halo or text-shadow outline anywhere, and justify is kept exactly as written. Column stacking at narrow widths (§4.10) is a layout rule that applies to Edit and Preach alike, so it is not a Preach difference. Anything else that differs between Edit and Preach is a bug.
 
 **States.** Light or dark theme, Bionic on or off, and calibration scale −2…+2. All of them keep the marks.
 **Defaults.** Preach opens with the theme last used (dark).
@@ -140,10 +140,19 @@ Responsive breakpoints: ≥1200 px shows three panes in Edit. 768–1199 px fold
 **Data.** No new fields. Content is the TipTap JSON.
 **Export.** The same renderer feeds PNG/PDF previews. The DOCX/PPTX workers walk the marks (contract §5).
 **AC.**
-- A1. A seeded doc with every mark and node type (colour, font, size, highlight in 4 colours, bold, italic, underline, strike, link, gradient, list, ordered list, hardBreak, HR, all alignments, Scripture with italic) shows **identical computed style** in Edit and Preach, in both themes. Bionic is the only difference.
+All ACs use the shared fixtures in `tests/fixtures/v2/`: `all-marks.sermon`, `accents.sermon` (the C1 sentence plus Kreol text), `v1-flat.json` (a real v1 file from `main@143c478`), `8-pages.sermon`, `4940-words.sermon`, `images.sermon`, `corrupt/*.sermon`.
+
+- A1. Open `all-marks.sermon`. For every text run, compare Edit and Preach on `color`, `font-family`, `font-weight`, `font-style`, `text-decoration-line`, `background-color`, `text-align`, `background-image`, `text-shadow`, and the ratio of `font-size` to the body size. **Light theme:** all equal, except font-size, which differs by one uniform factor (±0.5 px), and weight added by Bionic. **Dark theme:** the same, except (a) a preset colour equals its tabled dark variant, (b) a custom colour under 4.5:1 is lightened to ≥4.5:1 with its OKLCH hue within ±5°, (c) highlights equal their dark variants. `text-shadow` is `none` everywhere. Justified paragraphs stay justified. The citation is the only element with `text-transform: uppercase` that Edit doesn't have, and it is right-aligned. Any other difference fails.
 - A2. A unit test of the renderer covers every node and mark in `createSchemaExtensions()`. The test fails if an extension is added without a renderer mapping.
-- A3. Bionic on plus user bold: the user bold is still visible (weight 800 vs 600), and no nested `<strong><strong>`.
-- A4. A Scripture block never shows Bionic splitting.
+- A3. Bionic on at every strength plus user bold: no Bionic span or `<strong>` exists inside the user-bold run, there's no nested `<strong><strong>`, and the computed weight of user bold (800) is greater than the heaviest Bionic weight (700 at Max).
+- A4. With Bionic on at every strength, Scripture blocks and the citation contain no Bionic-generated `<strong>` or weight span (DOM check), in single, spread and infinite views.
+- R1. Regression: every #12 test (116 unit, 13 e2e) still passes after the renderer split, and the slice 1–2 ACs still pass.
+- R2. A dark custom colour (`#1D1D6B`) on a highlight in dark Preach is lightened to ≥4.5:1 measured against the highlight underneath, not the page. Until built, this is logged as a known v2 limit and doesn't block.
+- R3. User bold stays visibly heavier than Bionic bold at Light, Medium, Strong and Max (computed weight check plus visual snapshot).
+- R4. A JetBrains Mono run gets Bionic like any other run, and the Bionic bold is visible (the mono font ships a bold weight).
+- R5. Paste from Word and from Google Docs with colours, highlights and accents: text is NFC, allowed marks are kept, unknown styles are dropped.
+- R6. A node of unknown type renders its children with no crash, in Edit and in Preach.
+- R7. User marks inside Scripture (italic, colour, highlight) are kept in Edit, Preach and export; only Bionic and gradient are excluded.
 
 ### 4.2 Writing tools
 
@@ -168,13 +177,13 @@ Responsive breakpoints: ≥1200 px shows three panes in Edit. 768–1199 px fold
   - **Recent:** the last 6 custom colours, saved in local preferences (not per doc).
   - **Contrast meter:** "Readable ✓ / Low contrast ⚠" against the light and dark backgrounds. It warns but doesn't block.
   - **Default** removes the colour.
-  - Mapping of presets to theme variants: the mark stores `color: "#A8201A"` plus `preset: "crimson"`. Preach dark looks up the preset's dark variant. Custom colours keep the hex and use the halo rule (§4.1-6).
+  - Mapping of presets to theme variants: the mark stores `color: "#A8201A"` plus `preset: "crimson"`. Preach dark looks up the preset's dark variant. Custom colours keep the hex; in dark Preach a colour under 4.5:1 is lightened, keeping its hue (§4.1-6). No halo.
 - **Highlight (`▮▾`):** 6 highlight colours (Yellow, Green, Blue, Pink, Orange, Lavender), each with light and dark variants at about 35% opacity on dark, plus None. Uses `Highlight.configure({ multicolor: true })` with `{ color, preset }`.
 - **Gradient text (`◐▾`):**
   - Presets: Dawn (gold→crimson), Ocean (teal→royal blue), Glory (gold→purple), Ember (orange→red), Grace (rose→lavender), Pulpit Ink (ink→royal blue).
   - Custom two-stop: from hex, to hex, and angle 0–360° (dial plus number). It uses the same hex validation as the colour popover.
   - Stored as a **mark** `gradient { from, to, angle, preset? }`. Rendered on the **outer** span: `background-image: linear-gradient(angle, from, to); background-clip: text; -webkit-text-fill-color: transparent; box-decoration-break: clone`. Bionic children inherit the fill so the gradient doesn't restart on each fragment.
-  - **Guardrails:** both stops must be ≥3:1 against the current background, otherwise there's a warning plus halo. Gradient is disabled inside Scripture (the button is greyed with the tooltip "Scripture stays plain"). Gradient plus highlight on the same run: the gradient wins and the highlight is dropped, with a toast. Find-highlight draws an outline instead of a background on gradient runs. In forced-colours or high-contrast mode, the gradient falls back to `from` as a solid colour.
+  - **Guardrails:** both stops must be ≥3:1 against the current background, otherwise the contrast meter warns. No halo or outline is added. Gradient is disabled inside Scripture (the button is greyed with the tooltip "Scripture stays plain"). Gradient plus highlight on the same run: the gradient wins and the highlight is dropped, with a toast. Find-highlight draws an outline instead of a background on gradient runs. In forced-colours or high-contrast mode, the gradient falls back to `from` as a solid colour.
   - Recommended use: titles and key phrases. Edit shows a gentle hint when a gradient covers more than 2 paragraphs.
 
 **States.** Each button is pressed or unpressed according to the selection (`aria-pressed`). Mixed selection shows a "—" in Size.
@@ -193,9 +202,10 @@ Responsive breakpoints: ≥1200 px shows three panes in Edit. 768–1199 px fold
 `flattenGradient` changes from a single boolean to a per-format setting: export sends `gradientMode: "native" | "midpoint"` per format (Backend contract change).
 **AC.**
 - W1. 6 presets plus Default are shown. A valid hex is applied and normalised to `#RRGGBB`. Invalid hex blocks Apply with the message. Recent keeps the last 6.
-- W2. The popover is fully keyboard-operable (Tab in, arrows, Enter, Esc returns focus).
-- W3. Gradient renders continuously across Bionic fragments and line wraps in Preach.
-- W4. Gradient can't be applied inside Scripture.
+- W2. Trigger + Enter opens the dialog with focus on the active swatch. Arrows move between swatches and wrap. Enter applies. Tab reaches hex → Apply → Default. Esc closes and returns focus to the trigger. axe reports 0 violations. NVDA with Chrome announces "Crimson, selected".
+- W3. A gradient run wrapping across 2 lines with Bionic at Max: the pixel colour sampled at each Bionic fragment boundary differs from the interpolated value by ΔE ≤ 3, and exactly one element carries `background-image`.
+- W4. With the caret in Scripture, the gradient button is `aria-disabled` with the tooltip "Scripture stays plain". Pasting a gradient run into Scripture removes the gradient mark. Applying a gradient to a selection spanning Scripture leaves Scripture unmarked.
+- W7. Gradient plus highlight on one run: the highlight is dropped with a toast, and neither Edit nor Preach shows a highlight on that run.
 - W5. DOCX export of a gradient run produces the midpoint colour, and the export dialog shows "Gradients become solid colour in Word".
 - W6. All 6 presets meet 4.5:1 in their own theme (automated check).
 
@@ -228,11 +238,16 @@ Responsive breakpoints: ≥1200 px shows three panes in Edit. 768–1199 px fold
 **Data.** `doc.settings.smartQuotes: boolean`, `doc.settings.language`.
 **Export.** DOCX/PPTX: UTF-8 with fonts embedded or substituted (§4.4). PDF: fonts embedded with the subset including all used glyphs. PNG: rasterised.
 **AC.**
-- C1. Typing the test sentence `« L’Éternel est bon ! » — Kreol: "Bondie bon" * _ & <amen> peut-être œuvre` round-trips through save, reload, Preach (Bionic on), and all 4 exports with identical characters.
+- C1. Type `« L’Éternel est bon ! » — Kreol: "Bondie bon" * _ & <amen> peut-être œuvre`, save, reload, open Preach (Bionic on) and export to all 4 formats. Extract the text (DOCX `document.xml`, PPTX slide XML, PDF via `pdftotext`, PNG by manual OCR spot check). The NFC string equals the input byte for byte, including U+202F, «, », œ and ’. Each export filename follows the #10 rule.
 - C2. A decomposed `e` + U+0301 is stored as NFC `é`, and Bionic never splits the accent from its letter.
 - C3. `<amen>` is shown as literal text everywhere and never becomes a tag.
-- C4. French smart quotes insert NNBSP, and undo restores the straight quote.
-- C5. Windows US-International dead keys and Mac `⌥e e` produce é in Edit.
+- C4. With language fr and smart quotes on, typing `"Amen"` gives U+00AB U+202F Amen U+202F U+00BB, and `Bon!` gives `Bon\u202F!`. One Ctrl+Z after the replacement gives the straight `"` and leaves the rest unchanged.
+- C5. Windows 11 with Chrome and Edge, US-International (`'`+`e`) and French AZERTY (`é` key, `^`+`e`); macOS with Chrome, `⌥e e`. Each stores U+00E9 (NFC), with no duplicated characters after composition.
+- C6. Kreol words with apostrophes (`pa'n`, `mo'nn`, `l'Éternel`) and hyphens are one Bionic token at every strength.
+- C7. With `Intl.Segmenter` stubbed out, `e`+U+0301 and `œ` are never split by Bionic.
+- C8. Search/replace and the point navigator treat `é` (NFC) and `é` (NFD) as the same. Search is accent-sensitive: `e` doesn't match `é`.
+- C9. A title `« Bondié bon ! »` gives the #10 filename on Windows. An accented filename round-trips through the folder, the backup zip (UTF-8 flag set on zip entries) and Restore. A title made only of punctuation gives a non-empty filename ("Untitled sermon").
+- C10. A per-paragraph language override is saved in the file and used for spellcheck and hyphenation of that paragraph.
 
 ### 4.4 Fonts (5 serif + 5 sans)
 
@@ -250,26 +265,30 @@ Responsive breakpoints: ≥1200 px shows three panes in Edit. 768–1199 px fold
 
 Plus Mono (JetBrains Mono) kept for code and notes only, not in the main picker.
 
-**UI.** The Font dropdown groups **Serif** and **Sans**, and each name is shown in its own face. Document ⚙ sets **document default fonts** for body and headings, and inline selection overrides them. A **Justify** option is added to the alignment group (≡ justified) with `hyphens: auto` taken from the document language. Justify is off by default in Preach narrow columns (<45 characters), to avoid "rivers" of white space.
+**UI.** The Font dropdown groups **Serif** and **Sans**, and each name is shown in its own face. Document ⚙ sets **document default fonts** for body and headings, and inline selection overrides them. A **Justify** option is added to the alignment group (≡ justified) with `hyphens: auto` taken from the document language. Justify is kept as written in Preach, at every width.
 
 **Engineering.** Loaded via `next/font/google` in `app/layout.tsx` with `subsets: ["latin","latin-ext"]`, `display: "swap"` and CSS variables (`--font-lora` and so on). The stored value is the **font id** (`"lora"`) rather than a CSS stack, which fixes P9 and the export mapping. Fonts are self-hosted by next/font, so they're cached by the PWA for offline Preach (§4.12).
 
 **Export.** The export server bundles the same 10 TTF/OTF files (Backend). PDF embeds subsets. DOCX embeds fonts (`w:embedTrueTypeFonts`) and names the family, with a fallback of Georgia or Arial. PPTX names the family, embeds where possible, and otherwise falls back to Georgia or Arial with a note. PNG is rasterised.
 
-**AC.** F1: picking each of the 10 fonts renders the C1 sentence without fallback glyphs. F2: the PDF has the font embedded (`pdffonts` lists it). F3: the old values `serif`, `sans` and `mono` migrate to `source-serif-4`, `inter` and `jetbrains-mono`. F4: Justify works and hyphenates French correctly with `lang="fr"`.
+**AC.**
+- F1. For each FontId, `document.fonts.check('16px <family>', 'éœÇŒ«»’')` is true, the canvas width of the C1 sentence differs from the Times fallback width, and visual snapshots are approved.
+- F2. The PDF has the font embedded (`pdffonts` lists it).
+- F3. The old values `serif`, `sans` and `mono` migrate to `source-serif-4`, `inter` and `jetbrains-mono`.
+- F4. A justified paragraph with `lang="fr"` in a 300 px column: `peut-être` has no hyphen other than its own, and hyphenation points come only from the browser `fr` dictionary. In Preach the same paragraph is still justified (`text-align: justify`) at every width.
 
 ### 4.5 Bionic strength slider
 
 **Purpose.** Mevin controls how strong the Bionic effect is.
 
 **UI.** In the Preach toolbar: a Bionic toggle plus a slider with 5 steps, **Off · Light (30%) · Medium (45%, current behaviour) · Strong (60%) · Max (70%)**, showing a live preview. Shortcuts `[` and `]` change the step while in Preach. Edit has the same slider under Document ⚙ → Reading, so it can be set ahead of time.
-**Engineering.** `bionicParts(text, ratio)`, where `n = max(1, ceil(graphemes × ratio))`. Bold weight contrast also scales: Light uses weight 600, Max uses 800.
+**Engineering.** `bionicParts(text, ratio)`, where `n = max(1, ceil(graphemes × ratio))`. Bionic weight scales from 600 (Light) to 700 (Max). It never reaches user bold (800), and Bionic adds nothing inside user-bold text.
 **States.** Off, or one of 4 strengths.
 **Defaults.** Medium (45%).
 **Accessibility.** `role="slider"` with `aria-valuetext="Bionic medium"`. Reduced motion has no effect, because nothing is animated.
 **Data.** `doc.presentation.bionic: { enabled: boolean, strength: 0.3|0.45|0.6|0.7 }`, **saved per document** (migrated from the boolean `bionic`).
 **Export.** Bionic is never exported (the contract keeps `bionic: false`).
-**AC.** B1: changing strength updates Preach instantly and persists after reload, per document. B2: Scripture stays plain at every strength. B3: two documents keep separate strengths.
+**AC.** B1: after a step change, the Preach repaint finishes in ≤100 ms (Performance mark), and after reload `presentation.bionic.strength` in the file equals the chosen value. B2: Scripture stays plain at every strength. B3: two documents keep separate strengths.
 
 ### 4.6 Document settings and page numbers
 
@@ -299,8 +318,8 @@ These map onto the existing calibration targets (`src/lib/calibration.ts:22-29`)
 **Export.** PDF and DOCX use the size and orientation with **ascending** print page numbers (print convention). An export option, "Use preaching countdown numbers", is off by default. PNG produces one image per page at the size. PPTX produces one slide per page with the slide size from the orientation.
 **AC.**
 - D1. An 8-page sermon in Preach shows 8 on page 1 and `1 · END` on page 8.
-- D2. Changing the scale repaginates, and the numbers update with the reading position kept.
-- D3. Infinite mode shows the "pages left" counter down to END.
+- D2. The first fully visible block before a scale change is still the first fully visible block afterwards (±1 line), and the page number equals the recomputed count minus that page's index.
+- D3. In infinite mode at scroll 0%, 50% and 100%, the counter equals ceil(remaining ÷ viewport), and it shows `END` at the bottom ±2 px.
 - D4. Spread falls back to Single below 1200 px.
 - D5. PDF export of A5 landscape produces A5 landscape pages.
 
@@ -320,7 +339,13 @@ Each field can be styled with the normal marks (font, colour, gradient on the Ti
 **Migration.** An existing first `title` node becomes `meta.title`, keeping its marks in `titleBlock.content`.
 **Export.** All 4 formats render the title block at the top of page 1 (PPTX: the title slide).
 **Accessibility.** The title is `h1`, the subtitle is `p.subtitle`, and author, place and date are a `dl`, readable by screen readers.
-**AC.** T1: all 5 fields save and reload, and show in Preach and the exports. T2: empty fields leave no blank lines. T3: the date shows in French when the language is fr.
+**AC.**
+- T1a. Each of the 5 fields saves and reloads with an equal value in the file.
+- T1b. Each filled field shows in Preach.
+- T1c. Each filled field is present in each of the 4 exports.
+- T1d. An empty title shows and exports as "Untitled sermon".
+- T2. With only the Title filled, the DOM has no empty `dt`/`dd`/`p`, and the DOCX XML has no empty paragraphs.
+- T3. Date 2026-10-18: fr shows `18 octobre 2026`, en shows `18 October 2026`. mfe uses the French format until Mevin decides otherwise.
 
 ### 4.8 Preaching timer and STOP
 
@@ -329,7 +354,7 @@ Each field can be styled with the normal marks (font, colour, gradient on the Ti
 **UI & interaction.**
 - **Edit:** a "Target duration" field in Notes / Document ⚙ (mm:ss, default **45:00**, range 5:00–120:00), with the estimated length shown beside it (§4.12f).
 - **Preach toolbar:** a **▶ START** icon button plus the time, in **8 pt ALL CAPS**, letter-spacing 0.08 em, tabular numerals, e.g. `45:00`. The timer stays visible even when the rest of the chrome fades (pinned top-right at 60% opacity).
-- **Start** begins the countdown, one second per tick, using wall-clock time (`performance.now`-based, so it doesn't drift when the tab is throttled). Starting also turns on the wake lock (§4.12b) and the edit lock (§4.12d).
+- **Start** begins the countdown, one second per tick, derived from `Date.now()` against a stored start epoch, so it survives tab throttling, laptop sleep and the lock screen. Starting also turns on the wake lock (§4.12b) and the edit lock (§4.12d).
 - Colours: normal is muted. At **05:00 and below** it turns **orange** (`#E8871E` dark / `#B35C00` light). **Past zero** it shows `+00:01`, `+00:02`… in **bold red** (`#FF5A4F` dark / `#C62828` light). There is no flashing. One gentle pulse at 05:00 and at 00:00 (suppressed with reduced motion).
 - Pause and resume: tapping the time pauses it (shown as `PAUSED 12:34`). Long-press or a menu gives Reset.
 - **STOP:** a button under the last line of the last page (and in infinite mode, at the end of the text), plus a toolbar ■ once started. STOP:
@@ -345,10 +370,16 @@ Each field can be styled with the normal marks (font, colour, gradient on the Ti
 **Data.** `doc.timer { targetSec: 2700 }`, `doc.preached[] { at, place, durationSec }`. The live timer state is in memory only, kept in `sessionStorage` so it survives a refresh.
 **Export.** The timer isn't exported. The target and estimate appear in the export cover notes (optional).
 **AC.**
-- TM1. Target 45:00, Start: after 40:00 elapsed it shows `05:00` in orange. At 45:01 it shows `+00:01` in bold red.
-- TM2. The countdown doesn't drift by more than 1 s over 60 min with the tab backgrounded.
-- TM3. STOP dims the text and opens the Prayer panel with the approved prompts.
-- TM4. A page refresh while running resumes the correct time.
+- TM1. With a fake clock (Playwright `clock.install`), target 45:00: at 40:00 elapsed it shows `⚠ 05:00` in `#E8871E` (dark) / `#B35C00` (light); at 44:59 `⚠ 00:01`; at 45:00 `00:00`; at 45:01 `+00:01` in bold `#FF5A4F` (dark) / `#C62828` (light).
+- TM2. On a real Windows laptop with Chrome and Edge: start, minimise for 60 min; the value is within 1 s of a reference stopwatch. Second run: lock the screen for 5 min; after unlocking it is still within 1 s.
+- TM3. STOP: the timer freezes, all `.sermon-body` elements reach opacity 0.25 within 700 ms (instant with reduced motion), the Prayer panel has focus, its list equals `prayerPrompts.items`, and a `preached[]` entry is added with durationSec within ±1 s.
+- TM4. Refresh at 12:34 remaining: after reload it shows 12:34 minus the reload time, ±1 s. A paused state survives a refresh. Closing and reopening the tab does not resume (sessionStorage).
+- TM6 (P-1). Laptop lid close/open, monitor sleep and the Windows lock screen during a run: the timer stays within 1 s of a reference stopwatch.
+- TM7 (P-4, P-5). A clicker sending `B`, `.`, `F5` or `Esc`, and leaving fullscreen with Esc, never exits Preach, reloads, or stops or resets the timer.
+- TM8 (P-6). A service worker update during Preach doesn't reload the page; the new version applies only after Preach is closed.
+- TM9 (P-8). With reduced motion, the pulses at 05:00 and 00:00 and the STOP fade don't animate.
+- TM10 (P-9). With a screen reader, page regions are labelled, page turns are announced politely, and the timer announces only at 5 min left, 0 and every +5 min.
+- TM11 (P-10). Pressing S asks for confirmation. Tapping the STOP button stops at once but shows an "Undo" toast for 10 s that resumes the timer, removes the `preached[]` entry and restores the text.
 - TM5. The timer label is 8 pt uppercase in computed style.
 
 ### 4.9 Document status and prayer prompts
@@ -358,15 +389,15 @@ Each field can be styled with the normal marks (font, colour, gradient on the Ti
 **UI.**
 - A status pill in the Edit header: **In progress** (default, blue-grey), **On pause** (amber), **Finalised** (green), **Completed** (muted with ✓).
 - Choosing **Finalised** opens the **Prayer prompts** dialog:
-  - Tab "Write my own": an editable bullet list (3–7 recommended).
-  - Tab "Suggest with AI": a **Generate** button that sends the sermon text through the server proxy and returns 5 short suggestions in the document language. Each suggestion has Keep, Edit and Discard. Regenerate is available, limited to 5 per document per hour.
-  - **Approve** saves the final list. Cancel keeps the document Finalised with no prompts, and a reminder badge appears.
-  - Finalising also takes an automatic version snapshot (Phase E, §4.13).
+  - An editable bullet list written by hand (3–7 recommended). There is no AI tab or "Suggest with AI" button.
+  - **Approve** saves the final list and sets the status to Finalised. **Cancel saves nothing and puts the status back to what it was before.**
+  - No version snapshot is taken until Phase E exists (§4.13).
 - Editing a Finalised sermon shows a banner: "This sermon is finalised. Editing will set it back to In progress." Choosing to continue reverts the status. Prompts are kept but flagged "review".
 - **Completed** is set by the STOP flow (§4.8) or by hand.
 
-**AI provider options** (the server is stateless, Mevin's choice is pending):
-- **Default (free): no AI.** Prompts are written by hand. The AI proxy is not deployed until Mevin opts in.
+**AI rule (binding).** AI stays off. Prayer prompts are written by hand only. The AI proxy is excluded from Phases A, B and C and is not built or deployed. Turning AI on later is Mevin's decision and needs a Security review first, because sermon text would be sent to an outside company, which is a privacy concern. The options below are kept only as background for that later decision.
+
+**AI provider options (later, only if Mevin opts in after a Security review):**
 
 | Option | Why | Cost | Notes |
 |---|---|---|---|
@@ -374,7 +405,7 @@ Each field can be styled with the normal marks (font, colour, gradient on the Ti
 | B. OpenAI (GPT-4o-mini class) | Strong quality, simple API | Low, pay-as-you-go | Needs an API key in Secret Manager. Data leaves GCP. |
 | C. Anthropic Claude (Haiku class), direct or via Vertex Model Garden | Careful, high-quality tone | Low | Via Vertex it keeps GCP billing and auth. |
 
-**Proxy (Backend).** `POST /api/ai/prayer-prompts { text, language, count }` → `{ prompts: string[] }`. The server:
+**Proxy (Backend, not in v2).** `POST /api/ai/prayer-prompts { text, language, count }` → `{ prompts: string[] }`. The server:
 - holds credentials (none in the browser),
 - trims input to about 12k characters,
 - applies a rate limit (per IP or session, plus a global daily cap),
@@ -382,15 +413,15 @@ Each field can be styled with the normal marks (font, colour, gradient on the Ti
 - **stores nothing and doesn't log the sermon body**,
 - uses a pastoral system prompt: "short first-person-plural prayer points drawn only from this sermon; no doctrine not present in the text".
 
-**Nothing is saved until the preacher approves.** Offline: the AI tab shows "Needs internet. You can write your own."
+**Nothing is saved until the preacher approves.** Writing prompts works fully offline.
 **Accessibility.** The status is a labelled `select` / `menu`. The dialog traps focus, and suggestions are a list with labelled buttons.
 **Data.** `doc.status: "in_progress"|"on_pause"|"finalised"|"completed"`, `doc.prayerPrompts { items: string[], source: "manual"|"ai"|"mixed", approvedAt }`.
 **Export.** Prayer prompts appear in an optional final "Prayer" page (PDF/DOCX/PPTX), off by default. PNG doesn't include them.
 **AC.**
-- S1. Finalised opens the dialog. Approve saves the list, and Cancel saves nothing.
-- S2. AI suggestions aren't written to the file until Approve (verified by reading the file).
-- S3. The proxy never returns or logs the key, and the rate limit returns 429 with a friendly message.
-- S4. Editing a Finalised sermon reverts it to In progress after confirmation.
+- S1. Choosing Finalised opens the dialog. Approve: the file has `prayerPrompts.items` equal to the list, `approvedAt` set and status `finalised`. Cancel: the file is byte-for-byte unchanged and the status equals the status before Finalised was chosen.
+- S2. Prompts aren't written to the file until Approve: kill the tab after typing prompts and before Approve, reopen, and the file has no new prompts.
+- S3. No AI: the dialog has no AI button, the build contains no `/api/ai/*` route, and no request leaves the browser while writing prompts (network log).
+- S4. Editing a Finalised sermon shows the banner; continuing reverts it to In progress and keeps the prompts with `needsReview: true`. Choosing to keep it Finalised leaves the content unchanged.
 
 ### 4.10 Modular sections and columns
 
@@ -403,7 +434,7 @@ Each field can be styled with the normal marks (font, colour, gradient on the Ti
 - **Images:** drag in, paste, or "Insert image". Formats JPG, PNG or WebP, at most 10 MB. They're resized client-side to a maximum of 2400 px long edge, and need alt text (prompted). Captions are optional.
 - **Keyboard alternatives:** focus the handle, then Space to pick up, ↑/↓ to move, Space to drop, Esc to cancel (announced "Section 3 of 7 moved to position 2"). Alt+Shift+↑/↓ moves the current section directly. Ctrl/Cmd+Alt+1/2/3 sets columns. Delete on a focused handle deletes.
 - **In Preach:** sections can still be moved and edited **when the edit lock is off** (§4.12d). Handles appear only in unlocked mode. Text edits in Preach are saved to the same file.
-- **Responsive collapse:** 3 columns become 2 below 900 px of column width, and 2 become 1 below 600 px (stacking in reading order left→right). The stored setting doesn't change. Preach on a phone shows stacked columns.
+- **Responsive collapse:** 3 columns become 2 below 900 px of column width, and 2 become 1 below 600 px (stacking in reading order left→right). The stored setting doesn't change. This applies identically in Edit and Preach, so it is not a Preach difference. Preach on a phone shows stacked columns.
 
 **Data model.**
 ```
@@ -419,11 +450,15 @@ image { id, src: "assets/<sha256>.webp" | "data:…", alt, caption?, widthPct }
 **Export.** DOCX uses tables without borders or sections for columns, with images inlined. PDF and PNG use the true layout. PPTX makes each section a slide region (columns become side-by-side text boxes). If a section is too tall for a slide, it continues on the next slide.
 **Accessibility.** A section is a `group` labelled "Section 2, two columns". Drag is never the only way to do anything. Focus is kept after a move.
 **AC.**
-- M1. Add, drag, keyboard-move, delete and undo all work, and the order persists.
-- M2. A 3-column section collapses to 1 at 375 px width and is restored at desktop width.
-- M3. A v1 doc opens unchanged, wrapped in one section.
-- M4. An image saved in folder mode exists in `assets/`, and the `.sermon` references it. The doc reopens with the image when offline.
-- M5. In Preach with the lock off, a section can be moved and the change is saved.
+- M1a. A section can be moved by mouse drag.
+- M1b. Keyboard: Space picks up, ↑/↓ move, Space drops, and "Section 3 of 7 moved to position 2" is announced.
+- M1c. Alt+Shift+↑/↓ moves the current section.
+- M1d. Delete removes a section and the Undo toast restores it.
+- M1e. After reload, the file has the new order.
+- M2. At a viewport of 375 px, a 3-column section renders as 1 stacked column in left→right DOM order; at 1440 px it's 3 again; `section.columns` in the file stays 3. Edit and Preach behave the same.
+- M3. Opening `v1-flat.json` gives a DOM equal to v1 (snapshot). Opening it twice gives exactly one section. Opening without editing doesn't rewrite the file; the first edit writes `schemaVersion: 2`.
+- M4. After a cold start in airplane mode, `images.sermon` opens with its images. An image over 2400 px is downscaled, a file over 10 MB is rejected with a message, and two identical images give one asset (sha256).
+- M5. In Preach with the lock off, a section can be moved and the change is saved. With the lock on, handles are hidden and a drag does nothing.
 
 ### 4.11 Connector lines
 
@@ -448,50 +483,51 @@ image { id, src: "assets/<sha256>.webp" | "data:…", alt, caption?, widthPct }
 **Data.** `doc.connectors[] { id, fromAnchorId, toAnchorId, style: { line, color, width, ends, curve }, label? }`.
 **Export.** PNG uses a rasterised overlay (exact). PDF draws vector paths at absolute positions computed by the renderer. **DOCX and PPTX drop connectors** for v2, with an export warning "Connector lines aren't included in Word/PowerPoint". The anchored words get a small superscript marker (¹ → ¹) so the link is still visible. Drawn shapes may come later.
 **AC.**
-- L1. Create, restyle and delete work. Lines persist after reload.
-- L2. A line follows its words after a font-scale change, a Bionic toggle, a resize and a section move.
-- L3. Deleting anchor text removes the line, and Undo restores both.
+- L1. Create, restyle and delete work, and after reload the file's `connectors[]` matches what's drawn.
+- L2. Line endpoints are within 4 px of the anchor rect centres after each of: font-scale change, Bionic toggle, resize, section move, Edit↔Preach.
+- L3. Deleting anchor text removes the line; after Undo, the connector and both anchor marks are back in the file.
 - L4. The DOCX export shows the warning and superscript markers.
 
 ### 4.12 Designer additions in the main build
 
 **a. Offline Preach (PWA).**
 - A service worker (`next-pwa` or Workbox) precaches the app shell, the 10 fonts and the Preach route.
-- Sermons are already local (§4.15), so Preach works fully offline. Export and AI show "Needs internet".
+- Sermons are already local (§4.15), so Preach works fully offline. Export shows "Needs internet".
 - An install prompt "Install for offline preaching" is shown.
-- AC: in airplane mode, open the app, then a sermon, then Preach, Start and STOP. All work.
+- AC: after one online visit and SW install, set DevTools offline, and also do a real airplane-mode run on the laptop. Cold-start `/`, open `accents.sermon`, enter Preach, run Start for 2 min, then STOP. No network errors, fonts aren't fallback (F1 check), and Export shows "Needs internet" with no crash or data loss.
 
 **b. Screen wake lock.**
 - `navigator.wakeLock.request("screen")` while the timer runs, or whenever Preach is open (user setting, default: while the timer runs). It's re-acquired on `visibilitychange`.
 - If unsupported, it shows a one-time tip ("Set your screen to never sleep").
-- AC: the screen doesn't dim for 30 min on Chrome Android or Windows while the timer runs.
+- AC: on Windows with the screen timeout set to 2 min, the screen stays on for 30 min with the timer running and dims within 3 min of STOP. After tabbing away and back, the lock is re-acquired (sentinel `released=false`).
+- AC (P-2): if the battery saver releases the wake lock, a visible "Screen may sleep" indicator appears.
 
 **c. Page turning.**
 - Next: → ↓ PageDown Space Enter. Previous: ← ↑ PageUp Shift+Space. This works with Bluetooth clickers (which send PageUp/PageDown or arrows) and foot pedals (configurable key).
 - Settings → "Pedal keys" lets Mevin press his pedal to learn the key.
 - Single mode turns a page, and infinite mode scrolls one screen minus 2 lines.
-- AC: a Logitech R400-type clicker (PageUp/PageDown) turns pages, and a learned key works.
+- AC: with a clicker that sends PageUp/PageDown and one that sends arrows, each press moves exactly one page, with no double turn. Holding a key (auto-repeat) turns one page only (one page per physical press). A pedal key learned in Settings persists after reload. With the lock off and the caret in text, Space/Enter type text and don't turn pages.
 
 **d. Edit lock.**
 - Turns on **automatically when the timer starts**, shown as 🔒 Locked in the toolbar.
 - Locked: no text editing, no drag, taps don't move content, and page-turn taps still work.
 - **One tap on 🔒** unlocks it for 60 s of inactivity, then it relocks while the timer runs. Manual toggle is available at any time.
-- AC: after Start, a tap on text doesn't place a cursor. One tap on the lock enables editing.
+- AC: after Start, a tap on text doesn't place a cursor; one tap on the lock enables editing. After unlocking, 60 s with no input relocks while the timer runs. Unlocked after STOP stays unlocked.
 
 **e. Point navigator.**
 - H1/H2 outline (extends `OutlineNav.tsx`) in Edit (left pane) and in Preach (☰ Points drawer).
 - Tap to jump. The current point is highlighted. In Preach it shows a per-point time chip (see g).
-- AC: tapping "II. Peace" jumps there in both modes.
+- AC: tapping "II. Peace" jumps there in both modes, and the current-point highlight updates as you page through.
 
 **f. Estimated length.**
-- `words ÷ wpm`, with **default 130 wpm** (adjustable 90–180 in settings). Scripture counts at 0.8× speed.
+- `words ÷ wpm`, with **default 130 wpm** (adjustable 90–180 in settings). Scripture is read slower, at 0.8 × wpm. The estimate is rounded to the nearest minute.
 - Shown next to the target: `TARGET 45:00 · EST. ~38 min`. Over the target by more than 10% shows amber with "~6 min long".
-- AC: 4,940 words at 130 wpm shows ~38 min.
+- AC: `4940-words.sermon` (no Scripture) at 130 wpm shows `EST. ~38 min`. Adding 1,000 Scripture words adds 1000 ÷ (130 × 0.8) = 9.6 min, so it shows `~48 min`.
 
 **g. Timing per point.**
 - In Edit, each H1 can get a minutes allotment (default: the target split evenly by word share).
 - In Preach, a small chip by the timer shows `II · +1:20 behind` (amber) or `−0:45 ahead` (muted). It's calculated from the elapsed time when the reader enters each point's region.
-- AC: points with allotments show the correct ahead or behind time within ±5 s.
+- AC: a point is "entered" when its heading reaches the top 25% of the viewport. With a fake clock and scripted page turns at known times, the chip shows the correct ahead/behind time within ±5 s.
 
 **h. Scripture insert by reference.**
 - In the Scripture block or the subtitle, type a reference (`Philippiens 4:4-7`, `Phil 4.4–7`, `John 3:16`), then click "Insert". The verses arrive with the citation set (`Philippiens 4:4-7 LSG`).
@@ -499,6 +535,7 @@ image { id, src: "assets/<sha256>.webp" | "data:…", alt, caption?, widthPct }
 - The parser accepts French and English book names and abbreviations.
 - Licensed translations (ESV, NIV, BDS, Segond 21) come later and need licences.
 - AC: `Phil 4:4-7` LSG inserts 4 verses offline with the correct citation.
+- AC (P-7): after a cold start offline, Scripture insert works because LSG/KJV were cached on the first online visit.
 
 **i. Document language.**
 - `en` / `fr` / `mfe` (Kreol Morisien) in Document ⚙ and the status bar. It sets the `lang` attribute on the editor and Preach.
@@ -510,17 +547,28 @@ image { id, src: "assets/<sha256>.webp" | "data:…", alt, caption?, widthPct }
 
 ### 4.13 Phase E (later)
 
-- **Version history.** Snapshots are saved as `<SermonFolder>/.history/<id>/<timestamp>.sermon`. They're taken automatically when the status becomes Finalised, by hand ("Save version"), and hourly while editing (keeping the last 20 automatic ones). Compare view and Restore are included.
+- **Version history.** Snapshots are saved as `<SermonFolder>/.history/<id>/<timestamp>.sermon`. They're taken by hand ("Save version"), and hourly while editing (keeping the last 20 automatic ones). Compare view and Restore are included.
 - **Sermon library.** A home screen that indexes the sermon folder: full-text search, a **series** field ("Philippians, part 3"), **Bible book** (from the subtitle reference), status, and **where and when preached** (from the `preached[]` records written by STOP). There's a warning "Already preached at Église X on 12/05/2025".
 - **Template.** "New from template": Introduction, I/II/III points, Application, Conclusion, Prayer. Templates are saved as `.sermon-template` files in the folder.
 - **Multi-device sync via a synced folder.** No server. Mevin points the sermon folder at a Google Drive for desktop or OneDrive folder, and those clients sync the files. The app detects external changes (polling `lastModified` on focus). On conflict, it keeps both copies (`… (conflict from TABLET).sermon`) and shows a compare dialog. On iPad/Android, where the File System Access API isn't available, you open or import a `.sermon` file from Drive/Files and save it back (Back up / Restore flow). That's a limitation to accept.
 - **Second screen / projector:** future only. A Scripture-only audience window via the Presentation API, not in v2.
 
+**AC (Phase E).**
+- E1. Hourly snapshots while editing keep exactly the last 20 automatic ones in `.history/<id>/`; manual "Save version" snapshots are not pruned.
+- E2. Restore from history replaces the current content with the snapshot, and first takes a snapshot of the current state so it can be undone.
+- E3. Compare view shows added and removed text between a snapshot and the current file.
+- E4. The library lists every `.sermon` in the folder, and full-text search finds accented words with NFC/NFD treated as the same.
+- E5. A sermon with a `preached[]` record at Église X shows "Already preached at Église X on 12 May 2025" (date in the document language).
+- E6. "New from template" creates a sermon with Introduction, I/II/III, Application, Conclusion and Prayer, and a `.sermon-template` saved in the folder appears in the list.
+- E7. A file changed outside the app (by the sync client) is detected when the window gets focus, and the open sermon reloads if it has no unsaved edits.
+- E8. (was ST5) Editing the same file from two machines through a synced folder produces `… (conflict from <DEVICE>).sermon` and a compare dialog, never data loss.
+- E9. On iPad/Android, a `.sermon` opened from Drive/Files can be edited and saved back through the Back up / Restore flow, with accents intact.
+
 ### 4.14 (reserved for numbering)
 
 ### 4.15 Storage, Back up and Restore (local-first, decided)
 
-**Decision (Mevin, Oct 2026):** sermons live **only on Mevin's PC**. It's free, with **no Firestore and no cloud database**. The server (Cloud Run) handles only **exports** and the **AI prayer-prompt proxy**, and keeps no sermon data.
+**Decision (Mevin, Oct 2026):** sermons live **only on Mevin's PC**. It's free, with **no Firestore and no cloud database**. The server (Cloud Run) handles only **exports** and keeps no sermon data. There is no AI proxy (§4.9 AI rule).
 
 **First run.**
 - A welcome card: "Where should your sermons live?" with **Choose folder…** (File System Access API `showDirectoryPicker`, Chrome/Edge desktop). A tip suggests "a folder inside Google Drive or OneDrive to sync between devices".
@@ -531,14 +579,14 @@ image { id, src: "assets/<sha256>.webp" | "data:…", alt, caption?, widthPct }
 - `<Folder>/<filename>.sermon` is UTF-8 JSON: `{ format: "sermon", schemaVersion: 2, id, meta, settings, presentation, status, timer, prayerPrompts, preached, points, connectors, content, notes }`.
 - The filename follows the agreed sanitising rule (#10).
 - `<Folder>/assets/` holds images, and `<Folder>/.history/` holds versions (Phase E).
-- Writes are atomic (write a temp file, then replace) and the existing autosave controller is reused. Status shows "● Saved to PC" / "Saving…" / "Not saved: retry".
+- Writes are atomic (write a temp file, then replace) and the existing autosave controller is reused. Status shows exactly: **"Saved to Sermons folder"**, **"Saving…"**, or **"Couldn't save. Folder not found. [Choose folder]"**. "Saved" is never shown unless the file was actually written. The file format is defined in `docs/sermon-file-format.md` (PR #14), with the shared checker in `src/lib/sermon-file/`.
 
 **Back up / Restore.**
-- **Back up** (header button and Settings): makes a single `Sermons-backup-2026-10-16.zip` with all `.sermon` files, `assets/` and `history/`, plus a `manifest.json` with app version, count and checksum. Zipping is done client-side (fflate). It's saved where the user chooses, e.g. a USB stick, Drive or OneDrive.
+- **Back up** (header button and Settings): makes a single `Sermons-backup-2026-10-16.zip` with all `.sermon` files, `assets/` and `.history/`, plus a `manifest.json` with app version, count and checksum. Zipping is done client-side (fflate). It's saved where the user chooses, e.g. a USB stick, Drive or OneDrive.
   - Per-sermon "Export .sermon file" embeds images as data URLs, so a single file is self-contained.
-- **Restore:** pick a `.zip` or `.sermon` file and see a preview list: new, same, or newer/older than local. Options are "Add missing only" (default), "Replace older", or "Keep both". Nothing is overwritten without being listed. The manifest checksum is verified, and schema migrations run on restore.
-- A reminder banner appears if there's been no backup for 14 days and the app is in IndexedDB mode (30 days in folder mode).
-- The existing server store (`src/lib/sermon/store.ts`) and `/api/sermons*` stay for dev and tests only and are **not used** by the production client. The client uses a `SermonRepository` interface with `FolderRepository` and `IndexedDbRepository` implementations.
+- **Restore:** pick a `.zip` or `.sermon` file and see a preview list: new, same, or newer/older than local. Newer/older is decided by `savedAt`; identity is the sermon `id`, not the filename. **When a sermon in the backup has the same id as an existing one, the preview asks per sermon: "Keep both" (default; the restored copy gets a new id and " (restored)" added to its title) or "Replace".** Apply is all or nothing, using the module from PR #14: if any file fails, nothing changes. The module rejects a backup that contains the same id twice. Nothing is overwritten without being listed. The manifest checksum is verified, and schema migrations run on restore.
+- A reminder banner appears after 7 days with no backup, in folder and browser mode alike. It is never shown in Preach.
+- The server store (`src/lib/sermon/store.ts`), `/api/sermons*` and `SERMON_DATA_DIR` are **deleted completely, including in dev**. The client uses a `SermonRepository` interface with `FolderRepository` and `IndexedDbRepository` implementations.
 
 **Dependencies:** images (§4.10), version history, library and multi-device sync all build on this storage layer.
 
@@ -547,8 +595,25 @@ image { id, src: "assets/<sha256>.webp" | "data:…", alt, caption?, widthPct }
 - ST1. On first run, choosing a folder makes new sermons appear as `.sermon` files there.
 - ST2. Denying permission falls back to IndexedDB with the banner.
 - ST3. Back up then Restore on a clean browser gives identical sermons, including images and statuses.
-- ST4. No sermon content is sent to the server except in an export request or an AI request the user triggered (verified in the network log).
-- ST5. Editing the same file from two machines through a synced folder produces a conflict copy rather than data loss.
+- ST4. No sermon content leaves the browser except in an export request the user triggered (network log).
+- ST5. (moved to Phase E as E8.)
+- ST6. Back up → delete the folder and clear IndexedDB → Restore: every file matches the original as canonical JSON, including accented filenames, images, `preached[]`, prayer prompts and connectors.
+- ST7. Each of `corrupt/*.sermon` (truncated JSON, wrong `format`, `schemaVersion: 3`, missing `content`, a `<script>` string, a 50 MB file, a BOM with Windows line endings) gives a clear error, the editor stays usable and the original file is untouched. v1 files upgrade.
+- ST8. A manifest checksum mismatch makes Restore refuse the backup and list the affected files.
+- ST9. Two tabs editing the same sermon: the second tab is warned (via `savedAt` and `isNewerOnDisk`). There's no silent last-write-wins.
+- ST10. Folder moved, renamed or deleted while open: the status shows "Couldn't save. Folder not found. [Choose folder]", and unsaved edits are kept in IndexedDB until a write succeeds.
+- ST11. Disk full or write error: the temp write fails, the original is intact, the status never shows "Saved to Sermons folder", and retry works after space is freed.
+- ST12. Permission not re-granted on relaunch: the one-click re-grant works. Declining keeps the sermons readable from the browser copy and shows a banner; the app never silently switches to IndexedDB.
+- ST13. First run with sermons already in browser storage moves them into the folder with no duplicates; running the move twice is harmless.
+- ST14. Two sermons with the same title get distinct filenames. Renaming a sermon renames its file, and the old file is gone.
+- ST15. If `navigator.storage.persist()` is denied, a stronger warning is shown.
+- ST16. An image-heavy sermon over the export request size limit shows a clear error instead of failing silently.
+- ST17. After the route removal, `/api/sermons*` returns 404 in prod and dev, and the prod image has no `SERMON_DATA_DIR`.
+- ST18. Restore of a backup with a sermon whose id already exists: the preview shows "Keep both" selected by default. Keep both gives two sermons, the restored one with a new id and " (restored)" in its title. Replace gives one sermon equal to the backup copy.
+- ST19. A backup that contains the same id twice is rejected and nothing changes.
+- ST20. If one file fails mid-Restore, no sermon is changed (all or nothing).
+- ST21. The backup reminder appears after 7 days with no backup (fake clock: not at 6 days 23 h, yes at 7 days), and never in Preach.
+- ST22. Export (E-2 to E-6): exports use light colours and no Bionic even from dark Preach; accented content and filenames are kept in each format; the "Use preaching countdown numbers" option works in PDF and DOCX; the request has only the current sermon and the export server leaves no temp files or logged body; offline export shows "Needs internet" with no data loss.
 
 ---
 
@@ -590,11 +655,11 @@ Export contract changes (Backend, `docs/api-export-contract.md`): accept FontId 
 
 | Phase | Scope | Frontend | Backend | QA |
 |---|---|---|---|---|
-| **A: Fidelity and writing tools** | **A1 shared schema + mark-preserving renderer + Bionic layer + shared mark CSS (§4.1)**; B/I/U, size, colour popover rebuild, multicolour highlight (§4.2 minus gradient); 10 fonts and justify (§4.4); accents, smart quotes and palette (§4.3); Bionic slider (§4.5) | Renderer, toolbar, popovers, fonts, bionic | Export contract: FontId, size, underline, highlight; bundle fonts for PDF | A1–A4, W1, W2, W6, C1–C5, F1–F4, B1–B3; regression of slices 1–2 |
-| **B: Local storage and document** | Local-first storage, Back up / Restore (§4.15); title block (§4.7); document settings, page numbers, infinite (§4.6); language (§4.12i); Scripture insert LSG/KJV (§4.12h) | Repository layer, dialogs, pagination, Bible data | Retire prod use of the server store; export size and orientation, title block; filename rule | ST1–ST5, T1–T3, D1–D5 |
-| **C: Pulpit** | Timer and STOP (§4.8); status and prayer prompts with the AI proxy (§4.9); PWA offline, wake lock, page turning, edit lock, navigator, estimate, per-point timing (§4.12 a–g) | Preach chrome, timer, panels, SW | `/api/ai/prayer-prompts` proxy (Vertex), rate limit, no logging | TM1–TM5, S1–S4, offline, clicker and wake-lock device tests |
-| **D: Layout power** | Modular sections, columns and images (§4.10); gradient text (§4.2); connector lines (§4.11) | Section nodes, DnD, overlay | Export: columns, images, gradient modes, PDF connector paths | M1–M5, W3–W5, L1–L4 |
-| **E: Library (later)** | Version history, library, templates, sync via a synced folder (§4.13) | Library UI, history, conflict UI | None (no server), except export | Conflict and restore tests |
+| **A: Fidelity and writing tools** | **A1 shared schema + mark-preserving renderer + Bionic layer + shared mark CSS (§4.1)**; B/I/U, size, colour popover rebuild, multicolour highlight (§4.2 minus gradient); 10 fonts and justify (§4.4); accents, smart quotes and palette (§4.3); Bionic slider (§4.5) | Renderer, toolbar, popovers, fonts, bionic | Export contract: FontId, size, underline, highlight; bundle fonts for PDF | A1–A4, R1–R7, W1, W2, W6, C1–C10, F1–F4, B1–B3; regression of slices 1–2 |
+| **B: Local storage and document** | Local-first storage, Back up / Restore (§4.15); title block (§4.7); document settings, page numbers, infinite (§4.6); language (§4.12i); Scripture insert LSG/KJV (§4.12h) | Repository layer, dialogs, pagination, Bible data | Delete the server store and `/api/sermons*`; export size and orientation, title block; filename rule | ST1–ST4, ST6–ST22, T1–T3, D1–D5 |
+| **C: Pulpit** | Timer and STOP (§4.8); status and hand-written prayer prompts (§4.9, no AI); PWA offline, wake lock, page turning, edit lock, navigator, estimate, per-point timing (§4.12 a–g) | Preach chrome, timer, panels, SW | None (AI proxy excluded by the §4.9 AI rule) | TM1–TM11, S1–S4, offline, clicker and wake-lock device tests |
+| **D: Layout power** | Modular sections, columns and images (§4.10); gradient text (§4.2); connector lines (§4.11) | Section nodes, DnD, overlay | Export: columns, images, gradient modes, PDF connector paths | M1–M5, W3–W5, W7, L1–L4 |
+| **E: Library (later)** | Version history, library, templates, sync via a synced folder (§4.13) | Library UI, history, conflict UI | None (no server), except export | E1–E9 |
 
 The Project Manager may reorder C before B's Scripture insert. **A1 is first and blocks everything**, because every later feature renders through it.
 
@@ -602,7 +667,7 @@ The Project Manager may reorder C before B's Scripture insert. **A1 is first and
 
 ## 7. Open decisions for Mevin
 
-1. **Prayer prompts, default is free:** v1 ships **hand-written prompts only (no AI, $0)**; the whole Finalised, approve, STOP flow works without AI and the 'Suggest with AI' button is hidden unless AI is switched on. Optional later: A Gemini API free tier through Google AI Studio (no billing, but rate-limited, and Google may use free-tier inputs to improve its products, so sermon text would not be private); B Gemini via Vertex (paid, private); C OpenAI or Claude (paid). Paid AI is opt-in with a budget cap.
+1. **Prayer prompts:** AI stays off and is excluded from Phases A–C. Turning it on later needs a Security review first, because sermon text would go to an outside company. v1 ships **hand-written prompts only (no AI, $0)**; the whole Finalised, approve, STOP flow works without AI and the 'Suggest with AI' button is hidden unless AI is switched on. Optional later: A Gemini API free tier through Google AI Studio (no billing, but rate-limited, and Google may use free-tier inputs to improve its products, so sermon text would not be private); B Gemini via Vertex (paid, private); C OpenAI or Claude (paid). Paid AI is opt-in with a budget cap.
 2. **Default page size:** A4 (proposed) or Letter. Also, should page numbers in **printed** exports also descend? (Proposed: no, print ascends.)
 3. **Bible translations beyond LSG 1910 and KJV:** is a licence for Segond 21, BDS or an English modern version worth it later?
 4. **Edit lock auto-relock** after 60 s while the timer runs: keep it, or stay unlocked until tapped again?
