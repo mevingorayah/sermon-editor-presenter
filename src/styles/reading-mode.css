@@ -5,11 +5,14 @@
 
 [data-reading-mode] {
   /* Type */
-  --rm-font-body: var(--font-literata), var(--font-source-serif), "Source Serif 4", Georgia, serif;
+  /* Same body face as Edit (--edit-font-body) so user styling carries over. */
+  --rm-font-body: var(--font-source-serif), "Source Serif 4", Georgia, serif;
   --rm-font-ui: system-ui, sans-serif;
-  --rm-size-title: 2rem;
-  --rm-size-h1: 1.35rem;
-  --rm-size-h2: 1.15rem;
+  /* Edit's sizes (1.75 / 1.35 / 1.15 / 1.05rem) × one factor (1.25 / 1.05),
+     so Preach keeps Edit's proportions and only the overall size differs. */
+  --rm-size-title: 2.0833rem;
+  --rm-size-h1: 1.6071rem;
+  --rm-size-h2: 1.369rem;
   --rm-size-body: 1.25rem;
   --rm-size-caption: 0.8125rem;
   --rm-lh-body: 1.7;
@@ -22,7 +25,7 @@
   --rm-pad-inline: max(1.5rem, 8vw);
   --rm-gap-title-body: 1.75rem;
   --rm-gap-block: 1.25rem;
-  --rm-indent-h2: 1.25rem;
+  --rm-indent-h2: 0.8929rem; /* Edit h2 0.75rem × same factor */
   --rm-scripture-rule: 3px solid var(--rm-accent);
   --rm-progress-h: 2px;
 
