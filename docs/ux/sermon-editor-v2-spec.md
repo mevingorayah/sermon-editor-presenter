@@ -132,7 +132,7 @@ Responsive breakpoints: ≥1200 px shows three panes in Edit. 768–1199 px fold
 3. **Bionic is a layer on text leaves, applied *after* the marks.** Output looks like `<span style="color"><em><Bionic/></em></span>`. When the run already carries user bold, Bionic uses weight contrast (800 vs 600) instead of a nested `<strong>`. Scripture always has Bionic off.
 4. `textAlign` is applied to every TextAlign type (title, heading, paragraph, scripture), plus the new `justify` option.
 5. A new `src/styles/marks.css` holds highlight, underline, gradient and connector styles with `--rm-*` light and dark tokens. A shared `--doc-font-body` token is used by both Edit and Preach.
-6. **Contrast policy in Preach dark theme:** the user's colour is kept. The 6 presets have tuned light and dark variants (§4.2). Custom hex below 3:1 against the current background gets an automatic outline (`text-shadow` halo) and a warning dot in Edit. The colour is never silently replaced.
+6. **What Preach may change (the only allowed differences from Edit, as built in PR #12):** (a) one uniform size scale, keeping the same proportions between sizes; (b) dark theme: a user text colour below 4.5:1 on the background is lightened while keeping its hue, and highlights use their dark variant (the 6 presets have tuned light and dark values, §4.2); (c) Bionic only adds weight and never removes marks; Scripture stays plain. One deliberate styling exception: the Scripture citation is shown as a small ALL CAPS caption, right-aligned below the quote. Anything else that differs between Edit and Preach is a bug.
 
 **States.** Light or dark theme, Bionic on or off, and calibration scale −2…+2. All of them keep the marks.
 **Defaults.** Preach opens with the theme last used (dark).
