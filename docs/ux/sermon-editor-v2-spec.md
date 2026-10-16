@@ -712,7 +712,7 @@ User marks (colour, highlight, font) still work inside these blocks. Quote, Inte
 
 #### Open note for Backend: file-format fields needed (not in §5 yet)
 
-> **OPEN — Backend to write into §5 with a `schemaVersion` bump.** UI UX doesn't edit §5. These are the fields the features above need, using Backend's names:
+> **RESOLVED in §5.2 and §5.4 (Backend).** Folded into schemaVersion 2, since v2 has not shipped yet. UI UX doesn't edit §5. These are the fields the features above need, using Backend's names:
 > - Marks: `superscript`, `subscript` (with existing `italic`, `strike`), and `definition { id }`.
 > - Sermon-level `definitions: { id, word, lemma?, strongs?, language: "grc"|"hbo"|"custom", gloss, source: "strongs"|"stepbible"|"user" }[]`.
 > - Block types `quote`, `intenseQuote`, `citation`, `illustration` (illustration with optional `label`).
@@ -769,9 +769,19 @@ interface SermonDocument {
   prayerPrompts?: { items: string[]; source: "manual"; approvedAt: string; needsReview?: boolean };
   preached: { at: string; place?: string; durationSec: number }[];
   connectors: { id; fromAnchorId; toAnchorId; style: {...}; label? }[];
+  definitions: { id: string; word: string; lemma?: string; strongs?: string;
+                 language: "grc"|"hbo"|"custom"; gloss: string;
+                 source: "strongs"|"stepbible"|"user" }[];   // default []
   content: TipTapJSON;            // doc, titleBlock, section+, column+, blocks
   notes: string;
 }
+// content details (§4.16):
+//  every block node has attrs.blockId (uuid); moves keep it, duplicates get a new one
+//  block types: paragraph, heading, scripture, quote, intenseQuote, citation,
+//               illustration{label?}, board{boxes: {id,x,y,w,h,text}[]}, section, column, image
+//  marks: bold, italic, underline, strike, superscript, subscript, link,
+//         textStyle{color,fontFamily,fontSize}, highlight{color}, gradient, anchor{id},
+//         definition{id}   // id points into definitions[]; lines between board boxes reuse connectors
 type FontId = "lora"|"merriweather"|"playfair-display"|"source-serif-4"|"literata"
             |"inter"|"open-sans"|"lato"|"montserrat"|"nunito-sans"|"jetbrains-mono";
 ```
@@ -780,7 +790,7 @@ type FontId = "lora"|"merriweather"|"playfair-display"|"source-serif-4"|"literat
 
 **Upgrades** run in the checker's `upgradeSermon`, one step per version:
 - v0 to v1 (in #14): a bare localStorage document or the old server shape.
-- v1 to v2: wrap flat content into one section with one column; first `title` node to `title`/`titleBlock`; `bionic: boolean` to `{enabled, strength: 0.45}`; font stacks to FontId; `status` defaults to `in_progress`; `timer.targetSec` 2700. The upgrade is idempotent, and the file is only rewritten as v2 on the first real edit.
+- v1 to v2: wrap flat content into one section with one column; first `title` node to `title`/`titleBlock`; `bionic: boolean` to `{enabled, strength: 0.45}`; font stacks to FontId; `status` defaults to `in_progress`; `timer.targetSec` 2700; every block gets a `blockId`; `definitions` starts empty. A `definition` mark whose id is missing from `definitions` is dropped (the word text stays). The upgrade is idempotent, and the file is only rewritten as v2 on the first real edit.
 
 A file with a higher `schemaVersion` than the app knows is refused with "saved by a newer version of the app" and left untouched.
 
@@ -812,6 +822,12 @@ QA tests each cell. **Kept** means it looks the same as Edit in light theme. Any
 | Sections and columns | Native columns | Kept | One slide per section | Kept |
 | Images | Kept | Kept | Kept | Kept |
 | Connector lines | Small markers (Mevin decision 5) | Kept | Small markers | Kept |
+| Superscript, subscript | Kept | Kept | Kept | Kept |
+| Quote, intense quote | Word Quote / Intense Quote styles | Kept | Kept | Kept |
+| Citation block | Kept; ALL CAPS caption | Kept | Kept | Kept |
+| Illustration block (with label) | Shaded box with label | Kept | Kept | Kept |
+| Boards (boxes and lines) | Picture of the board | Kept as drawing | Native shapes and lines | Kept |
+| Definition words | Footnote with the meaning | Dotted underline plus footnote | Speaker notes list the meanings | Dotted underline only |
 | Bionic | Never | Never | Never | Never |
 | Dark theme | Never; light colours | Never | Never | Never |
 
