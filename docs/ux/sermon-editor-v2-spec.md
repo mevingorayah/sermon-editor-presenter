@@ -615,6 +615,113 @@ image { id, src: "assets/<sha256>.webp" | "data:…", alt, caption?, widthPct }
 - ST21. The backup reminder appears after 7 days with no backup (fake clock: not at 6 days 23 h, yes at 7 days), and never in Preach.
 - ST22. Export (E-2 to E-6): exports use light colours and no Bionic even from dark Preach; accented content and filenames are kept in each format; the "Use preaching countdown numbers" option works in PDF and DOCX; the request has only the current sermon and the export server leaves no temp files or logged body; offline export shows "Needs internet" with no data loss.
 
+### 4.16 Mevin's Edit requests (Oct 2026, Phases A and B)
+
+All of these follow the Preach rule in §4.1-6: what you set in Edit shows the same in Preach, with only the allowed differences (uniform size scale, dark-theme colour lightening and dark highlights, Bionic weight only, Scripture plain). Anything else that differs is a bug. Field names are Backend's; the file changes are listed in the open note at the end of this section, and Backend writes them into §5.
+
+#### 4.16a More text marks (Phase A)
+
+**UI.** Toolbar row 1 becomes `B I U S x² x₂`: bold, italic, underline, strikethrough, superscript, subscript. Shortcuts: Ctrl/Cmd+B, I, U; Ctrl/Cmd+Shift+X strikethrough; Ctrl/Cmd+. superscript; Ctrl/Cmd+, subscript. Superscript and subscript can't both be on: turning one on turns the other off. Each button shows `aria-pressed`.
+**Data.** Marks `italic`, `strike`, `superscript`, `subscript` (with `bold`, `underline`).
+**AC.**
+- MK1. Each of the 6 buttons and shortcuts toggles its mark on a selection, `aria-pressed` matches the selection, and the file stores the mark after reload.
+- MK2. Applying superscript to a subscript run removes subscript, and the other way round.
+- MK3. In `all-marks.sermon`, superscript and subscript runs have the same `vertical-align` and font-size ratio to the body in Edit and Preach (A1 rule), in both themes.
+- MK4. Bionic doesn't split a superscript or subscript run of 3 characters or fewer (e.g. verse numbers, `1er`), and adds nothing inside user bold.
+
+#### 4.16b Paragraph styles (Phase A)
+
+**UI.** The block style menu (Title, H1, H2, H3, Body, Scripture) adds **Quote**, **Intense quote**, **Citation** and **Illustration**.
+- **Quote:** indented, italic, with a thin left rule in a muted colour.
+- **Intense quote:** larger (1.15×), centred, with a rule above and below in the accent colour.
+- **Citation:** a small ALL CAPS caption, right-aligned, muted, for a source line under a quote. It's the same look as the Scripture citation.
+- **Illustration:** a tinted panel (soft warm tint; dark variant in dark theme) with rounded corners and a small label "ILLUSTRATION" in the top-left. It can hold several paragraphs, lists and images. The label text can be changed per block (e.g. "STORY").
+User marks (colour, highlight, font) still work inside these blocks. Quote, Intense quote and Illustration are not Scripture, so Bionic applies to them; Citation gets no Bionic, like the Scripture citation.
+**Accessibility.** Quote and Intense quote are `blockquote`; Citation is `cite`; Illustration is an `aside` labelled by its label text. The tint is never the only signal: the label is always shown.
+**Data.** Block types `quote`, `intenseQuote`, `citation`, `illustration` (with optional `label`).
+**AC.**
+- PS1. Each of the 4 styles can be applied from the menu and by keyboard, and the block type is stored in the file after reload.
+- PS2. For each style, Edit and Preach match on indent, font-style, alignment, rule colour, panel background and label text (A1 rule). In dark theme the panel and rule use their dark variants and text inside stays ≥4.5:1.
+- PS3. The Illustration label shows in Edit, Preach and every export, and a screen reader announces "Illustration" (or the custom label).
+- PS4. Citation blocks get no Bionic at any strength; Quote, Intense quote and Illustration get Bionic like body text.
+
+#### 4.16c Branch boards (mind-map boxes, Phase B)
+
+**Purpose.** Inside a section, lay out ideas as boxes linked with lines, like a mind map.
+**UI.** "+ Section → Board" or "+ block → Board" inserts a board area inside a section. In it:
+- Double-click or "+ Box" adds a box. Drag a box to move it; drag its corner to resize. Type in a box to edit its text.
+- Link two boxes with **⟋ Connect** (the same tool and styles as §4.11). Lines stay attached when boxes move.
+- Keyboard: Tab moves between boxes; arrow keys move the focused box 8 px (Shift: 1 px); Ctrl/Cmd+Alt+L starts a link from the focused box, Tab to the target, Enter completes. Delete removes a box and its lines, with Undo.
+- In Preach, boards show exactly as laid out (scaled with the page). Boxes can be moved only when the edit lock is off.
+**Accessibility.** The board is a `group` labelled "Board, 5 boxes". Each box is a focusable item; its links are listed as "linked to 'Grace', 'Faith'".
+**Data.** `board` nodes `{id, x, y, w, h, text}`; lines reuse `connectors`.
+**Dependency.** This brings the connector engine (§4.11) into Phase B for boards; text-to-text connectors stay in Phase D.
+**AC.**
+- BD1. Add, move, resize, edit text and delete boxes with mouse and with keyboard only; after reload the file's `board` nodes have the same `x, y, w, h, text`.
+- BD2. Linking two boxes stores a `connectors` entry; moving either box keeps the line endpoints within 4 px of the box edges.
+- BD3. In Preach, box positions and sizes match Edit after the uniform size scale (ratio within ±1%), and line styles match. With the lock on, a drag does nothing.
+- BD4. Deleting a box removes its lines; Undo restores both.
+
+#### 4.16d Every block is a module (Phase B)
+
+**UI.** Every title, H1, H2, H3, body paragraph, list, quote, illustration, Scripture and board is a block. On hover or focus each shows a **⠿ drag handle** on the left and a **+** to add a block below (opening the same menu as + Section). This works inside sections and columns.
+- Edit: always available.
+- Preach: available only when the edit lock is off (§4.12d); with the lock on, handles and + are hidden.
+- Keyboard: focus the handle, Space to pick up, ↑/↓ to move, Space to drop, Esc to cancel; Alt+Shift+↑/↓ moves the current block. Announced: "Paragraph moved to position 4 of 12".
+**Data.** A stable `blockId` on every block, kept through edits, moves, copy within the document and save/reload.
+**AC.**
+- BK1. In Edit, each block type shows a handle and + on hover and focus, and + inserts a chosen block below.
+- BK2. A block can be moved by drag and by keyboard, within a section, between sections and between columns, and the new order is in the file after reload.
+- BK3. **Moving a block keeps its `blockId`, its connectors and its definitions.** After the move and a reload, every `connectors` entry and every `definition` mark that pointed into the block still resolves, and the lines are drawn to the new position.
+- BK4. Every block in the file has a unique `blockId`; duplicating a block gives the copy a new `blockId` (and new anchor/definition ids) so nothing points at two places.
+- BK5. In Preach with the lock off, handles and + work and changes are saved; with the lock on they're hidden and a drag does nothing.
+
+#### 4.16e Define a word (Phase B)
+
+**Purpose.** Attach the meaning of a word, from the Greek or Hebrew lexicon or in your own words, so it's at hand in the pulpit.
+**UI.**
+- Select a word, right-click (or long-press, or Ctrl/Cmd+Shift+D) → **Define…**. A dialog has two tabs:
+  - **Lexicon:** search by English/French word, transliteration or Strong's number. Results show the original word (Greek or Hebrew script), transliteration, Strong's number and a short gloss, with the source. Choose one to attach.
+  - **My own meaning:** type a meaning (and optionally the original word).
+- The word gets a **subtle marker**: a dotted underline in a muted colour, plus a small dot after the word. It doesn't change the word's colour, weight or highlight.
+- In Edit, hover or click shows the definition card with Edit and Remove. In Preach, **tapping the word (or pressing Enter on it) shows a popover** with the original word, transliteration, Strong's number and gloss. Tap outside or Esc closes it. Tapping a defined word never turns the page.
+- Definitions are saved in the sermon file, so they work offline after saving. The lexicon data is bundled as local JSON and cached for offline use, like the Bible text (§4.12h).
+**Sources and licences.**
+- **Primary: STEPBible data (Tyndale House), CC BY 4.0.** Used for the Greek and Hebrew lexicons and tagged original-language texts. Requires one credit line on the About screen.
+- **Secondary option: Open Scriptures Strong's dictionaries, CC BY-SA.** Not public domain. Use only if STEPBible is missing an entry; it needs its own credit line, and share-alike applies to that dictionary data (any changed version of it we ship must be under CC BY-SA).
+- Public-domain extras (original Strong's 1890, Thayer's, BDB) may be used where the specific edition is confirmed public domain.
+**Fidelity.** Under the Preach rule: the marker looks the same in Edit and Preach (scaled), its colour follows the dark-theme rule, Bionic only adds weight to the word as usual (and nothing inside user bold), and a defined word inside Scripture keeps the marker but gets no Bionic.
+**Accessibility.** The defined word is a button-like element with `aria-haspopup="dialog"` and `aria-describedby` the short gloss. The popover is a non-modal dialog; focus moves in and returns on close.
+**Data.** A `definition` mark `{id}` on the word, plus a sermon-level `definitions` list of `{id, word, lemma?, strongs?, language: grc|hbo|custom, gloss, source: strongs|stepbible|user}`.
+**AC.**
+- DF1. Select "grace", Define → Lexicon → choose G5485: the word gets the marker, and the file has a `definition` mark and a `definitions` entry with `word`, `lemma` χάρις, `strongs` G5485, `language: grc`, a gloss and `source: stepbible`.
+- DF2. Define → My own meaning stores an entry with `language: custom`, `source: user` and the typed gloss, accents intact (NFC).
+- DF3. In Preach, tapping (and Enter on) the defined word shows the popover with the original word, transliteration, Strong's number and gloss; Esc and tap-outside close it; the page doesn't turn and the timer isn't affected.
+- DF4. After saving, a cold start in airplane mode opens the sermon and the popover shows the full definition. The lexicon search also works offline after one online visit.
+- DF5. The marker matches between Edit and Preach under A1 (dotted underline colour follows the dark rule; no change to the word's colour, weight or highlight beyond Bionic).
+- DF6. Removing the definition removes the mark and the list entry; deleting the word removes both, with Undo restoring both.
+- DF7. Hebrew entries show right-to-left script correctly inside the left-to-right popover (`dir="rtl"` on the original word).
+- DF8. **Credits:** the About screen shows the STEPBible credit line ("Greek and Hebrew lexicon data from STEPBible.org, Tyndale House, Cambridge, CC BY 4.0"). If any Open Scriptures Strong's data is shipped, a second credit line names it with CC BY-SA. A build check fails if lexicon data from either source is bundled without its credit line.
+
+#### 4.16f Confirmations
+
+- **Page size and orientation apply in Preach.** The page box in Preach single and spread view uses the document's size and orientation (§4.6), scaled to fit the screen. Infinite view keeps the page width.
+  - AC PG1. With A5 landscape, each Preach page box has a width:height ratio of 210:148 (±1%); switching to A4 portrait changes it to 210:297 and repaginates.
+- **In Phase A:** the 10-font list (§4.4), the 6 colour presets with custom hex (§4.2) and the 6 highlight colours (§4.2). The Phase A row in §6 lists them.
+  - AC PG2. The Phase A build offers exactly the 10 fonts plus JetBrains Mono for code, 6 colour presets plus custom hex and Default, and 6 highlight colours plus None, in Edit, and each shows correctly in Preach (A1).
+
+#### Open note for Backend: file-format fields needed (not in §5 yet)
+
+> **OPEN — Backend to write into §5 with a `schemaVersion` bump.** UI UX doesn't edit §5. These are the fields the features above need, using Backend's names:
+> - Marks: `superscript`, `subscript` (with existing `italic`, `strike`), and `definition { id }`.
+> - Sermon-level `definitions: { id, word, lemma?, strongs?, language: "grc"|"hbo"|"custom", gloss, source: "strongs"|"stepbible"|"user" }[]`.
+> - Block types `quote`, `intenseQuote`, `citation`, `illustration` (illustration with optional `label`).
+> - A stable `blockId` on every block. Moves keep it; duplicates get a new one.
+> - `board` nodes `{ id, x, y, w, h, text }`; lines between boxes reuse `connectors`.
+> - Upgrade step: older files get a `blockId` on every block on first open, and an empty `definitions` list.
+> - Export: how each new block style, sub/superscript, boards and definition markers appear per format belongs in Backend's §5.4 table.
+
+
 ---
 
 ## 5. Data model, file format and export contract (Backend)
@@ -716,8 +823,8 @@ Every format keeps Kreol and French accents exactly, in the text and in the file
 
 | Phase | Scope | Frontend | Backend | QA |
 |---|---|---|---|---|
-| **A: Fidelity and writing tools** | **A1 shared schema + mark-preserving renderer + Bionic layer + shared mark CSS (§4.1)**; B/I/U, size, colour popover rebuild, multicolour highlight (§4.2 minus gradient); 10 fonts and justify (§4.4); accents, smart quotes and palette (§4.3); Bionic slider (§4.5) | Renderer, toolbar, popovers, fonts, bionic | Export contract: FontId, size, underline, highlight; bundle fonts for PDF | A1–A4, R1–R7, W1, W2, W6, C1–C10, F1–F4, B1–B3; regression of slices 1–2 |
-| **B: Local storage and document** | Local-first storage, Back up / Restore (§4.15); title block (§4.7); document settings, page numbers, infinite (§4.6); language (§4.12i); Scripture insert LSG/KJV (§4.12h) | Repository layer, dialogs, pagination, Bible data | Delete the server store and `/api/sermons*`; export size and orientation, title block; filename rule | ST1–ST4, ST6–ST22, T1–T3, D1–D5 |
+| **A: Fidelity and writing tools** | **A1 shared schema + mark-preserving renderer + Bionic layer + shared mark CSS (§4.1)**; B/I/U/S, superscript, subscript (§4.16a), paragraph styles Quote, Intense quote, Citation, Illustration (§4.16b); size, colour popover rebuild with 6 presets and custom hex, multicolour highlight with 6 colours (§4.2 minus gradient); 10 fonts and justify (§4.4); accents, smart quotes and palette (§4.3); Bionic slider (§4.5) | Renderer, toolbar, popovers, fonts, bionic | Export contract: FontId, size, underline, highlight; bundle fonts for PDF | A1–A4, R1–R7, W1, W2, W6, C1–C10, F1–F4, B1–B3, MK1–MK4, PS1–PS4, PG2; regression of slices 1–2 |
+| **B: Local storage and document** | Local-first storage, Back up / Restore (§4.15); title block (§4.7); document settings, page numbers, infinite (§4.6); language (§4.12i); Scripture insert LSG/KJV (§4.12h); every block a module (§4.16d); branch boards (§4.16c, brings in the connector engine); Define with lexicon (§4.16e); page size in Preach (§4.16f) | Repository layer, dialogs, pagination, Bible data | Delete the server store and `/api/sermons*`; export size and orientation, title block; filename rule | ST1–ST4, ST6–ST22, T1–T3, D1–D5, BK1–BK5, BD1–BD4, DF1–DF8, PG1 |
 | **C: Pulpit** | Timer and STOP (§4.8); status and hand-written prayer prompts (§4.9, no AI); PWA offline, wake lock, page turning, edit lock, navigator, estimate, per-point timing (§4.12 a–g) | Preach chrome, timer, panels, SW | None (AI proxy excluded by the §4.9 AI rule) | TM1–TM11, S1–S4, offline, clicker and wake-lock device tests |
 | **D: Layout power** | Modular sections, columns and images (§4.10); gradient text (§4.2); connector lines (§4.11) | Section nodes, DnD, overlay | Export: columns, images, gradient modes, PDF connector paths | M1–M5, W3–W5, W7, L1–L4 |
 | **E: Library (later)** | Version history, library, templates, sync via a synced folder (§4.13) | Library UI, history, conflict UI | None (no server), except export | E1–E9 |
