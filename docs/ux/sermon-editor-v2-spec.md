@@ -777,7 +777,8 @@ interface SermonDocument {
                           bionic: { enabled: boolean; strength: 0.3|0.45|0.6|0.7 } };
   timer: { targetSec: number };   // default 2700
   points: { headingId: string; minutes: number }[];
-  prayerPrompts?: { items: string[]; source: "manual"; approvedAt: string; needsReview?: boolean };
+  archivedAt?: string;            // ISO time; absent = not archived (Archive, step A6)
+  // prayerPrompts: cut. Older files that have it open normally; the field is kept untouched on save and not shown.
   preached: { at: string; place?: string; durationSec: number }[];
   connectors: { id; fromAnchorId; toAnchorId; style: {...}; label? }[];
   definitions: { id: string; word: string; lemma?: string; strongs?: string;
@@ -797,7 +798,7 @@ type FontId = "lora"|"merriweather"|"playfair-display"|"source-serif-4"|"literat
             |"inter"|"open-sans"|"lato"|"montserrat"|"nunito-sans"|"jetbrains-mono";
 ```
 
-`prayerPrompts.source` is `"manual"` only while AI stays off (§7). `"ai"` and `"mixed"` are added only if Mevin turns AI on after a Security review.
+Prayer prompts are cut. Unknown fields, including an old `prayerPrompts`, are preserved as-is so no data is lost.
 
 **Upgrades** run in the checker's `upgradeSermon`, one step per version:
 - v0 to v1 (in #14): a bare localStorage document or the old server shape.
@@ -810,7 +811,7 @@ A file with a higher `schemaVersion` than the app knows is refused with "saved b
 The request carries only the current sermon. The body is never logged and no temp files are kept. New in v2:
 - FontId and `fontSize`, `underline`, multicolour `highlight{color}`, `gradient{from,to,angle}` with a per-format `gradientMode`.
 - `section`, `column` and `image` nodes. Images are sent inline as data URLs in the request, since the server has no store. Oversize requests get `413` with a clear message (ST16).
-- `titleBlock`, page size and orientation, `countdownPageNumbers` (PDF, DOCX), and an optional prayer prompts page.
+- `titleBlock`, page size and orientation, `countdownPageNumbers` (PDF, DOCX).
 - `bionic` is always `false`, and colours are always the light-theme values. Colours stay strict: `#RRGGBB` or `rgb(r,g,b)`.
 
 ### 5.4 Export fidelity per mark
