@@ -5,7 +5,7 @@ Dual-shell sermon app:
 - **Editing Mode** (`/edit`) — TipTap headless block editor + study chrome
 - **Preaching / Reading Mode** (`/preach`) — hard shell swap; Art Director stage tokens; zero editing chrome
 
-Document **content** (TipTap JSON) is stored separately from **presentationSettings**. Client persists to `localStorage`; server CRUD lives under `/api/sermons*`.
+Document **content** (TipTap JSON) is stored separately from **presentationSettings**. Sermons are saved as `.sermon` files in a folder on your PC (browser storage as fallback). The server only builds exports and stores nothing.
 
 ## Run locally
 
@@ -36,7 +36,7 @@ E2E_BASE_URL=https://<host> npm run test:e2e   # run against a deployed shell in
 `seed-philippians-4:0` active id, and (c) a random UUID active id, and fails on any
 `pageerror` or if the edit toolbar (History group / Undo) doesn't render. It also
 checks that Scripture block alignment is applied live. Note: the tests write to the
-local file store (`data/sermons/`, gitignored) through autosave.
+your Sermons folder through autosave.
 
 ## Route map
 
@@ -58,8 +58,6 @@ local file store (`data/sermons/`, gitignored) through autosave.
 
 - Contract: [`docs/api-export-contract.md`](docs/api-export-contract.md) — uses Frontend `CalibratedSnapshot` from `src/types/document.ts`
 - Export: `POST /api/export` (optional `?format=docx|pdf`, default `docx`) → real DOCX/PDF binary (`docx` + `pdfkit`)
-- CRUD: `GET/POST /api/sermons`, `GET/PATCH/DELETE /api/sermons/[id]`, `PATCH /api/sermons/[id]/content`
-- Store: `data/sermons/` JSON files (`SERMON_DATA_DIR` override; swap for DB in prod)
 
 ## DevOps / Cloud Run
 

@@ -40,9 +40,6 @@ yarn-error.log*
 next-env.d.ts
 
 # local sermon JSON store (keep directory)
-/data/sermons/*.json
-!/data/sermons/.gitkeep
-!/data/sermons/README.md
 
 # playwright
 /test-results/
