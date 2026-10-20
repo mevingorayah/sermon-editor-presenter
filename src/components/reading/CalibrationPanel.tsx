@@ -19,8 +19,7 @@ import {
   EXPORT_FORMATS,
   buildExportPayload,
   defaultFilenameStem,
-  fallbackFilename,
-  filenameFromContentDisposition,
+  downloadFilename,
   formatMeta,
   sanitizeFilenameStem,
 } from "@/lib/export-client/payload";
@@ -33,6 +32,7 @@ import type {
   ReadingTheme,
   TypeScaleStep,
 } from "@/types/document";
+import { countPngPages, pngExportLabel } from "@/lib/sermon/export/pngLayout";
 import { ReadingView } from "./ReadingView";
 import styles from "./CalibrationPanel.module.css";
 
@@ -109,6 +109,9 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
     [target, typeScaleStep, lineHeight, theme, content, meta.kind],
   );
 
+  // Same layout as the server's PNG paging: >1 page comes back as a .zip.
+  const pngPages = useMemo(() => countPngPages(snapshot), [snapshot]);
+
   async function postExport(format: ExportFormat) {
     if (busyFormat) return;
     const fmt = formatMeta(format);
@@ -158,8 +161,12 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
       }
 
       const filename =
-        filenameFromContentDisposition(res.headers.get("Content-Disposition")) ??
-        fallbackFilename(stem, format);
+        downloadFilename(
+          res.headers.get("Content-Disposition"),
+          res.headers.get("Content-Type") ?? blob.type,
+          stem,
+          format,
+        );
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -294,7 +301,8 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
           onChange={(e) => setStemDraft(e.target.value)}
         />
         <p id={`${ids}-stem-hint`} className={styles.fieldHint}>
-          Saves as <strong>{savedStem}</strong>.docx / .pdf / .png / .pptx
+          Saves as <strong>{savedStem}</strong>.docx / .pdf / .pptx /{" "}
+          {pngPages > 1 ? <>.zip ({savedStem}-01.png…)</> : ".png"}
         </p>
 
         <label className={styles.check}>
@@ -365,7 +373,7 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
             aria-disabled={busyFormat ? true : undefined}
             onClick={() => postExport(f.id)}
           >
-            {f.label}
+            {f.id === "png" ? pngExportLabel(pngPages) : f.label}
           </button>
         ))}
       </div>
@@ -375,7 +383,7 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
         role="status"
       >
         {exportStatus ??
-          "DOCX and PDF print in light ink. PNG (one image of the frame) and PowerPoint (a slide per H1) follow the target and theme above."}
+          "DOCX and PDF print in light ink. PNG (one image per frame; several frames download as a .zip) and PowerPoint (a slide per H1) follow the target and theme above."}
       </p>
     </aside>
   );

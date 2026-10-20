@@ -84,6 +84,26 @@ export function buildExportPayload(input: BuildExportPayloadInput): ExportPayloa
   return payload;
 }
 
+/**
+ * Download filename: Content-Disposition wins; otherwise the extension comes
+ * from Content-Type, so a multi-page PNG export (application/zip) is never
+ * saved as .png.
+ */
+export function downloadFilename(
+  contentDisposition: string | null,
+  contentType: string | null,
+  stem: string,
+  format: ExportFormat,
+): string {
+  const fromHeader = filenameFromContentDisposition(contentDisposition);
+  if (fromHeader) return fromHeader;
+  const mime = (contentType ?? "").split(";")[0].trim().toLowerCase();
+  if (mime === "application/zip" || mime === "application/x-zip-compressed") {
+    return `${sanitizeFilenameStem(stem)}.zip`;
+  }
+  return fallbackFilename(stem, format);
+}
+
 /** Parse `Content-Disposition` (RFC 5987 `filename*` wins over `filename`). */
 export function filenameFromContentDisposition(
   header: string | null,

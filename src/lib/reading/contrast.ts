@@ -7,8 +7,13 @@
 
 export const DARK_STAGE_BG = "#12110f"; // --rm-bg (dark), reading-mode.css
 export const MIN_CONTRAST = 4.5;
-/** Default dark-Preach highlight (mark.sermon-highlight, sermon-marks.css). */
-export const DARK_HIGHLIGHT_BG = "#3d2e0e";
+/** #17 HIGHLIGHT_PRESETS yellow (light #FFF176) → its pre-mixed dark value. */
+export const DARK_YELLOW_PRESET = "#655F33";
+/**
+ * A highlight with no colour/preset is the default yellow, so dark Preach
+ * shows it as the yellow preset (mark.sermon-highlight, sermon-marks.css).
+ */
+export const DARK_HIGHLIGHT_BG = DARK_YELLOW_PRESET;
 
 type RGB = [number, number, number];
 
@@ -121,8 +126,6 @@ export function effectiveDarkBackground(
 
 /** Dark Preach body text (--rm-fg, reading-mode.css). */
 export const DARK_BODY_FG = "#ede8df";
-/** #17 HIGHLIGHT_PRESETS yellow (light #FFF176) → its pre-mixed dark value. */
-export const DARK_YELLOW_PRESET = "#655F33";
 const YELLOW_PRESET_LIGHT = "#fff176";
 
 /**
