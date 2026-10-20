@@ -6,6 +6,7 @@ import {
   Paragraph,
   TextRun,
   ShadingType,
+  PageOrientation,
 } from "docx";
 import type { CalibratedSnapshot } from "@/types/document";
 import { HIGHLIGHT_AMBER, hexWithoutHash, toHexRgb } from "./colors";
@@ -13,6 +14,7 @@ import {
   styledBlocksFromSnapshot,
   titleTextFromSnapshot,
   withNotesSection,
+  citationCaps,
   type StyledBlock,
   type StyledRun,
   type TextAlign,
@@ -24,6 +26,33 @@ export interface DocxBuildOptions {
   includeNotes?: boolean;
   notes?: string;
   resolvedColors?: { accent: string };
+}
+
+/** Page size in twips (1440 per inch) for each calibration target. */
+export function docxPageSize(target: string): {
+  width: number;
+  height: number;
+  orientation: (typeof PageOrientation)[keyof typeof PageOrientation];
+} {
+  const t = (w: number, h: number) => ({
+    width: Math.round(w * 1440),
+    height: Math.round(h * 1440),
+  });
+  switch (target) {
+    case "paper-letter":
+      return { ...t(8.5, 11), orientation: PageOrientation.PORTRAIT };
+    case "paper-half-letter":
+      return { ...t(5.5, 8.5), orientation: PageOrientation.PORTRAIT };
+    case "tablet-portrait":
+      return { ...t(8, 10.667), orientation: PageOrientation.PORTRAIT };
+    case "screen-16-9":
+      return { ...t(13.333, 7.5), orientation: PageOrientation.LANDSCAPE };
+    case "screen-16-10":
+      return { ...t(13.3, 8.3125), orientation: PageOrientation.LANDSCAPE };
+    case "paper-a4":
+    default:
+      return { ...t(8.27, 11.69), orientation: PageOrientation.PORTRAIT };
+  }
 }
 
 function alignType(align: TextAlign) {
@@ -48,6 +77,8 @@ function runToTextRun(
     text: run.text,
     bold: run.bold,
     italics: opts.forceItalic || run.italic,
+    underline: run.underline ? {} : undefined,
+    strike: run.strike || undefined,
     size: opts.size,
     font: docxFontName(run.fontFamily),
     color,
@@ -152,7 +183,7 @@ function blockToParagraphs(
             alignment: AlignmentType.RIGHT,
             children: [
               new TextRun({
-                text: block.citation,
+                text: citationCaps(block.citation),
                 size: 20,
                 color: "555555",
               }),
@@ -215,6 +246,7 @@ export async function buildDocx(
   const leftInches = margins.left + margins.binderGutter;
 
   void isPaperTarget(String(snapshot.target));
+  const pageSize = docxPageSize(String(snapshot.target));
   void snapshot.theme;
 
   const doc = new Document({
@@ -225,6 +257,7 @@ export async function buildDocx(
       {
         properties: {
           page: {
+            size: pageSize,
             margin: {
               top: Math.round(margins.top * inch),
               right: Math.round(margins.right * inch),
