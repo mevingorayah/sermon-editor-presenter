@@ -138,13 +138,6 @@ function writeRuns(
       .fontSize(opts.size)
       .fillColor(color);
 
-    if (run.highlight) {
-      // Best-effort: soft amber fill behind this continued run is limited in
-      // pdfkit; approximate by drawing text then a translucent note is skipped.
-      // Color the text slightly warmer instead of failing the export.
-      void HIGHLIGHT_AMBER;
-    }
-
     const isLast = i === runs.length - 1;
     // Variable fonts embed at their regular weight, so bold is drawn with a
     // thin outline in the same colour (faux bold) when the app fonts are used.
@@ -158,9 +151,36 @@ function writeRuns(
       fill: true,
       stroke: fauxBold,
       lineGap: (opts.lineHeight - 1) * opts.size,
-      // highlight: pdfkit has no run-level background; omit rather than fail
+      // Read by the _fragment hook in installHighlight: amber box behind the run.
+      ...({ sermonHighlight: !!run.highlight } as object),
     });
   });
+}
+
+type FragmentFn = (text: string, x: number, y: number, options: Record<string, unknown>) => unknown;
+
+/**
+ * pdfkit has no run background, so wrap its per-line fragment drawer: for a
+ * highlighted run, fill HIGHLIGHT_AMBER (DOCX's highlight) behind the exact
+ * fragment before the text is drawn.
+ */
+function installHighlight(doc: PDFKit.PDFDocument): void {
+  const d = doc as unknown as { _fragment: FragmentFn };
+  const original = d._fragment;
+  d._fragment = function (this: PDFKit.PDFDocument, text, x, y, options) {
+    const t = `${text}`.replace(/\n/g, "");
+    if (options.sermonHighlight && t.trim()) {
+      const w = this.widthOfString(t, options);
+      let hx = x;
+      if (options.width) {
+        const lineWidth = Number(options.lineWidth) || 0;
+        if (options.align === "right") hx += lineWidth - this.widthOfString(t.replace(/\s+$/, ""), options);
+        else if (options.align === "center") hx += lineWidth / 2 - (Number(options.textWidth) || 0) / 2;
+      }
+      this.save().rect(hx, y, w, this.currentLineHeight(true)).fill(HIGHLIGHT_AMBER).restore();
+    }
+    return original.call(this, text, x, y, options);
+  };
 }
 
 function writeBlock(
@@ -283,6 +303,7 @@ export async function buildPdf(
     doc.on("error", reject);
 
     embedded = registerFonts(doc);
+    installHighlight(doc);
     doc.fillColor("#111111");
 
     if (blocks.length === 0) {

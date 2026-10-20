@@ -99,4 +99,35 @@ describe("long sermon export (retest 9facff1)", () => {
     assert.match(pdf, /Literata/);
     assert.doesNotMatch(pdf, /\/BaseFont \/(Helvetica|Times)/);
   });
+  it("PNG page count = Export label count (pngLayout) = PPTX slide count", async () => {
+    const { exportSnapshot } = await import("../export");
+    const { countPngPages, pngExportLabel } = await import("../export/pngLayout");
+    for (const target of ["screen-16-9", "paper-a4"]) {
+      const s = { ...long(target), lineHeight: 1.7 };
+      const expected = countPngPages(s as never);
+      const r = await exportSnapshot(s as never, "png", { filenameStem: "long" });
+      const zip = await JSZip.loadAsync(r.buffer);
+      const names = Object.keys(zip.files);
+      assert.equal(names.length, expected, target);
+      assert.equal(pngExportLabel(names.length), `Images (${expected} pages, .zip)`);
+      names.forEach((n, i) => assert.equal(n, `long-${String(i + 1).padStart(2, "0")}.png`));
+      const pz = await JSZip.loadAsync(await buildPptx(s as never));
+      const slides = Object.keys(pz.files).filter((f) => /^ppt\/slides\/slide\d+\.xml$/.test(f));
+      assert.equal(slides.length, expected, target);
+    }
+  });
+  it("dark PNG highlight is #655F33, not #3d2e0e; PDF draws the highlight", async () => {
+    const fs = await import("node:fs");
+    const src = fs.readFileSync(new URL("../export/png.ts", import.meta.url), "utf8");
+    assert.doesNotMatch(src, /3d2e0e/i);
+    const { DARK_YELLOW_PRESET } = await import("../../reading/contrast");
+    assert.equal(DARK_YELLOW_PRESET, "#655F33");
+    const { buildPdf } = await import("../export/pdf");
+    const base = () => ({ ...snapshot(), lineHeight: 1.5, typeScaleStep: 0 });
+    const hl = base();
+    hl.content.content.push({ type: "paragraph", content: [{ type: "text", text: "Ma coupe déborde", marks: [{ type: "highlight" }] }] } as never);
+    const plain = await buildPdf(base() as never);
+    const marked = await buildPdf(hl as never);
+    assert.ok(marked.length > plain.length);
+  });
 });
