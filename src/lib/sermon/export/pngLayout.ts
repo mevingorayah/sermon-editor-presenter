@@ -3,10 +3,10 @@ import { styledBlocksFromSnapshot, titleTextFromSnapshot, type StyledBlock } fro
 import { resolveMargins } from "./margins";
 
 /**
- * Pure (client-safe, no sharp) PNG page count. Mirrors the frame sizes,
- * margins, line wrapping and paging of `buildPngPages` in png.ts (#21), so
- * the Export button can say "Images (N pages, .zip)" before the request.
- * Keep in sync with png.ts; pngLayout.test.ts pins the numbers.
+ * Shared, pure (client-safe, no sharp) page layout for PNG (and later PPTX)
+ * export. UI UX ruling: these pages are the source of truth, not the PDF's
+ * breaks. Backend's buildPngPages renders `layoutPngPages()`; the Export
+ * button uses `countPngPages()` to say "Images (N pages, .zip)".
  */
 
 const CHAR_EM = 0.53;
@@ -33,59 +33,177 @@ function roleSize(type: StyledBlock["type"]): { size: number; gap: number } {
   }
 }
 
-/** Number of lines `layoutLines` in png.ts produces for this text. */
-function lineCount(text: string, size: number, maxWidth: number): number {
-  const tokens = text.match(/\S+\s*|\s+/g) ?? [];
-  let lines = 0;
+/** A block as the layout sees it: plain text plus its role. */
+export interface LayoutBlock {
+  type: StyledBlock["type"];
+  /** Plain text of the block (runs joined). */
+  text: string;
+  citation?: string;
+}
+
+/** One placed line. `start`/`end` are char offsets into the block's `text`. */
+export interface PngPageLine {
+  blockIndex: number;
+  kind: "text" | "citation";
+  /** Line index within the block (citation: the line count). */
+  lineIndex: number;
+  start: number;
+  end: number;
+  /** Top of the line box in px; the baseline is `y + size`. */
+  y: number;
+  size: number;
+  lineHeight: number;
+}
+
+export interface PngPage {
+  lines: PngPageLine[];
+}
+
+export interface PngFrame {
+  width: number;
+  height: number;
+  /** Left edge of the text column (margin + binder gutter). */
+  left: number;
+  contentWidth: number;
+  top: number;
+  bottom: number;
+}
+
+const CITATION_SIZE = 16;
+const CITATION_LH = 26;
+const HEADINGS = new Set<StyledBlock["type"]>(["Title", "H1", "H2"]);
+
+/** Frame geometry for a target (same numbers as png.ts). */
+export function pngFrame(target: string, margins?: CalibratedSnapshot["margins"]): PngFrame {
+  const { width, height } = pngFrameSize(target);
+  const m = margins ? resolveMargins(margins, target) : { left: 0, top: 0, binderGutter: 0 };
+  const scale = width / 13.3;
+  const mx = Math.max(24, Math.round(m.left * scale));
+  const my = Math.max(24, Math.round(m.top * scale));
+  const binder = Math.round(m.binderGutter * scale);
+  return { width, height, left: mx + binder, contentWidth: width - mx * 2 - binder, top: my + 8, bottom: height - my };
+}
+
+/** Wrap text into [start, end) line ranges by estimated width (as png.ts). */
+export function wrapLineRanges(text: string, size: number, maxWidth: number): Array<[number, number]> {
+  const re = /\S+\s*|\s+/g;
+  const out: Array<[number, number]> = [];
+  let lineStart = 0;
   let open = false;
   let w = 0;
-  for (const tok of tokens) {
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const tok = m[0];
     const tw = tok.trimEnd().length * size * CHAR_EM;
     if (open && w + tw > maxWidth) {
-      lines++;
+      out.push([lineStart, m.index]);
+      lineStart = m.index;
       w = 0;
     }
     open = true;
     w += tok.length * size * CHAR_EM;
   }
-  return Math.max(1, lines + (open ? 1 : 0));
+  out.push([lineStart, text.length]);
+  return out;
 }
 
-export function countPngPages(snapshot: CalibratedSnapshot): number {
-  const target = String(snapshot.target);
-  const { width, height } = pngFrameSize(target);
-  const margins = resolveMargins(snapshot.margins, target);
-  const scale = width / 13.3;
-  const mx = Math.max(24, Math.round(margins.left * scale));
-  const my = Math.max(24, Math.round(margins.top * scale));
-  const binder = Math.round(margins.binderGutter * scale);
-  const contentWidth = width - mx * 2 - binder;
-  const bottom = height - my;
-  const top = my + 8;
-
-  let pages = 1;
-  let y = top;
-  const line = (lh: number) => {
-    if (y + lh > bottom && y > top) {
-      pages++;
-      y = top;
-    }
-    y += lh;
+/**
+ * Shared PNG/PPTX page layout (UI UX ruling):
+ * 1. A page never breaks inside a line.
+ * 2. Scripture stays on one page with its citation; if it cannot fit on an
+ *    empty page, it splits between lines and the citation stays with the
+ *    last line.
+ * 3. A heading (Title/H1/H2) is never left at the bottom of a page: it moves
+ *    to the next page with the start of the following block.
+ */
+export function layoutPngPages(
+  blocks: readonly LayoutBlock[],
+  target: string,
+  lineHeight: number,
+  margins?: CalibratedSnapshot["margins"],
+): PngPage[] {
+  const f = pngFrame(target, margins);
+  const avail = f.bottom - f.top;
+  const pages: PngPage[] = [{ lines: [] }];
+  let y = f.top;
+  const page = () => pages[pages.length - 1];
+  const newPage = () => {
+    pages.push({ lines: [] });
+    y = f.top;
+  };
+  /** Break first unless the page is empty or `h` still fits. */
+  const ensure = (h: number) => {
+    if (y > f.top && y + h > f.bottom) newPage();
   };
 
-  const blocks = styledBlocksFromSnapshot(snapshot);
-  const all: Array<Pick<StyledBlock, "type" | "citation"> & { text: string }> = blocks.length
-    ? blocks.map((b) => ({ type: b.type, citation: b.citation, text: b.runs.map((r) => r.text).join("") }))
-    : [{ type: "Title", text: titleTextFromSnapshot(snapshot) }];
-  for (const b of all) {
+  const prepared = blocks.map((b) => {
     const r = roleSize(b.type);
-    const lh = r.size * snapshot.lineHeight;
-    const n = lineCount(b.text, r.size, contentWidth);
-    for (let i = 0; i < n; i++) line(lh);
-    if (b.citation) line(26);
-    y += r.gap;
-  }
+    const lh = r.size * lineHeight;
+    const ranges = wrapLineRanges(b.text, r.size, f.contentWidth);
+    const cite = b.citation ? CITATION_LH : 0;
+    return { b, r, lh, ranges, cite, height: ranges.length * lh + cite };
+  });
+
+  /** Height that must follow a heading on the same page. */
+  const leadOf = (i: number): number => {
+    const n = prepared[i];
+    if (!n) return 0;
+    if (n.b.type === "Scripture" && n.height <= avail) return n.height;
+    if (HEADINGS.has(n.b.type)) return n.ranges.length * n.lh + n.r.gap + leadOf(i + 1);
+    return n.lh;
+  };
+
+  prepared.forEach((p, bi) => {
+    const push = (kind: PngPageLine["kind"], li: number, start: number, end: number, size: number, lh: number) => {
+      page().lines.push({ blockIndex: bi, kind, lineIndex: li, start, end, y, size, lineHeight: lh });
+      y += lh;
+    };
+    const textH = p.ranges.length * p.lh;
+
+    if (HEADINGS.has(p.b.type)) {
+      // Rule 3: the heading moves with the start of what follows (bounded by a page).
+      ensure(Math.min(textH + p.r.gap + leadOf(bi + 1), avail));
+    } else if (p.b.type === "Scripture" && p.height <= avail) {
+      ensure(p.height); // Rule 2: whole block + citation together.
+    }
+
+    p.ranges.forEach(([s, e], li) => {
+      const last = li === p.ranges.length - 1;
+      // Rule 2 (oversized Scripture): last line keeps its citation.
+      ensure(last && p.cite ? p.lh + p.cite : p.lh);
+      push("text", li, s, e, p.r.size, p.lh);
+    });
+    if (p.b.citation) {
+      ensure(p.cite);
+      push("citation", p.ranges.length, 0, p.b.citation.length, CITATION_SIZE, CITATION_LH);
+    }
+    y += p.r.gap;
+  });
   return pages;
+}
+
+/** Page count for blocks (Backend / label). */
+export function pngPageCount(
+  blocks: readonly LayoutBlock[],
+  target: string,
+  lineHeight: number,
+  margins?: CalibratedSnapshot["margins"],
+): number {
+  return layoutPngPages(blocks, target, lineHeight, margins).length;
+}
+
+/** StyledBlocks → LayoutBlocks (plain text per block). */
+export function toLayoutBlocks(blocks: readonly StyledBlock[]): LayoutBlock[] {
+  return blocks.map((b) => ({ type: b.type, citation: b.citation, text: b.runs.map((r) => r.text).join("") }));
+}
+
+/** Page count for a calibrated snapshot (drives the Export label). */
+export function countPngPages(snapshot: CalibratedSnapshot): number {
+  const styled = styledBlocksFromSnapshot(snapshot);
+  const blocks: LayoutBlock[] = styled.length
+    ? toLayoutBlocks(styled)
+    : [{ type: "Title", text: titleTextFromSnapshot(snapshot) }];
+  return pngPageCount(blocks, String(snapshot.target), snapshot.lineHeight, snapshot.margins);
 }
 
 /** Export button label for PNG: single image vs a zip of pages. */
