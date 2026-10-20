@@ -41,6 +41,12 @@ RUN apt-get update \
 COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nextjs /app/public ./public
+# App's own OFL fonts (Literata, Inter, JetBrains Mono) for PDF/PNG, registered with fontconfig (mirrors shell image, bb7785a).
+COPY --chown=root:root assets/fonts /app/assets/fonts
+RUN printf '<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig><dir>/app/assets/fonts</dir></fontconfig>\n' > /etc/fonts/conf.d/50-app-fonts.conf \
+  && fc-cache -f
+# Writable per-user fontconfig cache for the non-root runtime user (system cache in /var/cache/fontconfig stays read-only).
+ENV XDG_CACHE_HOME=/tmp/.cache
 USER nextjs
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

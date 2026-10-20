@@ -7,55 +7,18 @@ import {
   toHexRgb,
 } from "./colors";
 import {
-  styledBlocksFromSnapshot,
   titleTextFromSnapshot,
   type StyledBlock,
   type StyledRun,
   citationCaps,
 } from "./contentWalk";
+import { exportPages, sliceRuns } from "./pages";
+import { ensureContrast } from "../../reading/contrast";
 import { docxFontName } from "./fonts";
 import { isPaperTarget } from "./margins";
 
 export interface PptxBuildOptions {
   resolvedColors?: { accent: string };
-}
-
-interface Section {
-  heading: string;
-  blocks: StyledBlock[];
-}
-
-function groupSections(blocks: StyledBlock[]): {
-  title: string;
-  sections: Section[];
-  preamble: StyledBlock[];
-} {
-  let title = "";
-  const preamble: StyledBlock[] = [];
-  const sections: Section[] = [];
-  let current: Section | null = null;
-
-  for (const block of blocks) {
-    if (block.type === "Title") {
-      title = block.runs.map((r) => r.text).join("").trim() || title;
-      continue;
-    }
-    if (block.type === "H1") {
-      current = {
-        heading: block.runs.map((r) => r.text).join("").trim() || "Section",
-        blocks: [],
-      };
-      sections.push(current);
-      continue;
-    }
-    if (current) {
-      current.blocks.push(block);
-    } else {
-      preamble.push(block);
-    }
-  }
-
-  return { title, sections, preamble };
 }
 
 function runsToPptxText(
@@ -71,7 +34,7 @@ function runsToPptxText(
     text: run.text,
     options: {
       fontSize: opts.fontSize,
-      fontFace: docxFontName(run.fontFamily),
+      fontFace: docxFontName(run.fontExplicit ? run.fontFamily : "serif"),
       bold: opts.bold || run.bold,
       italic: opts.forceItalic || run.italic,
       underline: run.underline ? { style: "sng" } : undefined,
@@ -85,179 +48,86 @@ function runsToPptxText(
 }
 
 /**
- * PPTX: Title slide + one slide per H1 section.
+ * PPTX: one slide per page of the shared PNG page split (pngLayout.ts), so
+ * slides and images break in the same places. Every line is placed.
  * Notes ignored for PPTX v1.
  */
 export async function buildPptx(
   snapshot: CalibratedSnapshot,
   options: PptxBuildOptions = {},
 ): Promise<Buffer> {
-  const blocks = styledBlocksFromSnapshot(snapshot);
-  const { title: fromBlocks, sections, preamble } = groupSections(blocks);
-  const title = fromBlocks || titleTextFromSnapshot(snapshot);
+  const { frame, blocks, pages } = exportPages(snapshot);
+  const title =
+    blocks.find((b) => b.type === "Title")?.runs.map((r) => r.text).join("").trim() ||
+    titleTextFromSnapshot(snapshot);
   const paper = isPaperTarget(String(snapshot.target));
   const light = paper || snapshot.theme === "light";
   const accent =
     toHexRgb(options.resolvedColors?.accent) ||
     (light ? DEFAULT_ACCENT_LIGHT : DEFAULT_ACCENT_DARK);
-  const bg = light ? "F7F4EF" : "1A1A1A";
+  const bgHex = light ? "#F7F4EF" : "#1A1A1A";
+  const bg = bgHex.slice(1);
   const fg = light ? "111111" : "F0EDE6";
   const muted = light ? "555555" : "A8A29A";
+  const titleColor = (light ? accent : ensureContrast(accent, bgHex)).replace(/^#/, "").toUpperCase();
 
   const pptx = new PptxGenJS();
   pptx.author = "sermon-editor-presenter";
   pptx.title = title;
   pptx.subject = `Calibrated export target=${snapshot.target}`;
 
-  // Prefer 16:9 for screen targets; letter-ish for paper still uses widescreen for v1 simplicity.
-  pptx.defineLayout({ name: "CAL", width: 13.333, height: 7.5 });
+  const W = 13.333;
+  const k = W / frame.width; // inches per frame pixel
+  pptx.defineLayout({ name: "CAL", width: W, height: frame.height * k });
   pptx.layout = "CAL";
+  const pt = (px: number) => Math.round(px * k * 72 * 10) / 10;
 
-  // Title slide
-  {
+  const colorFor = (type: StyledBlock["type"]) =>
+    type === "Title" ? titleColor : type === "Caption" ? muted : type === "H2" && !light ? "D4CFC5" : fg;
+
+  for (const page of pages) {
     const slide = pptx.addSlide();
+    slide.background = { color: bg };
     slide.addShape(pptx.ShapeType.rect, {
-      x: 0,
-      y: 0,
-      w: "100%",
-      h: "100%",
-      fill: { color: bg },
+      x: 0, y: 0, w: 8 * k, h: frame.height * k,
+      fill: { color: accent.replace(/^#/, "") }, line: { color: accent.replace(/^#/, "") },
     });
-    slide.addShape(pptx.ShapeType.rect, {
-      x: 0,
-      y: 0,
-      w: 0.15,
-      h: "100%",
-      fill: { color: accent.replace(/^#/, "") },
-    });
-    slide.addText(title, {
-      x: 0.8,
-      y: 2.6,
-      w: 11.5,
-      h: 1.2,
-      fontSize: 40,
-      bold: true,
-      color: accent.replace(/^#/, ""),
-      fontFace: "Georgia",
-    });
-    if (preamble.length > 0) {
-      const preview = preamble
-        .slice(0, 2)
-        .map((b) => b.runs.map((r) => r.text).join(""))
-        .join(" ");
-      slide.addText(preview.slice(0, 240), {
-        x: 0.8,
-        y: 4.0,
-        w: 11.5,
-        h: 1.5,
-        fontSize: 16,
-        color: muted,
-        fontFace: "Calibri",
-      });
-    }
-  }
-
-  // If no H1 sections, put remaining body on one content slide
-  const slidesToBuild: Section[] =
-    sections.length > 0
-      ? sections
-      : preamble.length > 0
-        ? [{ heading: title, blocks: preamble }]
-        : [];
-
-  for (const section of slidesToBuild) {
-    const slide = pptx.addSlide();
-    slide.addShape(pptx.ShapeType.rect, {
-      x: 0,
-      y: 0,
-      w: "100%",
-      h: "100%",
-      fill: { color: bg },
-    });
-    slide.addShape(pptx.ShapeType.rect, {
-      x: 0,
-      y: 0,
-      w: 0.15,
-      h: "100%",
-      fill: { color: accent.replace(/^#/, "") },
-    });
-
-    slide.addText(section.heading, {
-      x: 0.6,
-      y: 0.35,
-      w: 12,
-      h: 0.7,
-      fontSize: 28,
-      bold: true,
-      color: accent.replace(/^#/, ""),
-      fontFace: "Georgia",
-    });
-
-    let y = 1.2;
-    for (const block of section.blocks) {
-      if (y > 6.8) break;
-      const plain = block.runs.map((r) => r.text).join("");
-      if (block.type === "H2") {
-        slide.addText(
-          runsToPptxText(block.runs, {
-            fontSize: 20,
-            defaultColor: `#${fg}`,
-            bold: true,
-          }),
-          { x: 0.6, y, w: 12, h: 0.45, valign: "top", align: block.align },
-        );
-        y += 0.5;
-      } else if (block.type === "Scripture") {
-        slide.addText(
-          runsToPptxText(block.runs, {
-            fontSize: 16,
-            defaultColor: `#${fg}`,
-            forceItalic: true,
-          }),
-          { x: 0.6, y, w: 12, h: 0.8, valign: "top", align: block.align },
-        );
-        y += 0.7;
-        if (block.citation) {
-          slide.addText(citationCaps(block.citation), {
-            x: 0.6,
-            y,
-            w: 12,
-            h: 0.35,
-            fontSize: 12,
-            color: muted,
-            align: "right",
-            fontFace: "Calibri",
-          });
-          y += 0.4;
-        }
-      } else if (block.type === "Caption") {
-        slide.addText(plain, {
-          x: 0.6,
-          y,
-          w: 12,
-          h: 0.35,
-          fontSize: 12,
-          color: muted,
-          align: "right",
-          fontFace: "Calibri",
+    // Consecutive lines of one block become one text box.
+    let i = 0;
+    while (i < page.lines.length) {
+      const first = page.lines[i];
+      const block = blocks[first.blockIndex];
+      if (first.kind === "citation") {
+        slide.addText(citationCaps(block.citation ?? ""), {
+          x: frame.left * k, y: first.y * k, w: frame.contentWidth * k, h: first.lineHeight * k,
+          fontSize: pt(first.size), color: muted, align: "right", fontFace: docxFontName("serif"),
+          margin: 0, valign: "top",
         });
-        y += 0.4;
-      } else {
-        const approxLines = Math.max(1, Math.ceil(plain.length / 90));
-        const h = Math.min(2.2, 0.35 * approxLines);
-        slide.addText(
-          runsToPptxText(block.runs, {
-            fontSize: 16,
-            defaultColor: `#${fg}`,
-          }),
-          { x: 0.6, y, w: 12, h, valign: "top", align: block.align },
-        );
-        y += h + 0.15;
+        i++;
+        continue;
       }
+      let j = i;
+      while (j + 1 < page.lines.length && page.lines[j + 1].blockIndex === first.blockIndex && page.lines[j + 1].kind === "text") j++;
+      const last = page.lines[j];
+      const runs = sliceRuns(block, first.start, last.end).map((t) => ({ ...t.run, text: t.text }));
+      const heading = block.type === "Title" || block.type === "H1" || block.type === "H2";
+      slide.addText(
+        runsToPptxText(runs.length ? runs : [{ text: " ", fontFamily: "serif" }], {
+          fontSize: pt(first.size),
+          defaultColor: `#${colorFor(block.type)}`,
+          forceItalic: block.type === "Scripture",
+          bold: heading,
+        }),
+        {
+          x: frame.left * k, y: first.y * k, w: frame.contentWidth * k,
+          h: (last.y + last.lineHeight - first.y) * k,
+          valign: "top", align: block.align, margin: 0, lineSpacingMultiple: snapshot.lineHeight,
+        },
+      );
+      i = j + 1;
     }
   }
 
-  // Always at least title slide; if no sections and no preamble, title alone is fine.
   const out = (await pptx.write({ outputType: "nodebuffer" })) as Buffer;
   return Buffer.from(out);
 }
