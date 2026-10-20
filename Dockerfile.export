@@ -41,6 +41,13 @@ RUN apt-get update \
 COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nextjs /app/public ./public
+# App's own OFL fonts (Literata, Inter, JetBrains Mono) for PDF/PNG, registered with fontconfig (mirrors shell image, bb7785a).
+COPY --chown=root:root assets/fonts /app/assets/fonts
+ENV XDG_CACHE_HOME=/home/nextjs/.cache
+RUN printf '<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig><dir>/app/assets/fonts</dir><cachedir>/home/nextjs/.cache/fontconfig</cachedir></fontconfig>\n' > /etc/fonts/conf.d/50-app-fonts.conf \
+  && mkdir -p /home/nextjs/.cache/fontconfig \
+  && fc-cache -f \
+  && chown -R nextjs:nextjs /home/nextjs
 USER nextjs
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
