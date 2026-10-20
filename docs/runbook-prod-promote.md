@@ -1,9 +1,13 @@
 # Promote to prod (runbook)
 
 Status: DRAFT. Do not merge or create prod resources until:
-1. Mevin decides where prod lives (same GCP project `sermon-editor-509615`, or a new project).
-2. Local-only storage (decided 2026-10-16: sermons live on Mevin's PC; server only exports) and Back up/Restore ship, and QA's local storage gate passes. No database is needed.
-3. Security review, if Mevin brings Security back.
+1. Local-only storage (decided 2026-10-16: sermons live on Mevin's PC; server only exports) and Back up/Restore ship, and QA's local storage gate passes. No database is needed.
+
+## Where prod lives
+
+Decided 2026-10-20: prod is in the same GCP project as staging, `sermon-editor-509615`, region `europe-west2`.
+Services: `sermon-editor-shell-prod` and `sermon-editor-export-prod`. The workflow pins
+`GCP_PROJECT_ID` and `GCP_REGION` itself; they are no longer Environment variables.
 
 ## How promotion works
 - Promotion never rebuilds. It redeploys the exact image digests QA passed on staging,
@@ -14,7 +18,7 @@ Status: DRAFT. Do not merge or create prod resources until:
 
 ## One-time setup (after the decisions above)
 - GitHub Environment `production`: required reviewer = `mevingorayah`; deployment branch = `main` only.
-- Environment variables: `GCP_PROJECT_ID`, `GCP_REGION`, `SOURCE_IMAGE_BASE`
+- Environment variables: `SOURCE_IMAGE_BASE`
   (e.g. `europe-west2-docker.pkg.dev/sermon-editor-509615/sermon-editor`),
   `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT` (deploy SA `gha-prod@…`),
   `PROD_RUNTIME_SERVICE_ACCOUNT` (runtime SA for the services), `EXPORT_SERVICE_URL`,

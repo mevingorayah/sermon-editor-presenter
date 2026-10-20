@@ -15,6 +15,10 @@ concurrency:
   group: promote-prod
   cancel-in-progress: false
 
+env:
+  GCP_PROJECT_ID: sermon-editor-509615
+  GCP_REGION: europe-west2
+
 permissions:
   contents: read
   id-token: write
@@ -45,8 +49,8 @@ jobs:
 
       - name: Require prod config and durable storage
         env:
-          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-          REGION: ${{ vars.GCP_REGION }}
+          PROJECT_ID: ${{ env.GCP_PROJECT_ID }}
+          REGION: ${{ env.GCP_REGION }}
           IMAGE_BASE: ${{ vars.SOURCE_IMAGE_BASE }}
           WIF: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           SA: ${{ vars.GCP_SERVICE_ACCOUNT }}
@@ -76,8 +80,8 @@ jobs:
       - name: Deploy export worker (auth only)
         run: |
           gcloud run deploy sermon-editor-export-prod \
-            --project="${{ vars.GCP_PROJECT_ID }}" \
-            --region="${{ vars.GCP_REGION }}" \
+            --project="${{ env.GCP_PROJECT_ID }}" \
+            --region="${{ env.GCP_REGION }}" \
             --image="${{ vars.SOURCE_IMAGE_BASE }}/export@${{ steps.pin.outputs.export_digest }}" \
             --service-account="${{ vars.PROD_RUNTIME_SERVICE_ACCOUNT }}" \
             --platform=managed \
@@ -91,8 +95,8 @@ jobs:
       - name: Deploy shell
         run: |
           gcloud run deploy sermon-editor-shell-prod \
-            --project="${{ vars.GCP_PROJECT_ID }}" \
-            --region="${{ vars.GCP_REGION }}" \
+            --project="${{ env.GCP_PROJECT_ID }}" \
+            --region="${{ env.GCP_REGION }}" \
             --image="${{ vars.SOURCE_IMAGE_BASE }}/shell@${{ steps.pin.outputs.shell_digest }}" \
             --service-account="${{ vars.PROD_RUNTIME_SERVICE_ACCOUNT }}" \
             --platform=managed \
@@ -106,7 +110,7 @@ jobs:
       - name: Smoke check
         run: |
           set -euo pipefail
-          URL=$(gcloud run services describe sermon-editor-shell-prod --project="${{ vars.GCP_PROJECT_ID }}" --region="${{ vars.GCP_REGION }}" --format='value(status.url)')
+          URL=$(gcloud run services describe sermon-editor-shell-prod --project="${{ env.GCP_PROJECT_ID }}" --region="${{ env.GCP_REGION }}" --format='value(status.url)')
           code=$(curl -s -o /dev/null -w '%{http_code}' "$URL/edit")
           echo "### Prod promoted: ${{ steps.pin.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Shell: $URL (/edit returned $code)" >> "$GITHUB_STEP_SUMMARY"
