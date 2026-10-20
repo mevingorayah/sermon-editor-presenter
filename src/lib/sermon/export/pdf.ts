@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import PDFDocument from "pdfkit";
 import type { CalibratedSnapshot } from "@/types/document";
 import { HIGHLIGHT_AMBER, toHexRgb } from "./colors";
@@ -59,6 +61,50 @@ function fontSize(
   return Math.round(roleBase * Math.pow(STEP_FACTOR, step) * 10) / 10;
 }
 
+/**
+ * Bundled app fonts (DevOps #18 puts them in assets/fonts and copies them to
+ * /app/assets/fonts). Literata is the body serif, as in Edit.
+ */
+const FONT_FILES: Record<FontFamilyId, { regular: string; italic: string }> = {
+  serif: { regular: "literata/Literata[opsz,wght].ttf", italic: "literata/Literata-Italic[opsz,wght].ttf" },
+  sans: { regular: "inter/Inter[opsz,wght].ttf", italic: "inter/Inter-Italic[opsz,wght].ttf" },
+  mono: { regular: "jetbrains-mono/JetBrainsMono[wght].ttf", italic: "jetbrains-mono/JetBrainsMono-Italic[wght].ttf" },
+};
+
+export function fontDir(): string | null {
+  const candidates = [
+    process.env.EXPORT_FONT_DIR,
+    "/app/assets/fonts",
+    path.join(process.cwd(), "assets/fonts"),
+  ].filter(Boolean) as string[];
+  return candidates.find((d) => fs.existsSync(path.join(d, FONT_FILES.serif.regular))) ?? null;
+}
+
+let embedded = false;
+function registerFonts(doc: PDFKit.PDFDocument): boolean {
+  const dir = fontDir();
+  if (!dir) return false;
+  for (const [id, f] of Object.entries(FONT_FILES)) {
+    doc.registerFont(`${id}-regular`, path.join(dir, f.regular));
+    doc.registerFont(`${id}-italic`, path.join(dir, f.italic));
+  }
+  return true;
+}
+
+function fontFor(id: FontFamilyId, style: { bold?: boolean; italic?: boolean }): string {
+  if (!embedded) return pdfkitFont(id, style);
+  return `${id}-${style.italic ? "italic" : "regular"}`;
+}
+
+/**
+ * Neither Literata nor the built-in PDF fonts have a narrow no-break space
+ * (U+202F), so it is written as a normal no-break space (U+00A0). It still
+ * never breaks, so « » and ; : ! ? stay with their word.
+ */
+function pdfText(s: string): string {
+  return s.replace(/\u202f/g, "\u00a0");
+}
+
 function pdfAlign(align: TextAlign): "left" | "center" | "right" {
   return align;
 }
@@ -83,10 +129,12 @@ function writeRuns(
   runs.forEach((run, i) => {
     const italic = opts.forceItalic || !!run.italic;
     const bold = !!run.bold;
-    const fontId = run.fontFamily || opts.defaultFont || "serif";
+    const fontId = run.fontExplicit
+      ? run.fontFamily
+      : opts.defaultFont || "serif";
     const color = run.color || opts.defaultColor;
     doc
-      .font(pdfkitFont(fontId, { bold, italic }))
+      .font(fontFor(fontId, { bold, italic }))
       .fontSize(opts.size)
       .fillColor(color);
 
@@ -98,9 +146,17 @@ function writeRuns(
     }
 
     const isLast = i === runs.length - 1;
-    doc.text(run.text || " ", {
+    // Variable fonts embed at their regular weight, so bold is drawn with a
+    // thin outline in the same colour (faux bold) when the app fonts are used.
+    const fauxBold = embedded && bold;
+    if (fauxBold) doc.lineWidth(opts.size * 0.035).strokeColor(color);
+    doc.text(pdfText(run.text || " "), {
       align: pdfAlign(opts.align),
       continued: !isLast,
+      underline: !!run.underline,
+      strike: !!run.strike,
+      fill: true,
+      stroke: fauxBold,
       lineGap: (opts.lineHeight - 1) * opts.size,
       // highlight: pdfkit has no run-level background; omit rather than fail
     });
@@ -166,10 +222,10 @@ function writeBlock(
       });
       if (block.citation) {
         doc
-          .font("Times-Roman")
+          .font(fontFor("serif", {}))
           .fontSize(fontSize(step, "caption"))
           .fillColor("#555555")
-          .text(citationCaps(block.citation), { align: "right" });
+          .text(pdfText(citationCaps(block.citation)), { align: "right" });
       }
       doc.moveDown(0.6);
       break;
@@ -226,10 +282,11 @@ export async function buildPdf(
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
+    embedded = registerFonts(doc);
     doc.fillColor("#111111");
 
     if (blocks.length === 0) {
-      doc.font("Times-Bold").fontSize(18).text(title);
+      doc.font(fontFor("serif", { bold: true })).fontSize(18).text(pdfText(title));
     } else {
       for (const block of blocks) {
         writeBlock(

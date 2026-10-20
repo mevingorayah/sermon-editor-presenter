@@ -65,3 +65,38 @@ describe("export fixes after batch 8b1ba7a", () => {
     assert.equal((await res.json()).code, "NOT_JSON");
   });
 });
+
+describe("long sermon export (retest 9facff1)", () => {
+  const long = (target: string) => {
+    const para = (i: number) => ({ type: "paragraph", content: [{ type: "text", text: `Paragraphe ${i} : ` + "Christ suffit, et sa Parole seule suffit ; rien ne manque ! ".repeat(12) }] });
+    return { ...snapshot(target), lineHeight: 1.7, typeScaleStep: 0,
+      content: { type: "doc", content: [
+        { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Introduction" }] },
+        ...Array.from({ length: 30 }, (_, i) => para(i)),
+        { type: "scripture", attrs: { citation: "Romains 6.1–11" }, content: [{ type: "text", text: "Que dirons-nous donc ? ".repeat(60) }] },
+        { type: "paragraph", content: [{ type: "text", text: "Amen. FIN-DU-SERMON" }] },
+      ] } };
+  };
+  it("PPTX keeps every paragraph, the reading and the last line", async () => {
+    const d = await xml(await buildPptx(long("screen-16-9") as never), /ppt\/slides\/slide\d+\.xml/);
+    for (let i = 0; i < 30; i++) assert.match(d, new RegExp(`Paragraphe ${i} `));
+    assert.match(d, /ROMAINS 6\.1–11/);
+    assert.match(d, /FIN-DU-SERMON/);
+  });
+  it("PNG returns every page in a zip when one frame isn't enough", async () => {
+    const { exportSnapshot } = await import("../export");
+    const r = await exportSnapshot(long("screen-16-9") as never, "png", { filenameStem: "long" });
+    assert.equal(r.contentType, "application/zip");
+    assert.equal(r.filename, "long.zip");
+    const zip = await JSZip.loadAsync(r.buffer);
+    const names = Object.keys(zip.files);
+    assert.ok(names.length > 1);
+    assert.equal(names[0], "long-01.png");
+  });
+  it("PDF embeds Literata, not Helvetica or Times", async () => {
+    const { buildPdf } = await import("../export/pdf");
+    const pdf = (await buildPdf(long("paper-a4") as never)).toString("latin1");
+    assert.match(pdf, /Literata/);
+    assert.doesNotMatch(pdf, /\/BaseFont \/(Helvetica|Times)/);
+  });
+});

@@ -119,25 +119,76 @@ function blockRole(type: StyledBlock["type"]): {
   }
 }
 
+const CHAR_EM = 0.53; // average advance of the serif text fonts, in ems
+
+interface Token {
+  run: StyledRun;
+  text: string;
+}
+
+function familyFor(run: StyledRun): string {
+  return run.fontExplicit ? cssFontStack(run.fontFamily) : cssFontStack("serif");
+}
+
+/** Wrap styled runs into lines by estimated width, keeping every mark and space. */
+function layoutLines(runs: StyledRun[], size: number, maxWidth: number): Token[][] {
+  const tokens: Token[] = [];
+  for (const run of runs) {
+    for (const m of run.text.match(/\S+\s*|\s+/g) ?? []) tokens.push({ run, text: m });
+  }
+  const lines: Token[][] = [];
+  let cur: Token[] = [];
+  let w = 0;
+  for (const tok of tokens) {
+    const tw = tok.text.trimEnd().length * size * CHAR_EM;
+    if (cur.length && w + tw > maxWidth) {
+      lines.push(cur);
+      cur = [];
+      w = 0;
+    }
+    cur.push(tok);
+    w += tok.text.length * size * CHAR_EM;
+  }
+  if (cur.length) lines.push(cur);
+  return lines.length ? lines : [[]];
+}
+
+function tokensToSvg(
+  line: Token[],
+  opts: { size: number; defaultColor: string; forceItalic?: boolean; forceBold?: boolean },
+): string {
+  return line
+    .map(({ run, text }, i) => {
+      const t = i === line.length - 1 ? text.trimEnd() : text;
+      const weight = opts.forceBold || run.bold ? "700" : "400";
+      const style = opts.forceItalic || run.italic ? "italic" : "normal";
+      const deco = [run.underline ? "underline" : "", run.strike ? "line-through" : ""]
+        .filter(Boolean)
+        .join(" ");
+      return `<tspan fill="${escapeXml(run.color || opts.defaultColor)}" font-family="${escapeXml(familyFor(run))}" font-weight="${weight}" font-style="${style}" font-size="${opts.size}"${deco ? ` text-decoration="${deco}"` : ""}>${escapeXml(t)}</tspan>`;
+    })
+    .join("");
+}
+
+export interface PngPagesResult {
+  pages: Buffer[];
+}
+
 /**
- * v1: single PNG of calibrated content at preview aspect (sharp + SVG).
- * Notes are ignored for PNG (slice 2).
+ * PNG export: the whole sermon laid out over as many frames as it needs,
+ * one PNG per frame. Notes are ignored for PNG (slice 2).
  */
-export async function buildPng(
+export async function buildPngPages(
   snapshot: CalibratedSnapshot,
   options: PngBuildOptions = {},
-): Promise<Buffer> {
+): Promise<Buffer[]> {
   const target = String(snapshot.target);
   const { width, height } = frameSizeFor(target);
   const margins = resolveMargins(snapshot.margins, target);
-  // Convert inch margins to px roughly using width / pageWidthInches
-  const pageW =
-    target.startsWith("paper-") || target === "tablet-portrait"
-      ? width
-      : width;
-  const mx = Math.max(24, Math.round(margins.left * (pageW / 13.3)));
-  const my = Math.max(24, Math.round(margins.top * (pageW / 13.3)));
-  const binder = Math.round(margins.binderGutter * (pageW / 13.3));
+  const scale = width / 13.3;
+  const mx = Math.max(24, Math.round(margins.left * scale));
+  const my = Math.max(24, Math.round(margins.top * scale));
+  const binder = Math.round(margins.binderGutter * scale);
 
   const paper = isPaperTarget(target);
   const light = paper || snapshot.theme === "light";
@@ -147,100 +198,92 @@ export async function buildPng(
   const accent =
     toHexRgb(options.resolvedColors?.accent) ||
     (light ? DEFAULT_ACCENT_LIGHT : DEFAULT_ACCENT_DARK);
+  // Dark theme: the title uses the readable dark-theme accent, not a dark ink.
+  const titleColor = light ? accent : DEFAULT_ACCENT_DARK;
+  const highlightFill = light ? HIGHLIGHT_AMBER : "#3d2e0e";
 
-  // PNG ignores includeNotes by contract.
   const blocks = styledBlocksFromSnapshot(snapshot);
   const title = titleTextFromSnapshot(snapshot);
-
   const contentWidth = width - mx * 2 - binder;
-  const maxChars = Math.max(20, Math.floor(contentWidth / 11));
+  const left = mx + binder;
+  const bottom = height - my;
 
-  let y = my + 8;
-  const lines: string[] = [];
+  const pages: string[][] = [];
+  let page: string[] = [];
+  let y = 0;
+  const newPage = () => {
+    page = [`<rect x="0" y="0" width="8" height="${height}" fill="${escapeXml(accent)}" />`];
+    pages.push(page);
+    y = my + 8;
+  };
+  newPage();
 
-  // Accent bar
-  lines.push(
-    `<rect x="0" y="0" width="8" height="${height}" fill="${escapeXml(accent)}" />`,
-  );
-
-  const renderBlock = (block: StyledBlock) => {
-    const role = blockRole(block.type);
-    const color =
-      block.type === "Title"
-        ? accent
-        : block.type === "Caption"
-          ? muted
-          : block.type === "H2"
-            ? light
-              ? "#222222"
-              : "#D4CFC5"
-            : fg;
-    role.defaultColor = color;
-
-    const plain = block.runs.map((r) => r.text).join("");
-    const wrapped = wrapLines(plain, maxChars);
-    const anchor =
-      block.align === "center"
-        ? "middle"
-        : block.align === "right"
-          ? "end"
-          : "start";
-    const x =
-      block.align === "center"
-        ? mx + binder + contentWidth / 2
-        : block.align === "right"
-          ? mx + binder + contentWidth
-          : mx + binder;
-
-    for (let i = 0; i < wrapped.length; i++) {
-      if (y > height - my - 20) return;
-      // For wrapped lines after the first, use plain text (marks lost on wrap — best-effort).
-      if (i === 0 && wrapped.length === 1) {
-        lines.push(
-          `<text x="${x}" y="${y}" text-anchor="${anchor}">${runsToSvgTspans(block.runs, { size: role.size, defaultColor: color, forceItalic: role.forceItalic })}</text>`,
-        );
-      } else {
-        const style = role.forceItalic ? "italic" : "normal";
-        const weight =
-          block.type === "Title" ||
-          block.type === "H1" ||
-          block.type === "H2"
-            ? "700"
-            : "400";
-        lines.push(
-          `<text x="${x}" y="${y}" text-anchor="${anchor}" fill="${escapeXml(color)}" font-size="${role.size}" font-weight="${weight}" font-style="${style}" font-family="${escapeXml(cssFontStack("sans"))}">${escapeXml(wrapped[i])}</text>`,
-        );
+  const drawLine = (
+    line: Token[],
+    size: number,
+    lh: number,
+    align: StyledBlock["align"],
+    opts: { defaultColor: string; forceItalic?: boolean; forceBold?: boolean },
+  ) => {
+    if (y + lh > bottom && y > my + 8) newPage();
+    const baseline = y + size;
+    const anchor = align === "center" ? "middle" : align === "right" ? "end" : "start";
+    const lineW = line.reduce((n, t) => n + t.text.length, 0) * size * CHAR_EM;
+    const x0 = align === "center" ? left + contentWidth / 2 : align === "right" ? left + contentWidth : left;
+    const start = align === "center" ? x0 - lineW / 2 : align === "right" ? x0 - lineW : x0;
+    let cx = start;
+    for (const t of line) {
+      const tw = t.text.length * size * CHAR_EM;
+      if (t.run.highlight) {
+        page.push(`<rect x="${cx.toFixed(1)}" y="${(baseline - size * 0.85).toFixed(1)}" width="${tw.toFixed(1)}" height="${(size * 1.15).toFixed(1)}" fill="${highlightFill}" />`);
       }
-      y += role.size * snapshot.lineHeight;
+      cx += tw;
     }
-
-    if (block.citation) {
-      y += 4;
-      lines.push(
-        `<text x="${mx + binder + contentWidth}" y="${y}" text-anchor="end" fill="${escapeXml(muted)}" font-size="14" font-family="${escapeXml(cssFontStack("serif"))}">${escapeXml(citationCaps(block.citation))}</text>`,
-      );
-      y += 18;
-    }
-
-    y += role.gap;
+    page.push(`<text xml:space="preserve" x="${x0}" y="${baseline}" text-anchor="${anchor}">${tokensToSvg(line, { size, ...opts })}</text>`);
+    y += lh;
   };
 
-  if (blocks.length === 0) {
-    lines.push(
-      `<text x="${mx + binder}" y="${y}" fill="${escapeXml(accent)}" font-size="42" font-weight="700" font-family="${escapeXml(cssFontStack("serif"))}">${escapeXml(title)}</text>`,
-    );
-  } else {
-    for (const block of blocks) {
-      if (y > height - my - 20) break;
-      renderBlock(block);
+  const role = (type: StyledBlock["type"]) => {
+    switch (type) {
+      case "Title": return { size: 42, gap: 28, color: titleColor, bold: true };
+      case "H1": return { size: 30, gap: 18, color: fg, bold: true };
+      case "H2": return { size: 24, gap: 14, color: light ? "#222222" : "#D4CFC5", bold: true };
+      case "Caption": return { size: 16, gap: 12, color: muted };
+      case "Scripture": return { size: 20, gap: 12, color: fg, italic: true };
+      default: return { size: 20, gap: 12, color: fg };
     }
+  };
+
+  const all = blocks.length ? blocks : [{ type: "Title", align: "left", runs: [{ text: title, fontFamily: "serif" }] } as StyledBlock];
+  for (const block of all) {
+    const r = role(block.type);
+    const lh = r.size * snapshot.lineHeight;
+    for (const line of layoutLines(block.runs, r.size, contentWidth)) {
+      drawLine(line, r.size, lh, block.align, { defaultColor: r.color, forceItalic: r.italic, forceBold: r.bold });
+    }
+    if (block.citation) {
+      const cite: StyledRun = { text: citationCaps(block.citation), fontFamily: "serif", color: muted };
+      drawLine([{ run: cite, text: cite.text }], 16, 26, "right", { defaultColor: muted });
+    }
+    y += r.gap;
   }
 
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+  return Promise.all(
+    pages.map((lines) => {
+      const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
   <rect width="100%" height="100%" fill="${escapeXml(bg)}" />
   ${lines.join("\n  ")}
 </svg>`;
+      return sharp(Buffer.from(svg)).png().toBuffer();
+    }),
+  );
+}
 
-  return sharp(Buffer.from(svg)).png().toBuffer();
+/** First frame only (kept for callers that want a single image). */
+export async function buildPng(
+  snapshot: CalibratedSnapshot,
+  options: PngBuildOptions = {},
+): Promise<Buffer> {
+  return (await buildPngPages(snapshot, options))[0];
 }

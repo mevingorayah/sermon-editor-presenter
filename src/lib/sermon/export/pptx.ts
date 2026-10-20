@@ -12,6 +12,7 @@ import {
   type StyledBlock,
   type StyledRun,
   citationCaps,
+  chunkRuns,
 } from "./contentWalk";
 import { docxFontName } from "./fonts";
 import { isPaperTarget } from "./margins";
@@ -40,7 +41,7 @@ function groupSections(blocks: StyledBlock[]): {
       title = block.runs.map((r) => r.text).join("").trim() || title;
       continue;
     }
-    if (block.type === "H1") {
+    if (block.type === "H1" || block.type === "H2") {
       current = {
         heading: block.runs.map((r) => r.text).join("").trim() || "Section",
         blocks: [],
@@ -158,6 +159,13 @@ export async function buildPptx(
   }
 
   // If no H1 sections, put remaining body on one content slide
+  const preambleChars = preamble.reduce(
+    (n, b) => n + b.runs.reduce((m, r) => m + r.text.length, 0),
+    0,
+  );
+  if (sections.length > 0 && preambleChars > 240) {
+    sections.unshift({ heading: title, blocks: preamble });
+  }
   const slidesToBuild: Section[] =
     sections.length > 0
       ? sections
@@ -165,94 +173,65 @@ export async function buildPptx(
         ? [{ heading: title, blocks: preamble }]
         : [];
 
-  for (const section of slidesToBuild) {
+  // Every block is placed; long sections continue on extra slides and long
+  // paragraphs are split at sentence ends, so no text is ever dropped.
+  const CHARS_PER_LINE = 95; // 16 pt on a 12 in text box
+  const LINE_IN = 0.3;
+  const TOP = 1.2;
+  const BOTTOM = 7.0;
+  const MAX_CHUNK = CHARS_PER_LINE * Math.floor((BOTTOM - TOP) / LINE_IN - 2);
+
+  const newSlide = (heading: string) => {
     const slide = pptx.addSlide();
-    slide.addShape(pptx.ShapeType.rect, {
-      x: 0,
-      y: 0,
-      w: "100%",
-      h: "100%",
-      fill: { color: bg },
+    slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: "100%", h: "100%", fill: { color: bg } });
+    slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 0.15, h: "100%", fill: { color: accent.replace(/^#/, "") } });
+    slide.addText(heading, {
+      x: 0.6, y: 0.35, w: 12, h: 0.7, fontSize: 28, bold: true,
+      color: accent.replace(/^#/, ""), fontFace: "Georgia",
     });
-    slide.addShape(pptx.ShapeType.rect, {
-      x: 0,
-      y: 0,
-      w: 0.15,
-      h: "100%",
-      fill: { color: accent.replace(/^#/, "") },
-    });
+    return slide;
+  };
+  const heightOf = (chars: number) =>
+    Math.max(1, Math.ceil(chars / CHARS_PER_LINE)) * LINE_IN + 0.1;
 
-    slide.addText(section.heading, {
-      x: 0.6,
-      y: 0.35,
-      w: 12,
-      h: 0.7,
-      fontSize: 28,
-      bold: true,
-      color: accent.replace(/^#/, ""),
-      fontFace: "Georgia",
-    });
-
-    let y = 1.2;
+  for (const section of slidesToBuild) {
+    let slide = newSlide(section.heading);
+    let y = TOP;
+    const room = (h: number) => {
+      if (y + h > BOTTOM && y > TOP) {
+        slide = newSlide(section.heading);
+        y = TOP;
+      }
+    };
     for (const block of section.blocks) {
-      if (y > 6.8) break;
-      const plain = block.runs.map((r) => r.text).join("");
-      if (block.type === "H2") {
-        slide.addText(
-          runsToPptxText(block.runs, {
-            fontSize: 20,
-            defaultColor: `#${fg}`,
-            bold: true,
-          }),
-          { x: 0.6, y, w: 12, h: 0.45, valign: "top", align: block.align },
-        );
-        y += 0.5;
-      } else if (block.type === "Scripture") {
-        slide.addText(
-          runsToPptxText(block.runs, {
-            fontSize: 16,
-            defaultColor: `#${fg}`,
-            forceItalic: true,
-          }),
-          { x: 0.6, y, w: 12, h: 0.8, valign: "top", align: block.align },
-        );
-        y += 0.7;
-        if (block.citation) {
-          slide.addText(citationCaps(block.citation), {
-            x: 0.6,
-            y,
-            w: 12,
-            h: 0.35,
-            fontSize: 12,
-            color: muted,
-            align: "right",
-            fontFace: "Calibri",
-          });
-          y += 0.4;
-        }
-      } else if (block.type === "Caption") {
-        slide.addText(plain, {
-          x: 0.6,
-          y,
-          w: 12,
-          h: 0.35,
-          fontSize: 12,
-          color: muted,
-          align: "right",
-          fontFace: "Calibri",
-        });
+      if (block.type === "Caption") {
+        const plain = block.runs.map((r) => r.text).join("");
+        room(0.4);
+        slide.addText(plain, { x: 0.6, y, w: 12, h: 0.35, fontSize: 12, color: muted, align: "right", fontFace: "Calibri" });
         y += 0.4;
-      } else {
-        const approxLines = Math.max(1, Math.ceil(plain.length / 90));
-        const h = Math.min(2.2, 0.35 * approxLines);
+        continue;
+      }
+      const scripture = block.type === "Scripture";
+      for (const chunk of chunkRuns(block.runs, MAX_CHUNK)) {
+        const h = heightOf(chunk.map((r) => r.text).join("").length);
+        room(h);
         slide.addText(
-          runsToPptxText(block.runs, {
+          runsToPptxText(chunk, {
             fontSize: 16,
             defaultColor: `#${fg}`,
+            forceItalic: scripture,
+            bold: block.type === "H1",
           }),
           { x: 0.6, y, w: 12, h, valign: "top", align: block.align },
         );
-        y += h + 0.15;
+        y += h + 0.1;
+      }
+      if (scripture && block.citation) {
+        room(0.4);
+        slide.addText(citationCaps(block.citation), {
+          x: 0.6, y, w: 12, h: 0.35, fontSize: 12, color: muted, align: "right", fontFace: "Calibri",
+        });
+        y += 0.45;
       }
     }
   }
