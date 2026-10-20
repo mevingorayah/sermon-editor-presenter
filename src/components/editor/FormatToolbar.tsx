@@ -14,13 +14,13 @@ const FONT_OPTIONS = [
   { id: "mono", label: "Mono", value: FONT_MONO },
 ] as const;
 
-/** Soft mid-tones readable on dark edit chrome and light cream. */
+/** Each is >= 4.5:1 on white (contrast.test.ts); dark Preach lightens them as needed. */
 export const TEXT_COLORS = [
   { id: "muted", label: "Muted gray", value: "#6b6b6b" },
   { id: "accent", label: "Accent", value: "#5c4a1f" },
-  { id: "red", label: "Soft red", value: "#d47870" },
-  { id: "blue", label: "Soft blue", value: "#6a9fc4" },
-  { id: "green", label: "Soft green", value: "#6aaa7a" },
+  { id: "red", label: "Soft red", value: "#b0463d" },
+  { id: "blue", label: "Soft blue", value: "#3f6f93" },
+  { id: "green", label: "Soft green", value: "#3d7a4c" },
 ] as const;
 
 function normalizeFont(family: string | undefined | null): string {

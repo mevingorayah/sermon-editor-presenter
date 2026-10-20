@@ -68,9 +68,9 @@ import {
   rgbToHsl as hslOf,
 } from "../contrast";
 
-const TEXT_PRESETS = ["#6b6b6b", "#5c4a1f", "#d47870", "#6a9fc4", "#6aaa7a"];
-// Old files keep the previous Muted gray (no migration); it must still pass.
-const LEGACY_TEXT = ["#9a948a"];
+const TEXT_PRESETS = ["#6b6b6b", "#5c4a1f", "#b0463d", "#3f6f93", "#3d7a4c"];
+// Old files keep the previous swatch values (no migration); they must still pass.
+const LEGACY_TEXT = ["#9a948a", "#d47870", "#6a9fc4", "#6aaa7a"];
 const DARK_HIGHLIGHTS = [
   HL_DEFAULT,
   ...["#fff176", "#fde68a", "#fef08a", "#d4a84b", "#93c5fd", "#86efac", "#f9a8d4", "#c4b5fd"].map((c) => hlDark(c, "dark")),
@@ -136,4 +136,17 @@ test("Muted gray #6b6b6b: dark Preach lifts it to >= 4.5:1 on the page and every
   }
   assert.equal(textOn("#6b6b6b", "light"), "#6b6b6b");
   assert.equal(textOn("#9a948a", "light"), "#9a948a"); // legacy files unchanged
+});
+
+test("every text colour preset in FormatToolbar.tsx is >= 4.5:1 on white", () => {
+  const src = readFileSync(new URL("../../../components/editor/FormatToolbar.tsx", import.meta.url), "utf8");
+  const block = src.match(/export const TEXT_COLORS = \[([\s\S]*?)\] as const;/);
+  assert.ok(block, "TEXT_COLORS not found in FormatToolbar.tsx; point this test at the new preset list");
+  const values = [...block[1].matchAll(/value:\s*"(#[0-9a-fA-F]{6})"/g)].map((m) => m[1]);
+  assert.ok(values.length >= 5, `found ${values.length} presets`);
+  assert.deepEqual(values.map((v) => v.toLowerCase()), TEXT_PRESETS);
+  for (const v of values) {
+    const r = ratioOf(rgbOf(v)!, [255, 255, 255]);
+    assert.ok(r >= 4.5, `${v} is ${r.toFixed(2)}:1 on white`);
+  }
 });
