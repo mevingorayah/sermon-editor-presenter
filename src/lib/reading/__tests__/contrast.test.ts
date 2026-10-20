@@ -68,7 +68,9 @@ import {
   rgbToHsl as hslOf,
 } from "../contrast";
 
-const TEXT_PRESETS = ["#9a948a", "#5c4a1f", "#d47870", "#6a9fc4", "#6aaa7a"];
+const TEXT_PRESETS = ["#6b6b6b", "#5c4a1f", "#d47870", "#6a9fc4", "#6aaa7a"];
+// Old files keep the previous Muted gray (no migration); it must still pass.
+const LEGACY_TEXT = ["#9a948a"];
 const DARK_HIGHLIGHTS = [
   HL_DEFAULT,
   ...["#fff176", "#fde68a", "#fef08a", "#d4a84b", "#93c5fd", "#86efac", "#f9a8d4", "#c4b5fd"].map((c) => hlDark(c, "dark")),
@@ -76,7 +78,7 @@ const DARK_HIGHLIGHTS = [
 
 test("every text preset reaches 4.5:1 on every dark highlight, keeping its hue", () => {
   for (const bg of DARK_HIGHLIGHTS) {
-    for (const c of [...TEXT_PRESETS, "#1e3a8a"]) {
+    for (const c of [...TEXT_PRESETS, ...LEGACY_TEXT, "#1e3a8a"]) {
       const out = textOn(c, "dark", bg);
       const r = ratioOf(rgbOf(out)!, rgbOf(bg)!);
       assert.ok(r >= 4.5, `${c} on ${bg} -> ${out} = ${r.toFixed(2)}`);
@@ -125,4 +127,13 @@ test("sermon-marks.css: dark plain highlight is #655F33, no #3d2e0e", () => {
     css,
     /\[data-reading-mode\]\[data-theme="dark"\] mark\.sermon-highlight\s*\{\s*background:\s*#655F33;/i,
   );
+});
+
+test("Muted gray #6b6b6b: dark Preach lifts it to >= 4.5:1 on the page and every dark highlight; light keeps it", () => {
+  for (const bg of ["#12110f", ...DARK_HIGHLIGHTS]) {
+    const out = textOn("#6b6b6b", "dark", bg);
+    assert.ok(ratioOf(rgbOf(out)!, rgbOf(bg)!) >= 4.5, `on ${bg} -> ${out}`);
+  }
+  assert.equal(textOn("#6b6b6b", "light"), "#6b6b6b");
+  assert.equal(textOn("#9a948a", "light"), "#9a948a"); // legacy files unchanged
 });

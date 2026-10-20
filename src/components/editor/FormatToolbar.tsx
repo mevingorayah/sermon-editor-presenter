@@ -16,7 +16,7 @@ const FONT_OPTIONS = [
 
 /** Soft mid-tones readable on dark edit chrome and light cream. */
 export const TEXT_COLORS = [
-  { id: "muted", label: "Muted gray", value: "#9a948a" },
+  { id: "muted", label: "Muted gray", value: "#6b6b6b" },
   { id: "accent", label: "Accent", value: "#5c4a1f" },
   { id: "red", label: "Soft red", value: "#d47870" },
   { id: "blue", label: "Soft blue", value: "#6a9fc4" },
