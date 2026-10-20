@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -89,9 +90,9 @@ test("every text preset reaches 4.5:1 on every dark highlight, keeping its hue",
 
 test("effective background: highlight colour, default highlight, else the page", () => {
   assert.equal(effectiveDarkBackground(null, false), "#12110f");
-  assert.equal(effectiveDarkBackground(null, true), "#3d2e0e");
+  assert.equal(effectiveDarkBackground(null, true), "#655F33");
   assert.equal(effectiveDarkBackground("#93c5fd", true), hlDark("#93c5fd", "dark"));
-  assert.equal(textOn("#9a948a", "light", "#3d2e0e"), "#9a948a");
+  assert.equal(textOn("#9a948a", "light", "#655F33"), "#9a948a");
 });
 
 test("dark highlights: #17 yellow preset is exact; others darken until body text reaches 4.5:1", () => {
@@ -105,4 +106,23 @@ test("dark highlights: #17 yellow preset is exact; others darken until body text
     const [h0, s0] = hslOf(rgbOf(c)!);
     if (s0 > 0.15) assert.ok(Math.abs(hslOf(rgbOf(d)!)[0] - h0) < 4, `${c} hue`);
   }
+});
+
+test("plain highlight = yellow preset: every text preset reaches 4.5:1 on it", () => {
+  const plain = effectiveDarkBackground(null, true);
+  assert.equal(plain, hlDark("#FFF176", "dark"));
+  for (const c of TEXT_PRESETS) {
+    const out = textOn(c, "dark", plain);
+    assert.ok(ratioOf(rgbOf(out)!, rgbOf(plain)!) >= 4.5, `${c} -> ${out}`);
+  }
+  assert.ok(ratioOf(rgbOf("#ede8df")!, rgbOf(plain)!) >= 4.5, "body text");
+});
+
+test("sermon-marks.css: dark plain highlight is #655F33, no #3d2e0e", () => {
+  const css = readFileSync(new URL("../../../styles/sermon-marks.css", import.meta.url), "utf8");
+  assert.doesNotMatch(css, /#3d2e0e/i);
+  assert.match(
+    css,
+    /\[data-reading-mode\]\[data-theme="dark"\] mark\.sermon-highlight\s*\{\s*background:\s*#655F33;/i,
+  );
 });
