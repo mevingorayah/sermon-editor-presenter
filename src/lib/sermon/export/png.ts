@@ -11,6 +11,7 @@ import {
   titleTextFromSnapshot,
   type StyledBlock,
   type StyledRun,
+  citationCaps,
 } from "./contentWalk";
 import { cssFontStack } from "./fonts";
 import { isPaperTarget, resolveMargins } from "./margins";
@@ -216,7 +217,7 @@ export async function buildPng(
     if (block.citation) {
       y += 4;
       lines.push(
-        `<text x="${mx + binder + contentWidth}" y="${y}" text-anchor="end" fill="${escapeXml(muted)}" font-size="14" font-family="${escapeXml(cssFontStack("serif"))}">${escapeXml(block.citation)}</text>`,
+        `<text x="${mx + binder + contentWidth}" y="${y}" text-anchor="end" fill="${escapeXml(muted)}" font-size="14" font-family="${escapeXml(cssFontStack("serif"))}">${escapeXml(citationCaps(block.citation))}</text>`,
       );
       y += 18;
     }
