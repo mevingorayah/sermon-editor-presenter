@@ -27,12 +27,12 @@ export function pngFrameSize(target: string): { width: number; height: number } 
 /**
  * Frame width in inches (slide/paper geometry) used for pt → px:
  * 16:9 PPTX slide 13.333in (1920px → 1pt = 1920 / (13.333 × 72) = 2.00px),
- * 16:10 slide 10in, tablet 8in, Letter 8.5in, A4 8.27in, half-Letter 5.5in.
+ * 16:10 slide 10in, tablet 9.25in (Galaxy Tab S10 Lite), Letter 8.5in, A4 8.27in, half-Letter 5.5in.
  */
 export function pngFrameWidthInches(target: string): number {
   switch (target) {
     case "screen-16-10": return 10;
-    case "tablet-portrait": return 8;
+    case "tablet-portrait": return 9.25; // Galaxy Tab S10 Lite
     case "paper-letter": return 8.5;
     case "paper-a4": return 8.27;
     case "paper-half-letter": return 5.5;
