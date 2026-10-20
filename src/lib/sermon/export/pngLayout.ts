@@ -9,7 +9,8 @@ import { resolveMargins } from "./margins";
  * button uses `countPngPages()` to say "Images (N pages, .zip)".
  */
 
-const CHAR_EM = 0.53;
+/** Average glyph advance in ems used for wrapping; renderers must use this, not a copy. */
+export const CHAR_EM = 0.53;
 
 export function pngFrameSize(target: string): { width: number; height: number } {
   switch (target) {
@@ -21,6 +22,40 @@ export function pngFrameSize(target: string): { width: number; height: number } 
     case "screen-16-9":
     default: return { width: 1920, height: 1080 };
   }
+}
+
+/**
+ * Frame width in inches (slide/paper geometry) used for pt → px:
+ * 16:9 PPTX slide 13.333in (1920px → 1pt = 1920 / (13.333 × 72) = 2.00px),
+ * 16:10 slide 10in, tablet 8in, Letter 8.5in, A4 8.27in, half-Letter 5.5in.
+ */
+export function pngFrameWidthInches(target: string): number {
+  switch (target) {
+    case "screen-16-10": return 10;
+    case "tablet-portrait": return 8;
+    case "paper-letter": return 8.5;
+    case "paper-a4": return 8.27;
+    case "paper-half-letter": return 5.5;
+    case "screen-16-9":
+    default: return 13.333;
+  }
+}
+
+/** Frame px per typographic point (1/72 in). */
+export function pxPerPt(target: string): number {
+  return pngFrameSize(target).width / (pngFrameWidthInches(target) * 72);
+}
+
+/** UI UX: PNG/PPTX body text is at least 24 pt. */
+export const MIN_BODY_PT = 24;
+const BASE_BODY_PX = 20;
+
+/**
+ * Scale applied to every size, gap and line box so body text is ≥ 24 pt
+ * (16:9: 24pt × 2px = 48px → ×2.4). Never shrinks.
+ */
+export function pngTypeScale(target: string): number {
+  return Math.max(1, (MIN_BODY_PT * pxPerPt(target)) / BASE_BODY_PX);
 }
 
 function roleSize(type: StyledBlock["type"]): { size: number; gap: number } {
@@ -115,6 +150,10 @@ export function wrapLineRanges(text: string, size: number, maxWidth: number): Ar
  *    last line.
  * 3. A heading (Title/H1/H2) is never left at the bottom of a page: it moves
  *    to the next page with the start of the following block.
+ * 4. Each Scripture block starts a new page (never after earlier text);
+ *    headings directly before it move with it.
+ * Sizes: body ≥ 24 pt via pngTypeScale(); renderers must draw each line with
+ * its `size` / `lineHeight` from here, never their own constants.
  */
 export function layoutPngPages(
   blocks: readonly LayoutBlock[],
@@ -136,12 +175,23 @@ export function layoutPngPages(
     if (y > f.top && y + h > f.bottom) newPage();
   };
 
+  const k = pngTypeScale(target);
+  const citeSize = CITATION_SIZE * k;
+  const citeLh = CITATION_LH * k;
   const prepared = blocks.map((b) => {
-    const r = roleSize(b.type);
+    const base = roleSize(b.type);
+    const r = { size: base.size * k, gap: base.gap * k };
     const lh = r.size * lineHeight;
     const ranges = wrapLineRanges(b.text, r.size, f.contentWidth);
-    const cite = b.citation ? CITATION_LH : 0;
+    const cite = b.citation ? citeLh : 0;
     return { b, r, lh, ranges, cite, height: ranges.length * lh + cite };
+  });
+
+  const startsScripturePage = prepared.map((p, i) => {
+    if (i > 0 && HEADINGS.has(prepared[i - 1].b.type)) return false; // chain started earlier
+    let j = i;
+    while (j < prepared.length && HEADINGS.has(prepared[j].b.type)) j++;
+    return prepared[j]?.b.type === "Scripture";
   });
 
   /** Height that must follow a heading on the same page. */
@@ -160,6 +210,9 @@ export function layoutPngPages(
     };
     const textH = p.ranges.length * p.lh;
 
+    // Rule 4: Scripture (with the headings directly before it) starts a page.
+    if (startsScripturePage[bi] && y > f.top) newPage();
+
     if (HEADINGS.has(p.b.type)) {
       // Rule 3: the heading moves with the start of what follows (bounded by a page).
       ensure(Math.min(textH + p.r.gap + leadOf(bi + 1), avail));
@@ -175,7 +228,7 @@ export function layoutPngPages(
     });
     if (p.b.citation) {
       ensure(p.cite);
-      push("citation", p.ranges.length, 0, p.b.citation.length, CITATION_SIZE, CITATION_LH);
+      push("citation", p.ranges.length, 0, p.b.citation.length, citeSize, citeLh);
     }
     y += p.r.gap;
   });
