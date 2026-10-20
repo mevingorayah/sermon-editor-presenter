@@ -41,7 +41,7 @@ test("download name: Content-Disposition wins, else Content-Type picks .zip vs .
 
 // ---- Shared layout rules (UI UX ruling) ----
 import {
-  layoutPngPages, pngFrame, pngPageCount, pngTypeScale, pxPerPt, MIN_BODY_PT, type LayoutBlock,
+  layoutPngPages, pngFrame, pngFrameWidthInches, pngPageCount, pngTypeScale, pxPerPt, MIN_BODY_PT, type LayoutBlock,
 } from "../export/pngLayout";
 
 const T = "screen-16-9";
@@ -71,6 +71,16 @@ test("sizes: 16:9 is 2 px/pt and body is 24 pt = 48 px; all sizes scale together
     const body = layoutPngPages([{ type: "Body", text: "x" }], t, LH)[0].lines[0].size;
     assert.ok(body / pxPerPt(t) >= MIN_BODY_PT - 1e-9, `${t}: ${body / pxPerPt(t)}pt`);
   }
+});
+
+test("frame widths: 16:9 13.333in, 16:10 10in, tablet 9.25in (Tab S10 Lite)", () => {
+  assert.equal(pngFrameWidthInches("screen-16-9"), 13.333);
+  assert.equal(pngFrameWidthInches("screen-16-10"), 10);
+  assert.equal(pngFrameWidthInches("tablet-portrait"), 9.25);
+  // Tablet: 900px / (9.25in x 72) = 1.351 px/pt → body 24pt = 32.4px.
+  assert.ok(Math.abs(pxPerPt("tablet-portrait") - 900 / 666) < 1e-9);
+  const body = layoutPngPages([{ type: "Body", text: "x" }], "tablet-portrait", LH)[0].lines[0].size;
+  assert.ok(Math.abs(body - 32.432) < 0.01, String(body));
 });
 
 test("rule 1: lines never straddle a page, and every char is placed exactly once", () => {
