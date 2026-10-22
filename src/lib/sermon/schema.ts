@@ -45,11 +45,17 @@ const semanticBlockSchema = z.object({
   citation: z.string().max(500).optional(),
 });
 
+/** A margin: a CSS-ish length string ("0.8in", "20mm") or a number of inches (→ "0.8in"). */
+const marginLengthSchema = z.union([
+  z.string().min(1).max(32),
+  z.number().finite().min(0).max(100).transform((n) => `${n}in`),
+]);
+
 const calibratedMarginsSchema = z.object({
-  top: z.string().min(1).max(32),
-  right: z.string().min(1).max(32),
-  bottom: z.string().min(1).max(32),
-  left: z.string().min(1).max(32),
+  top: marginLengthSchema,
+  right: marginLengthSchema,
+  bottom: marginLengthSchema,
+  left: marginLengthSchema,
   binderGutter: z.string().min(1).max(32).optional(),
 });
 
@@ -225,6 +231,7 @@ const calibratedSnapshotFields = {
   margins: calibratedMarginsSchema,
   typeScaleStep: z.number().int().min(-2).max(2),
   lineHeight: z.union([lineHeightSchema, lineSpacingSchema]),
+  lineSpacing: lineSpacingSchema.optional(),
   theme: z.enum(["light", "dark"]),
   pageFormat: pageFormatSchema.optional(),
   orientation: orientationSchema.optional(),
@@ -242,10 +249,19 @@ const calibratedSnapshotFields = {
  * - `flattenGradient` must be literal `true`
  * - TipTap color marks must not contain CSS `var(--…)`
  */
-export const calibratedSnapshotSchema = z
-  .object(calibratedSnapshotFields)
-  .strict()
-  .superRefine(refineNoCssVarColors);
+/** `lineSpacing` and `lineHeight` are aliases: either one fills the other. */
+function lineAlias(v: unknown): unknown {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return v;
+  const o = { ...(v as Record<string, unknown>) };
+  if (o.lineHeight === undefined && o.lineSpacing !== undefined) o.lineHeight = o.lineSpacing;
+  if (o.snapshot) o.snapshot = lineAlias(o.snapshot);
+  return o;
+}
+
+export const calibratedSnapshotSchema = z.preprocess(
+  lineAlias,
+  z.object(calibratedSnapshotFields).strict().superRefine(refineNoCssVarColors),
+);
 
 export const exportFormatSchema = z.enum(["docx", "pdf", "png", "pptx"]);
 
@@ -270,7 +286,7 @@ const exportExtrasFields = {
  * 2. `{ format, filenameStem?, includeNotes?, notes?, resolvedColors?, ...CalibratedSnapshot }`
  * 3. `{ format, snapshot: CalibratedSnapshot, filenameStem?, includeNotes?, notes?, resolvedColors? }`
  */
-export const exportRequestSchema = z.union([
+export const exportRequestSchema = z.preprocess(lineAlias, z.union([
   z
     .object({
       ...calibratedSnapshotFields,
@@ -284,7 +300,7 @@ export const exportRequestSchema = z.union([
       snapshot: calibratedSnapshotSchema,
     })
     .strict(),
-]);
+]));
 
 export const createSermonSchema = z.object({
   /** Optional client-chosen UUID (same-id restore). Existing id returns 409. */

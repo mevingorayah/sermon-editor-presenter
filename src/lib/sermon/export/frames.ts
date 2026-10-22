@@ -43,7 +43,7 @@ export type PageInput = PageSpec | string;
 const FORMATS: Record<PageFormat, { shortPx: number; longPx: number; shortIn: number; natural: PageOrientation }> = {
   "16:9": { shortPx: 1080, longPx: 1920, shortIn: 7.5, natural: "landscape" }, // 13.333in slide
   "16:10": { shortPx: 1000, longPx: 1600, shortIn: 6.25, natural: "landscape" }, // 10in slide
-  tablet: { shortPx: 900, longPx: 1200, shortIn: 9.25, natural: "portrait" }, // Galaxy Tab S10 Lite
+  tablet: { shortPx: 1200, longPx: 1920, shortIn: 9.25, natural: "portrait" }, // Galaxy Tab S10 Lite
   letter: { shortPx: 1275, longPx: 1650, shortIn: 8.5, natural: "portrait" },
   a4: { shortPx: 1240, longPx: 1754, shortIn: 8.27, natural: "portrait" },
   "half-letter": { shortPx: 825, longPx: 1275, shortIn: 5.5, natural: "portrait" },
@@ -61,6 +61,14 @@ export function pageSpecFromTarget(target: string): PageSpec {
     case "screen-16-9":
     default: return { format: "16:9", orientation: "landscape" };
   }
+}
+
+/** Line spacing to lay out with: `lineSpacing` (preferred) or legacy `lineHeight`, clamped 1.2–2.0 on a 0.05 grid. */
+export function snapshotLineSpacing(s: { lineSpacing?: number; lineHeight?: number | string }): number {
+  const v = clamp(s.lineSpacing ?? s.lineHeight, PAGE_LIMITS.lineSpacing);
+  return Math.round(v / 0.05) * 0.05 > PAGE_LIMITS.lineSpacing.max
+    ? PAGE_LIMITS.lineSpacing.max
+    : Number((Math.round(v / 0.05) * 0.05).toFixed(2));
 }
 
 /** Normalize any PageInput into a complete spec (text size clamped). */
@@ -119,4 +127,40 @@ export function pxPerPt(input: PageInput): number {
 /** Every format × orientation (for tests and pickers). */
 export function allPageSpecs(): PageSpec[] {
   return PAGE_FORMATS.flatMap((format) => PAGE_ORIENTATIONS.map((orientation) => ({ format, orientation })));
+}
+
+/**
+ * PresentationSettings.page → snapshot fields. `page.margins` (top/right/
+ * bottom/left, inches, 0.25–2, default 0.8) → `snapshot.margins`;
+ * `page.lineSpacing` (1.2–2.0, step 0.05, default 1.55) → `snapshot.lineSpacing`
+ * (and legacy `lineHeight`). Every export reads these through pngLayout.
+ */
+export function pageSnapshotFields(page: {
+  format?: string;
+  orientation?: string;
+  textSizePt?: number;
+  lineSpacing?: number;
+  paragraphSpacingPt?: number;
+  margins?: { top?: string; right?: string; bottom?: string; left?: string; binderGutter?: string };
+} = {}) {
+  const m = (v: string | undefined) => {
+    const n = v === undefined ? NaN : parseFloat(String(v));
+    return `${clamp(Number.isFinite(n) ? n : undefined, PAGE_LIMITS.marginIn)}in`;
+  };
+  const lineSpacing = snapshotLineSpacing({ lineSpacing: page.lineSpacing });
+  return {
+    ...(page.format ? { pageFormat: page.format } : {}),
+    ...(page.orientation ? { orientation: page.orientation } : {}),
+    textSizePt: clamp(page.textSizePt, PAGE_LIMITS.textSizePt),
+    paragraphSpacingPt: clamp(page.paragraphSpacingPt, PAGE_LIMITS.paragraphSpacingPt),
+    lineSpacing,
+    lineHeight: lineSpacing,
+    margins: {
+      top: m(page.margins?.top),
+      right: m(page.margins?.right),
+      bottom: m(page.margins?.bottom),
+      left: m(page.margins?.left),
+      ...(page.margins?.binderGutter ? { binderGutter: page.margins.binderGutter } : {}),
+    },
+  };
 }

@@ -1,3 +1,4 @@
+import { snapshotLineSpacing } from "./frames";
 import fs from "node:fs";
 import path from "node:path";
 import PDFDocument from "pdfkit";
@@ -18,7 +19,7 @@ import { exportFontName } from "./textMeasure";
 export function exportFontDir(): string | null {
   const c = [process.env.EXPORT_FONT_DIR && path.join(process.env.EXPORT_FONT_DIR, "export"),
     "/app/assets/fonts/export", path.join(process.cwd(), "assets/fonts/export")].filter(Boolean) as string[];
-  return c.find((d) => fs.existsSync(path.join(d, "LiterataExport-Regular.ttf"))) ?? null;
+  return c.find((d) => fs.existsSync(path.join(d, "literata-Regular.ttf"))) ?? null;
 }
 
 /** Register the export fonts; returns a font-name resolver for this doc. */
@@ -262,25 +263,25 @@ export async function buildPdf(
         if (line.kind === "citation") {
           const text = citationCaps(block.citation ?? "");
           doc.font(fontFor("serif", {})).fontSize(fs).fillColor(pal.muted);
-          const w = doc.widthOfString(text);
-          doc.text(text, P(f.left + f.contentWidth) - w, baseline, { lineBreak: false, baseline: "alphabetic" });
+          const w = doc.widthOfString(text, { features: NO_LIGA });
+          doc.text(safeGlyphs(doc, text), Math.max(P(f.left), P(f.left + f.contentWidth) - w), baseline, { lineBreak: false, baseline: "alphabetic", features: NO_LIGA });
           continue;
         }
         const role = roleStyle(block.type);
         const runs = trimRunsEnd(sliceRuns(block.runs, line.start, line.end));
         const fontOf = (r: StyledRun) =>
           fontFor(r.fontFamily, { bold: role.bold || !!r.bold, italic: role.italic || !!r.italic });
-        const total = runs.reduce((w, r) => w + doc.font(fontOf(r)).fontSize(fs).widthOfString(r.text), 0);
+        const total = runs.reduce((w, r) => w + doc.font(fontOf(r)).fontSize(fs).widthOfString(r.text, { features: NO_LIGA }), 0);
         const free = P(f.contentWidth) - total;
         let x = P(f.left) + (block.align === "center" ? free / 2 : block.align === "right" ? free : 0);
         for (const r of runs) {
           doc.font(fontOf(r)).fontSize(fs).fillColor(r.color || color(block.type));
-          const w = doc.widthOfString(r.text);
+          const w = doc.widthOfString(r.text, { features: NO_LIGA });
           if (r.highlight) {
             doc.save().rect(x, baseline - fs * 0.8, w, fs * 1.05).fill(pal.highlight).restore();
             doc.fillColor(r.color || color(block.type));
           }
-          doc.text(r.text, x, baseline, { lineBreak: false, baseline: "alphabetic" });
+          doc.text(safeGlyphs(doc, r.text), x, baseline, { lineBreak: false, baseline: "alphabetic", features: NO_LIGA });
           // Underline/strike drawn by hand (pdfkit's need a wrapped width).
           const rule = (dy: number) =>
             doc.save().rect(x, baseline + dy, w, Math.max(0.5, fs / 18)).fill(r.color || color(block.type)).restore();
@@ -297,10 +298,34 @@ export async function buildPdf(
       doc.x = doc.page.margins.left;
       doc.y = doc.page.margins.top;
       for (const block of notes) {
-        writeBlock(doc, block, 1, snapshot.lineHeight, accent);
+        writeBlock(doc, block, 1, snapshotLineSpacing(snapshot), accent);
       }
     }
 
     doc.end();
   });
 }
+
+/**
+ * Spaces some embedded fonts lack (French U+202F before ?!;: and friends):
+ * draw the nearest space the current font has, never a missing-glyph box.
+ */
+const SPACE_FALLBACKS: Record<string, string[]> = {
+  "\u202F": ["\u2009", "\u00A0", " "],
+  "\u2009": ["\u00A0", " "],
+  "\u00A0": [" "],
+  "\u2007": ["\u00A0", " "],
+};
+export function safeGlyphs(doc: PDFKit.PDFDocument, text: string): string {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const font = (doc as any)._font?.font as { hasGlyphForCodePoint?: (c: number) => boolean } | undefined;
+  if (!font?.hasGlyphForCodePoint) return text.replace(/[\u202F\u2009\u2007]/g, "\u00A0");
+  return text.replace(/[\u202F\u2009\u00A0\u2007]/g, (ch) => {
+    if (font.hasGlyphForCodePoint!(ch.codePointAt(0)!)) return ch;
+    return SPACE_FALLBACKS[ch].find((c) => font.hasGlyphForCodePoint!(c.codePointAt(0)!)) ?? " ";
+  });
+}
+
+/** Layout measures single glyphs: no ligatures, so widths and copied text match. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const NO_LIGA = { liga: false, clig: false, dlig: false, calt: false } as any;
