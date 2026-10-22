@@ -42,6 +42,8 @@ test("Edit Export (PDF, PNG, PowerPoint) → export window → DOCX + PNG downlo
     if (sessionStorage.getItem("__e2e_seeded")) return;
     sessionStorage.setItem("__e2e_seeded", "1");
     localStorage.clear();
+      // Skip the first-run folder screen: these tests cover the editor itself.
+      localStorage.setItem("sermon-editor-presenter:storage-mode:v1", "browser");
     localStorage.removeItem(key);
   }, ACTIVE_ID_KEY);
 

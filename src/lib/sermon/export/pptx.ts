@@ -1,10 +1,10 @@
 import PptxGenJS from "pptxgenjs";
 import type { CalibratedSnapshot } from "@/types/document";
-import { citationCaps, titleTextFromSnapshot, type StyledRun } from "./contentWalk";
-import { blockColor, paletteFor, sliceRuns, trimRunsEnd } from "./png";
+import { citationCaps, titleTextFromSnapshot } from "./contentWalk";
+import { blockColor, paletteFor, sliceRuns, splitRunsByGlyph, trimRunsEnd, type GlyphRun } from "./png";
 import { frameSizeInches, pxPerInch, pxPerPt, type PageInput } from "./frames";
 import { layoutSnapshot, roleStyle } from "./pngLayout";
-import { metricCompatibleOffice } from "./textMeasure";
+import { FALLBACK_OFFICE_FACE, metricCompatibleOffice } from "./textMeasure";
 
 export interface PptxBuildOptions {
   resolvedColors?: { accent: string };
@@ -15,14 +15,14 @@ export interface PptxBuildOptions {
 const hex = (c: string) => c.replace(/^#/, "");
 
 function runsToPptxText(
-  runs: StyledRun[],
+  runs: GlyphRun[],
   opts: { fontSize: number; defaultColor: string; bold: boolean; italic: boolean; highlight: string },
 ): PptxGenJS.TextProps[] {
   return runs.map((run) => ({
     text: run.text,
     options: {
       fontSize: opts.fontSize,
-      fontFace: metricCompatibleOffice(run.fontFamily),
+      fontFace: run.glyphFallback ? FALLBACK_OFFICE_FACE : metricCompatibleOffice(run.fontFamily),
       bold: opts.bold || !!run.bold,
       italic: opts.italic || !!run.italic,
       underline: run.underline ? { style: "sng" } : undefined,
@@ -100,7 +100,7 @@ export async function buildPptx(
         continue;
       }
       const role = roleStyle(block.type);
-      const runs = trimRunsEnd(sliceRuns(block.runs, line.start, line.end));
+      const runs = splitRunsByGlyph(trimRunsEnd(sliceRuns(block.runs, line.start, line.end)), role);
       if (!runs.length) continue;
       slide.addText(
         runsToPptxText(runs, { fontSize: pt(line.size), defaultColor: blockColor(block.type, p), highlight: p.highlight, ...role }),

@@ -3,30 +3,67 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { Editor, JSONContent } from "@tiptap/react";
-import {
-  extractTitleFromContent,
-  loadDocument,
-  resolveActiveDocument,
-  saveDocument,
-  sermonToDocument,
-} from "@/lib/documentStore";
+import { extractTitleFromContent, loadDocument } from "@/lib/documentStore";
 import { extractOutline } from "@/lib/outline";
+import { createSeedDocument } from "@/lib/seed";
 import {
-  autosaveContent,
-  createSermon,
-  deleteSermon,
-  getSermon,
-  isServerSermonId,
-  listSermons,
-  updateSermon,
-} from "@/lib/sermonApi";
+  parseSermonFile,
+  serializeBackupFile,
+  serializeSermonFile,
+  sermonFileName,
+  SermonFileError,
+  type SermonBackupFile,
+} from "@/lib/sermon-file";
 import {
-  AutosaveController,
-  classifySaveError,
-  type AutosaveStatus,
-  type SaveFailureKind,
-} from "@/lib/autosave/autosaveController";
-import type { Sermon } from "@/lib/sermon/types";
+  folderApiAvailable,
+  pickSermonsFolder,
+  queryFolderPermission,
+  requestFolderPermission,
+  type DirHandleLike,
+} from "@/lib/localStore/fsTypes";
+import { loadFolderHandle, saveFolderHandle } from "@/lib/localStore/handleStore";
+import {
+  cacheSermon,
+  newSermonId,
+  readLibrary,
+  setActiveDoc,
+  uncacheSermon,
+  writeLibrary,
+  getActiveId,
+  type Library,
+} from "@/lib/localStore/browserCache";
+import {
+  isConflictCopyId,
+  RestoreWriteError,
+  writeSermonFilesAtomically,
+  readFolderFile,
+  removeSermonFile,
+  uniqueFileName,
+  writeSermonFile,
+} from "@/lib/localStore/folder";
+import { syncFolderAndCache } from "@/lib/localStore/sync";
+import { decideWrite, isStaleFor, presenceAction, SYNC_CHANNEL, type SyncMessage } from "@/lib/localStore/conflict";
+import {
+  ACTION_LABELS,
+  isSaved,
+  nextStatus,
+  statusAction,
+  statusLabel,
+  type SaveEvent,
+  type SaveStatus,
+} from "@/lib/localStore/status";
+import {
+  backupFileName,
+  FIRST_USE_KEY,
+  LAST_BACKUP_KEY,
+  planRestore,
+  previewRestore,
+  REMINDER_DISMISSED_KEY,
+  shouldShowBackupReminder,
+  type ConflictChoice,
+  type RestorePreview,
+  parseRestoreFile,
+} from "@/lib/localStore/backup";
 import type { SermonDocument } from "@/types/document";
 import { DEFAULT_PRESENTATION_SETTINGS } from "@/types/document";
 import type { PresentationSettings } from "@/types/document";
@@ -36,363 +73,906 @@ import { OutlineNav } from "./OutlineNav";
 import { FindBar } from "./FindBar";
 import { NotesPanel } from "./NotesPanel";
 import { SermonList } from "./SermonList";
+import {
+  BackupBanner,
+  BrowserOnlyBanner,
+  ConflictPrompt,
+  OpenElsewhereBanner,
+  FirstRunScreen,
+  ConfirmDialog,
+  MessageDialog,
+  RestorePreviewDialog,
+} from "./StoragePanels";
+import { saveTextToPc } from "@/lib/localStore/saveToPc";
 import styles from "./EditShell.module.css";
 
-type SaveStatus =
-  | "saved-server"
-  | "saved-local"
-  | "saving"
-  | "offline"
-  | "restoring"
-  | "retrying"
-  | "failed-network"
-  | "failed-server";
+export const STORAGE_MODE_KEY = "sermon-editor-presenter:storage-mode:v1";
+const SAVE_DELAY_MS = 500;
 
-/** States that a local keystroke must not paper over with "Saved locally". */
-const STICKY_STATUSES: ReadonlySet<SaveStatus> = new Set<SaveStatus>([
-  "offline",
-  "restoring",
-  "retrying",
-  "failed-network",
-  "failed-server",
-]);
+type Mode = "loading" | "first-run" | "folder" | "browser";
 
-function toSaveStatus(s: AutosaveStatus): SaveStatus {
-  switch (s.kind) {
-    case "saving":
-      return "saving";
-    case "saved":
-      return "saved-server";
-    case "restoring":
-      return "restoring";
-    case "offline":
-      return "offline";
-    case "retrying":
-      return "retrying";
-    case "failed":
-      return failedStatus(s.reason);
+function ls(k: string): string | null {
+  try {
+    return window.localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+}
+function lsSet(k: string, v: string) {
+  try {
+    window.localStorage.setItem(k, v);
+  } catch {
+    /* ignore */
   }
 }
 
-function failedStatus(reason: SaveFailureKind): SaveStatus {
-  return reason === "network" ? "failed-network" : "failed-server";
+function blankSermon(): SermonDocument {
+  return {
+    id: newSermonId(),
+    title: "Untitled sermon",
+    updatedAt: new Date().toISOString(),
+    content: { type: "doc", content: [{ type: "title", content: [] }] },
+    presentationSettings: { ...DEFAULT_PRESENTATION_SETTINGS },
+    notes: "",
+  };
 }
 
-const STATUS_LABELS: Record<SaveStatus, string> = {
-  saving: "Saving…",
-  "saved-server": "Saved to server",
-  "saved-local": "Saved locally",
-  offline: "Offline — saved locally",
-  restoring: "Restoring on server…",
-  retrying: "Save failed — retrying…",
-  "failed-network": "Offline — saved locally",
-  "failed-server": "Couldn’t save to server — saved locally",
-};
-
-function toListItems(sermons: Sermon[]) {
-  return sermons.map((s) => ({
-    id: s.id,
-    title: s.meta.title,
-    updatedAt: s.meta.updatedAt,
-  }));
+function newest(lib: Library): SermonDocument | null {
+  return (
+    Object.values(lib)
+      .map((e) => e.doc)
+      .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0] ?? null
+  );
 }
 
 export function EditShell() {
+  const [mode, setMode] = useState<Mode>("loading");
+  const [folderApi, setFolderApi] = useState(false);
+  const [folderReady, setFolderReady] = useState(false);
   const [doc, setDoc] = useState<SermonDocument | null>(null);
-  const [sermons, setSermons] = useState<Sermon[]>([]);
+  const [library, setLibrary] = useState<Library>({});
   const [editor, setEditor] = useState<Editor | null>(null);
-  const [status, setStatus] = useState<SaveStatus>("saving");
-  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<SaveStatus>({ kind: "saving" });
   /** Export window settings, seeded from the sermon's own page size. */
   const [exportSettings, setExportSettings] =
     useState<PresentationSettings | null>(null);
   const exportBtnRef = useRef<HTMLButtonElement>(null);
-  /**
-   * Remounts the editor only on real doc switches — not when autosave re-keys
-   * the same doc to a new server id (local-* promotion / 404 recovery), so the
-   * writer keeps focus, selection and undo history.
-   */
+  const [busy, setBusy] = useState(false);
   const [editorKey, setEditorKey] = useState("");
+  const [conflict, setConflict] = useState<{ theirs: SermonDocument; savedAt: string } | null>(null);
+  const [firstRunError, setFirstRunError] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ title: string; message: string; details?: string[] } | null>(null);
+  const [restore, setRestore] = useState<{ backup: SermonBackupFile; preview: RestorePreview } | null>(null);
+  const [restoreChoices, setRestoreChoices] = useState<Record<string, ConflictChoice>>({});
+  const [showReminder, setShowReminder] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [openElsewhere, setOpenElsewhere] = useState(false);
+  const [persisted, setPersisted] = useState<boolean | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState<SermonDocument | null>(null);
 
   const docRef = useRef<SermonDocument | null>(null);
-  /** lost/local id → server id, so a stale docRef can never PATCH a gone id. */
-  const rekeyMap = useRef(new Map<string, string>());
-  const onlineRef = useRef(true);
+  const dirRef = useRef<DirHandleLike | null>(null);
+  const folderReadyRef = useRef(false);
+  const modeRef = useRef<Mode>("loading");
+  /** savedAt of the version this tab loaded or last wrote, per open sermon. */
+  const loadedSavedAt = useRef<string | null>(null);
+  const editSeq = useRef(0);
+  const savedSeq = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const writing = useRef<Promise<void> | null>(null);
+  const conflictRef = useRef(false);
+  const tabId = useRef(newSermonId());
+  const channel = useRef<BroadcastChannel | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const keyCounter = useRef(0);
+  const openFileInput = useRef<HTMLInputElement>(null);
+  /** Edits made since the last Save to PC / Open (the .sermon file is behind). */
+  const fileDirty = useRef(false);
+  /** The open sermon had edits not yet written when Restore was started. */
+  const restoreOpenDirty = useRef(false);
 
-  useEffect(() => {
-    docRef.current = doc;
-  }, [doc]);
+  const apply = useCallback((ev: SaveEvent) => setStatus((s) => nextStatus(s, ev)), []);
+  const broadcast = useCallback((m: Omit<SyncMessage, "tabId">) => {
+    channel.current?.postMessage({ ...m, tabId: tabId.current } satisfies SyncMessage);
+  }, []);
 
+  const showDoc = useCallback((d: SermonDocument, savedAt: string | null) => {
+    const prevId = docRef.current?.id;
+    if (prevId !== d.id) {
+      if (prevId) channel.current?.postMessage({ type: "closed", id: prevId, tabId: tabId.current } satisfies SyncMessage);
+      setOpenElsewhere(false);
+    }
+    // Presence ping on open (ST9): a tab with the same sermon open warns and answers.
+    channel.current?.postMessage({ type: "opened", id: d.id, tabId: tabId.current } satisfies SyncMessage);
+    docRef.current = d;
+    loadedSavedAt.current = savedAt;
+    savedSeq.current = editSeq.current;
+    conflictRef.current = false;
+    setConflict(null);
+    setDoc(d);
+    keyCounter.current += 1;
+    setEditorKey(`${d.id}:${keyCounter.current}`);
+    try {
+      setActiveDoc(d);
+    } catch {
+      /* quota: Preach falls back to the library */
+    }
+  }, []);
+
+  const refreshReminder = useCallback(() => {
+    setShowReminder(
+      shouldShowBackupReminder({
+        now: Date.now(),
+        lastBackupAt: ls(LAST_BACKUP_KEY),
+        firstUseAt: ls(FIRST_USE_KEY),
+        dismissedAt: ls(REMINDER_DISMISSED_KEY),
+      }),
+    );
+  }, []);
+
+  /** Sync folder ↔ browser copy, then open the active sermon from the folder. */
+  const connectFolder = useCallback(
+    async (dir: DirHandleLike) => {
+      const report = await syncFolderAndCache(dir, readLibrary(), newSermonId);
+      let lib = report.library;
+      if (Object.keys(lib).length === 0) {
+        const seed = { ...createSeedDocument(), id: newSermonId() };
+        const fileName = uniqueFileName(seed.title, []);
+        const r = await writeSermonFile(dir, fileName, seed, { loadedSavedAt: null });
+        if (r.status === "ok") lib = { [seed.id]: { doc: seed, savedAt: r.savedAt, fileName } };
+      }
+      try {
+        writeLibrary(lib);
+      } catch {
+        /* browser copy full: folder still has everything */
+      }
+      dirRef.current = dir;
+      folderReadyRef.current = true;
+      setFolderReady(true);
+      modeRef.current = "folder";
+      setMode("folder");
+      setLibrary(lib);
+      const active = getActiveId();
+      const pick = (active && lib[active]?.doc) || newest(lib)!;
+      showDoc(pick, lib[pick.id]?.savedAt ?? null);
+      apply({ type: "write-ok", target: "folder" });
+      const notes: string[] = [];
+      if (report.copies.length)
+        notes.push(
+          `${report.copies.length} sermon(s) had different versions in this browser and the folder. Both were kept; look for "(copy from this browser)".`,
+        );
+      if (report.listing.unreadable.length)
+        notes.push(
+          `${report.listing.unreadable.length} file(s) in the folder couldn't be opened: ${report.listing.unreadable
+            .map((u) => `${u.fileName} (${u.message})`)
+            .join("; ")}`,
+        );
+      if (notes.length) setMessage({ title: "Sermons folder", message: notes.join(" ") });
+    },
+    [apply, showDoc],
+  );
+
+  const startBrowserMode = useCallback(() => {
+    modeRef.current = "browser";
+    setMode("browser");
+    const d = loadDocument();
+    const lib = readLibrary();
+    setLibrary(lib);
+    showDoc(d, lib[d.id]?.savedAt ?? null);
+    apply({ type: "write-ok", target: "browser" });
+  }, [apply, showDoc]);
+
+  // Boot: decide folder / browser / first run.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const resolved = await resolveActiveDocument();
+      if (!ls(FIRST_USE_KEY)) lsSet(FIRST_USE_KEY, new Date().toISOString());
+      refreshReminder();
+      const api = folderApiAvailable();
+      setFolderApi(api);
+      const pref = ls(STORAGE_MODE_KEY);
+      const handle = api ? await loadFolderHandle() : null;
+      if (cancelled) return;
+      if (handle) {
+        dirRef.current = handle;
+        let perm: string = "prompt";
+        try {
+          perm = await queryFolderPermission(handle);
+        } catch {
+          perm = "prompt";
+        }
         if (cancelled) return;
-        onlineRef.current = resolved.source === "server";
-        setDoc(resolved.doc);
-        setEditorKey(resolved.doc.id);
-        setSermons(resolved.sermons);
-        setStatus(resolved.source === "server" ? "saved-server" : "offline");
-      } catch {
-        // Never white-screen /edit — fall back to a local seed doc.
-        if (cancelled) return;
-        const fallback = loadDocument();
-        setDoc(fallback);
-        setEditorKey(fallback.id);
-        setSermons([]);
-        onlineRef.current = false;
-        setStatus("offline");
+        if (perm === "granted") {
+          try {
+            await connectFolder(handle);
+            return;
+          } catch (err) {
+            if (cancelled) return;
+            // Folder moved / deleted: keep working from the browser copy.
+            modeRef.current = "folder";
+            setMode("folder");
+            const d = loadDocument();
+            const lib = readLibrary();
+            setLibrary(lib);
+            showDoc(d, lib[d.id]?.savedAt ?? null);
+            apply({ type: "write-failed", target: "folder", error: err });
+            return;
+          }
+        }
+        modeRef.current = "folder";
+        setMode("folder");
+        const d = loadDocument();
+        const lib = readLibrary();
+        setLibrary(lib);
+        showDoc(d, lib[d.id]?.savedAt ?? null);
+        apply({ type: "permission-needed" });
+        return;
       }
+      if (pref === "browser") {
+        startBrowserMode();
+        return;
+      }
+      modeRef.current = "first-run";
+      setMode("first-run");
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [apply, connectFolder, refreshReminder, showDoc, startBrowserMode]);
 
-  const refreshList = useCallback(async () => {
-    try {
-      const next = await listSermons();
-      setSermons(next);
-      onlineRef.current = true;
-      return next;
-    } catch (err) {
-      // Only a failed fetch means offline; an HTTP error here says nothing
-      // about the autosave state, so leave the indicator alone.
-      if (classifySaveError(err) === "network") {
-        onlineRef.current = false;
-        setStatus("offline");
+  /** Write the open sermon. Never reports saved unless the write completed. */
+  const persist = useCallback(
+    async (force = false): Promise<void> => {
+      if (writing.current) {
+        await writing.current;
       }
-      return null;
-    }
-  }, []);
-
-  const applyLocal = useCallback((next: SermonDocument) => {
-    setDoc(next);
-    setEditorKey(next.id);
-    docRef.current = next;
-    saveDocument(next);
-  }, []);
-
-  const autosave = useMemo(
-    () =>
-      new AutosaveController({
-        getDoc: () => {
-          const d = docRef.current;
-          const mapped = d ? rekeyMap.current.get(d.id) : undefined;
-          return d && mapped ? { ...d, id: mapped } : d;
-        },
-        rekeyDoc: (fromId, toId, updatedAt) => {
-          const current = docRef.current;
-          if (!current || current.id !== fromId) return null;
-          rekeyMap.current.set(fromId, toId);
-          const rekeyed: SermonDocument = { ...current, id: toId, updatedAt };
-          // Local copy is re-keyed in place (single cached doc + active-id),
-          // so there is never an orphan under the lost id.
-          docRef.current = rekeyed;
-          saveDocument(rekeyed);
-          setDoc((prev) => {
-            if (!prev || prev.id !== fromId) return prev;
-            const next = { ...prev, id: toId };
-            saveDocument(next);
-            return next;
-          });
-          return rekeyed;
-        },
-        save: {
-          content: (d) =>
-            autosaveContent(d.id, {
-              content: d.content,
-              title: extractTitleFromContent(d.content) ?? d.title,
-            }),
-          notes: (d) => updateSermon(d.id, { notes: d.notes }),
-        },
-        create: (input) => createSermon(input),
-        get: (id) => getSermon(id),
-        onStatus: (next) => setStatus(toSaveStatus(next)),
-        onSaved: () => {
-          // Local content always wins; the server echo only proves durability.
-          void refreshList();
-        },
-      }),
-    [refreshList],
+      const d = docRef.current;
+      if (!d || (conflictRef.current && !force)) return;
+      const seq = editSeq.current;
+      const run = (async () => {
+        if (folderReadyRef.current && dirRef.current) {
+          const lib = readLibrary();
+          const fileName =
+            lib[d.id]?.fileName ??
+            uniqueFileName(
+              d.title,
+              Object.values(lib)
+                .map((e) => e.fileName)
+                .filter((n): n is string => !!n),
+            );
+          try {
+            const r = await writeSermonFile(dirRef.current, fileName, d, {
+              loadedSavedAt: loadedSavedAt.current,
+              force,
+            });
+            if (r.status === "conflict") {
+              conflictRef.current = true;
+              setConflict({ theirs: r.disk.sermon, savedAt: r.disk.savedAt });
+              apply({ type: "conflict" });
+              return;
+            }
+            loadedSavedAt.current = r.savedAt;
+            conflictRef.current = false;
+            setConflict(null);
+            try {
+              const next = cacheSermon(
+                { doc: d, savedAt: r.savedAt, fileName, dirty: seq !== editSeq.current },
+                { active: true },
+              );
+              setLibrary(next);
+            } catch {
+              setLibrary((l) => ({ ...l, [d.id]: { doc: d, savedAt: r.savedAt, fileName } }));
+            }
+            broadcast({ type: "saved", id: d.id, savedAt: r.savedAt });
+            if (seq === editSeq.current) {
+              savedSeq.current = seq;
+              apply({ type: "write-ok", target: "folder" });
+            }
+          } catch (err) {
+            apply({ type: "write-failed", target: "folder", error: err });
+          }
+          return;
+        }
+        if (modeRef.current === "folder") {
+          // Folder known but not reachable / not permitted: browser copy only.
+          try {
+            const lib = readLibrary();
+            const prev = lib[d.id];
+            lib[d.id] = { doc: d, savedAt: prev?.savedAt ?? null, fileName: prev?.fileName, dirty: true };
+            writeLibrary(lib);
+            setActiveDoc(d);
+            setLibrary(lib);
+            if (seq === editSeq.current) savedSeq.current = seq;
+            setStatus((s) => (s.kind === "saving" ? { kind: "needs-permission" } : s));
+          } catch (err) {
+            apply({ type: "write-failed", target: "browser", error: err });
+          }
+          return;
+        }
+        // Browser-only mode: the browser store is the store; same savedAt guard.
+        try {
+          const lib = readLibrary();
+          const cur = lib[d.id];
+          if (decideWrite(loadedSavedAt.current, cur?.savedAt, force) === "conflict" && cur) {
+            conflictRef.current = true;
+            setConflict({ theirs: cur.doc, savedAt: cur.savedAt! });
+            apply({ type: "conflict" });
+            return;
+          }
+          let savedAt = new Date().toISOString();
+          if (cur?.savedAt && Date.parse(savedAt) <= Date.parse(cur.savedAt)) {
+            savedAt = new Date(Date.parse(cur.savedAt) + 1).toISOString();
+          }
+          lib[d.id] = { doc: d, savedAt, fileName: cur?.fileName, dirty: true };
+          writeLibrary(lib);
+          setActiveDoc(d);
+          loadedSavedAt.current = savedAt;
+          conflictRef.current = false;
+          setConflict(null);
+          setLibrary(lib);
+          broadcast({ type: "saved", id: d.id, savedAt });
+          if (seq === editSeq.current) {
+            savedSeq.current = seq;
+            apply({ type: "write-ok", target: "browser" });
+          }
+        } catch (err) {
+          apply({ type: "write-failed", target: "browser", error: err });
+        }
+      })();
+      writing.current = run;
+      try {
+        await run;
+      } finally {
+        if (writing.current === run) writing.current = null;
+      }
+      if (seq !== editSeq.current && !conflictRef.current) schedule();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [apply, broadcast],
   );
 
-  // cancel (not dispose) so a StrictMode effect re-run keeps the controller usable.
-  useEffect(() => () => autosave.cancel(), [autosave]);
+  const schedule = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      void persist();
+    }, SAVE_DELAY_MS);
+  }, [persist]);
 
-  // Coming back online: retry anything still queued (or a failed save).
-  useEffect(() => {
-    const onOnline = () => {
-      if (autosave.hasPending) void autosave.retryNow();
-    };
-    window.addEventListener("online", onOnline);
-    return () => window.removeEventListener("online", onOnline);
-  }, [autosave]);
+  const flush = useCallback(async () => {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+      await persist();
+    } else if (writing.current) {
+      await writing.current;
+    }
+  }, [persist]);
+
+  const hasUnsavedEdits = () => editSeq.current !== savedSeq.current;
+
+  const edited = useCallback(
+    (next: SermonDocument) => {
+      docRef.current = next;
+      editSeq.current += 1;
+      fileDirty.current = true;
+      apply({ type: "edit" });
+      if (modeRef.current === "folder") {
+        // Automatic browser backup on every keystroke (folder mode only, so a
+        // browser-only tab never overwrites another tab's copy unchecked).
+        try {
+          const lib = readLibrary();
+          const prev = lib[next.id];
+          lib[next.id] = { doc: next, savedAt: prev?.savedAt ?? null, fileName: prev?.fileName, dirty: true };
+          writeLibrary(lib);
+          setActiveDoc(next);
+        } catch {
+          /* quota: the folder write still happens */
+        }
+      }
+      schedule();
+    },
+    [apply, schedule],
+  );
 
   const onContentChange = useCallback(
     (content: JSONContent) => {
       setDoc((prev) => {
         if (!prev) return prev;
-        const titleFromBlock = extractTitleFromContent(content);
         const next: SermonDocument = {
           ...prev,
           content,
-          title: titleFromBlock ?? prev.title,
+          title: extractTitleFromContent(content) ?? prev.title,
           updatedAt: new Date().toISOString(),
         };
-        saveDocument(next);
-        docRef.current = next;
-        autosave.request("content");
-        setStatus((s) => (STICKY_STATUSES.has(s) ? s : "saved-local"));
+        edited(next);
         return next;
       });
     },
-    [autosave],
+    [edited],
   );
 
   const onNotesChange = useCallback(
     (notes: string) => {
       setDoc((prev) => {
         if (!prev) return prev;
-        const next: SermonDocument = {
-          ...prev,
-          notes,
-          updatedAt: new Date().toISOString(),
-        };
-        saveDocument(next);
-        docRef.current = next;
-        autosave.request("notes");
-        setStatus((s) => (STICKY_STATUSES.has(s) ? s : "saved-local"));
+        const next: SermonDocument = { ...prev, notes, updatedAt: new Date().toISOString() };
+        edited(next);
         return next;
       });
     },
-    [autosave],
+    [edited],
   );
+
+  // Browser-only writes are synchronous, so flush them on close.
+  useEffect(() => {
+    const onUnload = () => {
+      if (timer.current && modeRef.current === "browser") {
+        clearTimeout(timer.current);
+        void persist();
+      }
+    };
+    window.addEventListener("pagehide", onUnload);
+    return () => window.removeEventListener("pagehide", onUnload);
+  }, [persist]);
+
+  /** Read the latest copy of a sermon from wherever it lives. */
+  const readLatest = useCallback(async (id: string) => {
+    const lib = readLibrary();
+    const entry = lib[id];
+    if (folderReadyRef.current && dirRef.current && entry?.fileName) {
+      const f = await readFolderFile(dirRef.current, entry.fileName, id);
+      if (f) return { doc: f.sermon, savedAt: f.savedAt };
+    }
+    return entry ? { doc: entry.doc, savedAt: entry.savedAt } : null;
+  }, []);
+
+  // Two tabs: hear about saves elsewhere.
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const ch = new BroadcastChannel(SYNC_CHANNEL);
+    channel.current = ch;
+    ch.onmessage = async (e: MessageEvent<SyncMessage>) => {
+      const msg = e.data;
+      if (msg.tabId === tabId.current) return;
+      const presence = presenceAction(msg, tabId.current, docRef.current?.id ?? null);
+      if (presence === "warn" || presence === "warn-and-reply") setOpenElsewhere(true);
+      if (presence === "clear") setOpenElsewhere(false);
+      if (presence === "warn-and-reply") {
+        ch.postMessage({ type: "here", id: msg.id, tabId: tabId.current } satisfies SyncMessage);
+      }
+      if (msg.type === "opened" || msg.type === "here" || msg.type === "closed") return;
+      setLibrary(readLibrary());
+      const d = docRef.current;
+      if (!d || !isStaleFor(msg, tabId.current, d.id, loadedSavedAt.current)) return;
+      if (msg.type === "deleted") return; // next save re-creates the file
+      try {
+        const latest = await readLatest(d.id);
+        if (!latest) return;
+        if (!hasUnsavedEdits() && !timer.current && !writing.current) {
+          showDoc(latest.doc, latest.savedAt);
+          apply({ type: "write-ok", target: folderReadyRef.current ? "folder" : "browser" });
+        } else {
+          conflictRef.current = true;
+          setConflict({ theirs: latest.doc, savedAt: latest.savedAt ?? new Date().toISOString() });
+          apply({ type: "conflict" });
+        }
+      } catch {
+        /* folder unreachable: the next write reports it */
+      }
+    };
+    if (docRef.current) ch.postMessage({ type: "opened", id: docRef.current.id, tabId: tabId.current } satisfies SyncMessage);
+    const onHide = () => {
+      if (docRef.current) ch.postMessage({ type: "closed", id: docRef.current.id, tabId: tabId.current } satisfies SyncMessage);
+    };
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      window.removeEventListener("pagehide", onHide);
+      ch.close();
+      channel.current = null;
+    };
+  }, [apply, readLatest, showDoc]);
+
+  // Ask the browser to keep local data (ST2/ST15). Refusal strengthens the browser-only banner.
+  useEffect(() => {
+    const st = typeof navigator !== "undefined" ? navigator.storage : undefined;
+    if (!st?.persist) return;
+    let live = true;
+    void (async () => {
+      try {
+        const already = st.persisted ? await st.persisted() : false;
+        const ok = already || (await st.persist());
+        if (live) setPersisted(ok);
+      } catch {
+        if (live) setPersisted(false);
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const keepMine = useCallback(() => {
+    conflictRef.current = false;
+    setConflict(null);
+    apply({ type: "edit" });
+    void persist(true);
+  }, [apply, persist]);
+
+  const loadTheirs = useCallback(() => {
+    if (!conflict) return;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    showDoc(conflict.theirs, conflict.savedAt);
+    try {
+      cacheSermon({ ...(readLibrary()[conflict.theirs.id] ?? {}), doc: conflict.theirs, savedAt: conflict.savedAt }, { active: true });
+    } catch {
+      /* ignore */
+    }
+    setLibrary(readLibrary());
+    apply({ type: "write-ok", target: folderReadyRef.current ? "folder" : "browser" });
+  }, [apply, conflict, showDoc]);
+
+  const chooseFolder = useCallback(async () => {
+    setFirstRunError(null);
+    let dir: DirHandleLike;
+    try {
+      dir = await pickSermonsFolder();
+    } catch (err) {
+      if ((err as { name?: string })?.name !== "AbortError") {
+        setFirstRunError("That folder couldn't be used. Try another folder.");
+      }
+      return;
+    }
+    try {
+      if ((await requestFolderPermission(dir)) !== "granted") {
+        setFirstRunError("The app needs permission to save in that folder.");
+        return;
+      }
+      await flush();
+      if (docRef.current) {
+        try {
+          setActiveDoc(docRef.current);
+        } catch {
+          /* ignore */
+        }
+      }
+      await saveFolderHandle(dir);
+      lsSet(STORAGE_MODE_KEY, "folder");
+      await connectFolder(dir);
+      setMenuOpen(false);
+    } catch (err) {
+      setFirstRunError("That folder couldn't be used. Try another folder.");
+      if (modeRef.current !== "first-run") apply({ type: "write-failed", target: "folder", error: err });
+    }
+  }, [apply, connectFolder, flush]);
+
+  const allowAccess = useCallback(async () => {
+    const dir = dirRef.current;
+    if (!dir) return chooseFolder();
+    try {
+      if ((await requestFolderPermission(dir)) === "granted") {
+        await flush();
+        await connectFolder(dir);
+      }
+    } catch (err) {
+      apply({ type: "write-failed", target: "folder", error: err });
+    }
+  }, [apply, chooseFolder, connectFolder, flush]);
+
+  const useBrowser = useCallback(() => {
+    lsSet(STORAGE_MODE_KEY, "browser");
+    startBrowserMode();
+  }, [startBrowserMode]);
 
   const openSermon = useCallback(
     async (id: string) => {
       if (docRef.current?.id === id) return;
-      if (!isServerSermonId(id)) return;
       setBusy(true);
       try {
-        autosave.cancel();
-        const sermon = await getSermon(id);
-        const next = sermonToDocument(sermon, docRef.current);
-        applyLocal(next);
-        onlineRef.current = true;
-        setStatus("saved-server");
-        await refreshList();
-      } catch {
-        onlineRef.current = false;
-        setStatus("offline");
+        await flush();
+        const latest = await readLatest(id);
+        if (latest) {
+          showDoc(latest.doc, latest.savedAt);
+          apply({ type: "write-ok", target: folderReadyRef.current ? "folder" : "browser" });
+        }
+      } catch (err) {
+        apply({ type: "write-failed", target: "folder", error: err });
       } finally {
         setBusy(false);
       }
     },
-    [applyLocal, autosave, refreshList],
+    [apply, flush, readLatest, showDoc],
   );
 
   const onCreate = useCallback(async () => {
     setBusy(true);
     try {
-      autosave.cancel();
-      const sermon = await createSermon({
-        title: "Untitled sermon",
-        content: { type: "doc", content: [{ type: "title", content: [] }] },
-        notes: "",
-      });
-      const next = sermonToDocument(sermon);
-      applyLocal(next);
-      onlineRef.current = true;
-      setStatus("saved-server");
-      await refreshList();
-    } catch {
-      // Offline: spin up a local-only draft.
-      const now = new Date().toISOString();
-      const localDraft: SermonDocument = {
-        id: `local-${now.replace(/[^0-9]/g, "").slice(0, 14)}`,
-        title: "Untitled sermon",
-        updatedAt: now,
-        content: { type: "doc", content: [{ type: "title", content: [] }] },
-        presentationSettings:
-          docRef.current?.presentationSettings ?? {
-            ...DEFAULT_PRESENTATION_SETTINGS,
-          },
-        notes: "",
-      };
-      applyLocal(localDraft);
-      onlineRef.current = false;
-      setStatus("offline");
+      await flush();
+      const d = blankSermon();
+      d.presentationSettings = docRef.current?.presentationSettings ?? d.presentationSettings;
+      showDoc(d, null);
+      editSeq.current += 1;
+      apply({ type: "edit" });
+      await persist();
     } finally {
       setBusy(false);
     }
-  }, [applyLocal, autosave, refreshList]);
+  }, [apply, flush, persist, showDoc]);
 
   const onDelete = useCallback(
     async (id: string) => {
-      if (!isServerSermonId(id)) return;
-      if (typeof window !== "undefined") {
-        const title =
-          sermons.find((s) => s.id === id)?.meta.title ?? "this sermon";
-        if (!window.confirm(`Delete “${title}”?`)) return;
-      }
+      const entry = readLibrary()[id];
+      const title = entry?.doc.title || "this sermon";
+      if (!window.confirm(`Delete “${title}”?`)) return;
       setBusy(true);
-      // Drop queued saves for the doc being deleted so autosave's 404 recovery
-      // can never resurrect it.
-      if (docRef.current?.id === id) autosave.cancel();
       try {
-        await deleteSermon(id);
-        onlineRef.current = true;
-        const remaining = (await refreshList()) ?? [];
+        if (docRef.current?.id === id && timer.current) {
+          clearTimeout(timer.current);
+          timer.current = null;
+        }
+        if (folderReadyRef.current && dirRef.current && entry?.fileName) {
+          await removeSermonFile(dirRef.current, entry.fileName);
+        }
+        const lib = uncacheSermon(id);
+        setLibrary(lib);
+        broadcast({ type: "deleted", id });
         if (docRef.current?.id === id) {
-          if (remaining.length > 0) {
-            const sermon = await getSermon(remaining[0].id);
-            applyLocal(sermonToDocument(sermon));
-            setStatus("saved-server");
+          const next = newest(lib);
+          if (next) {
+            showDoc(next, lib[next.id]?.savedAt ?? null);
+            apply({ type: "write-ok", target: folderReadyRef.current ? "folder" : "browser" });
           } else {
             await onCreate();
           }
-        } else {
-          setStatus("saved-server");
         }
-      } catch {
-        onlineRef.current = false;
-        setStatus("offline");
+      } catch (err) {
+        apply({ type: "write-failed", target: folderReadyRef.current ? "folder" : "browser", error: err });
       } finally {
         setBusy(false);
       }
     },
-    [applyLocal, autosave, onCreate, refreshList, sermons],
+    [apply, broadcast, onCreate, showDoc],
   );
 
-  const listItems = useMemo(() => {
-    const items = toListItems(sermons);
-    if (doc && !items.some((s) => s.id === doc.id)) {
-      items.unshift({
-        id: doc.id,
-        title: doc.title,
-        updatedAt: doc.updatedAt,
+  /** Every sermon, freshest copy (folder when available, else browser copy). */
+  const allSermons = useCallback(async (): Promise<SermonDocument[]> => {
+    await flush();
+    if (folderReadyRef.current && dirRef.current) {
+      const r = await syncFolderAndCache(dirRef.current, readLibrary(), newSermonId);
+      try {
+        writeLibrary(r.library);
+      } catch {
+        /* ignore */
+      }
+      setLibrary(r.library);
+      return Object.values(r.library).map((e) => e.doc);
+    }
+    const lib = readLibrary();
+    if (docRef.current) lib[docRef.current.id] = { ...(lib[docRef.current.id] ?? { savedAt: null }), doc: docRef.current };
+    return Object.values(lib).map((e) => e.doc);
+  }, [flush]);
+
+  const onBackup = useCallback(async () => {
+    setMenuOpen(false);
+    try {
+      const docs = await allSermons();
+      const text = serializeBackupFile(docs);
+      const blob = new Blob([text], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = backupFileName();
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      lsSet(LAST_BACKUP_KEY, new Date().toISOString());
+      refreshReminder();
+    } catch (err) {
+      setMessage({
+        title: "Back up",
+        message: "The backup couldn't be made. Your sermons are unchanged.",
+        details: [err instanceof Error ? err.message : String(err)],
       });
     }
-    return items;
-  }, [sermons, doc]);
+  }, [allSermons, refreshReminder]);
 
-  const outline = useMemo(
-    () => extractOutline(doc?.content),
-    [doc?.content],
+  const onRestoreFile = useCallback(
+    async (file: File) => {
+      restoreOpenDirty.current = hasUnsavedEdits() || !!timer.current || conflictRef.current;
+      try {
+        const backup = parseRestoreFile(await file.text());
+        const preview = previewRestore(await allSermons(), backup);
+        setRestoreChoices({});
+        setRestore({ backup, preview });
+      } catch (err) {
+        if (err instanceof SermonFileError) {
+          setMessage({ title: "Restore", message: err.message, details: err.details });
+        } else {
+          setMessage({ title: "Restore", message: "This file couldn't be read, so nothing was restored." });
+        }
+      }
+    },
+    [allSermons],
   );
 
-  const statusLabel = STATUS_LABELS[status];
-  const canRetry = status === "failed-network" || status === "failed-server";
+  const applyRestore = useCallback(async () => {
+    if (!restore) return;
+    setBusy(true);
+    try {
+      const openDirty =
+        restoreOpenDirty.current || hasUnsavedEdits() || !!timer.current || conflictRef.current;
+      await flush();
+      const open = docRef.current;
+      const existing = await allSermons();
+      const plan = planRestore(existing, restore.backup, restoreChoices, newSermonId);
+      const writes = [...plan.toWrite];
+      // Replacing the open sermon while it has unsaved edits: keep those edits as their own sermon.
+      if (open && openDirty && plan.replaced.includes(open.id)) {
+        writes.push({ ...open, id: newSermonId(), title: `${open.title || "Untitled sermon"} (my edits)` });
+      }
+      const lib = readLibrary();
+      const names = new Set(Object.values(lib).map((e) => e.fileName).filter((n): n is string => !!n));
+      // All-or-nothing (ST20/ST11): temp files first, renamed only when every write succeeded.
+      if (folderReadyRef.current && dirRef.current) {
+        const items = writes.map((d) => {
+          const fileName = lib[d.id]?.fileName ?? uniqueFileName(d.title, names);
+          names.add(fileName);
+          return { fileName, doc: d };
+        });
+        const saved = await writeSermonFilesAtomically(dirRef.current, items);
+        for (const it of items) lib[it.doc.id] = { doc: it.doc, savedAt: saved[it.fileName], fileName: it.fileName };
+      } else {
+        for (const d of writes) lib[d.id] = { doc: d, savedAt: new Date().toISOString(), dirty: true };
+      }
+      writeLibrary(lib); // one setItem: all or nothing in browser mode
+      setLibrary(lib);
+      broadcast({ type: "restored" });
+      if (open && plan.replaced.includes(open.id)) {
+        showDoc(lib[open.id].doc, lib[open.id].savedAt);
+      }
+      apply({ type: "write-ok", target: folderReadyRef.current ? "folder" : "browser" });
+      setRestore(null);
+      const parts = [`Restored ${writes.length} ${writes.length === 1 ? "sermon" : "sermons"}.`];
+      if (plan.keptBoth.length) parts.push(`${plan.keptBoth.length} kept as separate "(restored)" copies.`);
+      setMessage({ title: "Restore", message: parts.join(" ") });
+    } catch (err) {
+      setMessage({
+        title: "Restore",
+        message:
+          err instanceof RestoreWriteError
+            ? `Nothing was restored. ${err.message} Your sermons are unchanged; try again.`
+            : "Nothing was restored. The restore couldn't finish; your sermons are unchanged, try again.",
+        details: [err instanceof RestoreWriteError ? String((err.cause as Error)?.message ?? err.cause) : err instanceof Error ? err.message : String(err)],
+      });
+    } finally {
+      setBusy(false);
+    }
+  }, [allSermons, apply, broadcast, flush, restore, restoreChoices, showDoc]);
 
-  if (!doc) {
+  const onSaveToPc = useCallback(async () => {
+    setMenuOpen(false);
+    const d = docRef.current;
+    if (!d) return;
+    try {
+      const r = await saveTextToPc(serializeSermonFile(d), sermonFileName(d.title || "Untitled sermon"));
+      if (r !== "cancelled") fileDirty.current = false;
+    } catch (err) {
+      setMessage({
+        title: "Save to PC",
+        message: "The sermon couldn't be saved to your PC. It is still safe here; try again.",
+        details: [err instanceof Error ? err.message : String(err)],
+      });
+    }
+  }, []);
+
+  const loadOpenedSermon = useCallback(
+    async (d: SermonDocument) => {
+      setConfirmOpen(null);
+      setBusy(true);
+      try {
+        await flush();
+        showDoc(d, readLibrary()[d.id]?.savedAt ?? null);
+        fileDirty.current = false;
+        editSeq.current += 1;
+        apply({ type: "edit" });
+        await persist();
+      } finally {
+        setBusy(false);
+      }
+    },
+    [apply, flush, persist, showDoc],
+  );
+
+  const onOpenFile = useCallback(
+    async (file: File) => {
+      let d: SermonDocument;
+      try {
+        d = parseSermonFile(await file.text()).sermon;
+      } catch (err) {
+        if (err instanceof SermonFileError) {
+          setMessage({ title: "Open", message: err.message, details: err.details });
+        } else {
+          setMessage({ title: "Open", message: "This file couldn't be read, so nothing was opened." });
+        }
+        return;
+      }
+      // Pending autosaves are flushed before loading; only edits not in a saved
+      // .sermon file (or an unresolved conflict) need the warning.
+      if (fileDirty.current || conflictRef.current) {
+        setConfirmOpen(d);
+        return;
+      }
+      await loadOpenedSermon(d);
+    },
+    [loadOpenedSermon],
+  );
+
+  const triggerOpen = useCallback(() => {
+    setMenuOpen(false);
+    openFileInput.current?.click();
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "s") {
+        e.preventDefault();
+        void onSaveToPc();
+      } else if (k === "o") {
+        e.preventDefault();
+        triggerOpen();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onSaveToPc, triggerOpen]);
+
+  const listItems = useMemo(() => {
+    const items = Object.values(library).map((e) => ({
+      id: e.doc.id,
+      title: e.doc.title,
+      updatedAt: e.doc.updatedAt,
+      conflictCopy: isConflictCopyId(e.doc.id),
+    }));
+    if (doc) {
+      const i = items.findIndex((s) => s.id === doc.id);
+      const cur = { id: doc.id, title: doc.title, updatedAt: doc.updatedAt, conflictCopy: isConflictCopyId(doc.id) };
+      if (i >= 0) items[i] = cur;
+      else items.unshift(cur);
+    }
+    return items.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  }, [library, doc]);
+
+  const outline = useMemo(() => extractOutline(doc?.content), [doc?.content]);
+
+  if (mode === "first-run") {
+    return (
+      <FirstRunScreen
+        folderApi={folderApi}
+        onChooseFolder={() => void chooseFolder()}
+        onUseBrowser={useBrowser}
+        error={firstRunError}
+      />
+    );
+  }
+
+  if (!doc || mode === "loading") {
     return (
       <div className={styles.boot} data-edit-mode="">
         Loading sermon…
       </div>
     );
   }
+
+  const action = statusAction(status);
+  const onAction = () => {
+    if (action === "choose-folder") void chooseFolder();
+    else if (action === "allow-access") void allowAccess();
+    else if (action === "retry") void persist();
+  };
 
   return (
     <div className={styles.shell} data-edit-mode="">
@@ -406,19 +986,101 @@ export function EditShell() {
             className={styles.saved}
             aria-live="polite"
             data-testid="save-status"
-            data-status={status}
+            data-status={status.kind}
+            data-saved={isSaved(status) ? "true" : "false"}
+            title={status.kind === "error" ? status.detail : undefined}
           >
-            {statusLabel}
+            {statusLabel(status)}
           </span>
-          {canRetry ? (
-            <button
-              type="button"
-              className={styles.retryBtn}
-              onClick={() => void autosave.retryNow()}
-            >
-              Retry
+          {action ? (
+            <button type="button" className={styles.retryBtn} onClick={onAction}>
+              {ACTION_LABELS[action]}
             </button>
           ) : null}
+          <button
+            type="button"
+            className={styles.fileBtn}
+            aria-label="Save to PC (Ctrl+S)"
+            aria-keyshortcuts="Control+S Meta+S"
+            data-testid="save-to-pc"
+            onClick={() => void onSaveToPc()}
+          >
+            Save to PC
+          </button>
+          <button
+            type="button"
+            className={styles.fileBtn}
+            aria-label="Open a sermon file from PC (Ctrl+O)"
+            aria-keyshortcuts="Control+O Meta+O"
+            data-testid="open-file"
+            onClick={triggerOpen}
+          >
+            Open
+          </button>
+          <input
+            ref={openFileInput}
+            type="file"
+            accept=".sermon,.json,application/json"
+            hidden
+            data-testid="open-input"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) void onOpenFile(f);
+            }}
+          />
+          <div className={styles.menu}>
+            <button
+              type="button"
+              className={styles.menuBtn}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((v) => !v)}
+            >
+              Document
+            </button>
+            {menuOpen ? (
+              <div role="menu" className={styles.menuList} aria-label="Document">
+                <p className={styles.menuNote}>
+                  {folderReady
+                    ? `Saving to folder “${dirRef.current?.name ?? "Sermons"}”`
+                    : mode === "folder"
+                      ? "Folder not available, saving in this browser"
+                      : "Saving in this browser"}
+                </p>
+                <button type="button" role="menuitem" onClick={() => void onBackup()}>
+                  Back up…
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    fileInput.current?.click();
+                  }}
+                >
+                  Restore…
+                </button>
+                {folderApi ? (
+                  <button type="button" role="menuitem" onClick={() => void chooseFolder()}>
+                    {mode === "folder" ? "Change Sermons folder…" : "Choose Sermons folder…"}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".sermon-backup,.sermon,.json,application/json"
+              hidden
+              data-testid="restore-input"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (f) void onRestoreFile(f);
+              }}
+            />
+          </div>
           <button
             ref={exportBtnRef}
             type="button"
@@ -439,14 +1101,27 @@ export function EditShell() {
         </div>
       </header>
 
+      {conflict ? <ConflictPrompt onKeepMine={keepMine} onLoadTheirs={loadTheirs} /> : null}
+      {openElsewhere ? <OpenElsewhereBanner /> : null}
+      {mode === "browser" ? <BrowserOnlyBanner persisted={persisted} onBackup={() => void onBackup()} /> : null}
+      {showReminder ? (
+        <BackupBanner
+          onBackup={() => void onBackup()}
+          onDismiss={() => {
+            lsSet(REMINDER_DISMISSED_KEY, new Date().toISOString());
+            setShowReminder(false);
+          }}
+        />
+      ) : null}
+
       <div className={styles.main}>
         <aside className={styles.sidebar} aria-label="Study chrome">
           <SermonList
             sermons={listItems}
             activeId={doc.id}
-            onSelect={openSermon}
-            onCreate={onCreate}
-            onDelete={onDelete}
+            onSelect={(id) => void openSermon(id)}
+            onCreate={() => void onCreate()}
+            onDelete={(id) => void onDelete(id)}
             disabled={busy}
           />
           <OutlineNav items={outline} />
@@ -501,6 +1176,30 @@ export function EditShell() {
           />
         </div>
       ) : null}
+
+      {restore ? (
+        <RestorePreviewDialog
+          preview={restore.preview}
+          busy={busy}
+          choices={restoreChoices}
+          onChoice={(id, c) => setRestoreChoices((m) => ({ ...m, [id]: c }))}
+          openId={doc.id}
+          openHasUnsavedEdits={restoreOpenDirty.current || hasUnsavedEdits() || !!conflict}
+          onApply={() => void applyRestore()}
+          onCancel={() => setRestore(null)}
+        />
+      ) : null}
+      {confirmOpen ? (
+        <ConfirmDialog
+          title="Replace unsaved changes?"
+          message="Opening will replace unsaved changes. Continue?"
+          confirmLabel="Open"
+          testId="open-confirm"
+          onConfirm={() => void loadOpenedSermon(confirmOpen)}
+          onCancel={() => setConfirmOpen(null)}
+        />
+      ) : null}
+      {message ? <MessageDialog {...message} onClose={() => setMessage(null)} /> : null}
     </div>
   );
 }
