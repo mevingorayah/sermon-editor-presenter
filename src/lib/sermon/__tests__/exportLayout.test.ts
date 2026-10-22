@@ -171,8 +171,8 @@ function pdfPages(buf: Buffer): { w: number; h: number; lines: string[] }[] {
 const SPECS: PageSpec[] = allPageSpecs();
 
 test("matrix covers every format × orientation", () => {
-  assert.equal(SPECS.length, PAGE_FORMATS.filter((f) => f !== "custom").length * PAGE_ORIENTATIONS.length);
-  assert.equal(SPECS.length, 12);
+  assert.equal(SPECS.length, PRESET_PAGE_FORMATS.length * PAGE_ORIENTATIONS.length);
+  assert.equal(SPECS.length, 16);
 });
 
 for (const spec of SPECS) {
@@ -303,8 +303,12 @@ test("legacy target strings still resolve (no page fields)", () => {
   const cases: [string, PageSpec["format"], PageSpec["orientation"]][] = [
     ["screen-16-9", "16:9", "landscape"],
     ["screen-16-10", "16:10", "landscape"],
-    ["tablet-portrait", "tablet", "portrait"],
-    ["tablet-landscape", "tablet", "landscape"],
+    ["tablet-portrait", "4:3", "landscape"], // legacy tablet → 4:3 landscape
+    ["tablet-landscape", "4:3", "landscape"],
+    ["tablet", "4:3", "landscape"],
+    ["screen-4-3", "4:3", "landscape"],
+    ["paper-a5", "a5", "portrait"],
+    ["paper-legal", "legal", "portrait"],
     ["paper-letter", "letter", "portrait"],
     ["paper-a4", "a4", "portrait"],
     ["paper-half-letter", "half-letter", "portrait"],
@@ -358,8 +362,8 @@ test("measurer is injectable: a wider measurer gives more lines", () => {
 });
 
 // ---- UI UX review of #29: page margins + line spacing, fonts ----
-import { pageSnapshotFields, snapshotLineSpacing, customPageError, customSizeToInches, pageGeometry, type CustomPageSize } from "../export/frames";
-import { presentationSettingsSchema as _ps } from "../schema";
+import { PRESET_PAGE_FORMATS, pageSnapshotFields, snapshotLineSpacing, customPageError, customSizeToInches, pageGeometry, type CustomPageSize, type FitPageSpec, type PageInput } from "../export/frames";
+import { presentationSettingsSchema as _ps, calibratedSnapshotSchema } from "../schema";
 const sermonDocumentSchemaLike = { safeParse: (page: object) => _ps.safeParse({ theme: "dark", typeScaleStep: 0, lineHeight: 1.7, bionic: false, calibrationTarget: "screen-16-9", page }) };
 import { APPROVED_FONT_IDS, exportFontId, mapFontFamily } from "../export/fonts";
 import { PPTX_FONT_NOTICE, exportFontName } from "../export/textMeasure";
@@ -495,16 +499,38 @@ test("F1: U+202F before French ?/! never draws a missing glyph in the PDF", asyn
   }
 });
 
-test("F2: Galaxy Tab S10 Lite is 4:3, landscape by default (1600×1200; portrait 1200×1600)", () => {
-  assert.equal(resolvePage({ format: "tablet" } as never).orientation, "landscape");
-  assert.deepEqual(pngFrameSize({ format: "tablet" } as never), { width: 1600, height: 1200 });
-  assert.deepEqual(pngFrameSize(resolvePage({ format: "tablet", orientation: "landscape" } as never)), { width: 1600, height: 1200 });
-  assert.deepEqual(pngFrameSize(resolvePage({ format: "tablet", orientation: "portrait" } as never)), { width: 1200, height: 1600 });
-  assert.deepEqual(pngFrameSize("tablet-landscape"), { width: 1600, height: 1200 });
-  for (const o of ["portrait", "landscape"] as const) {
-    const i = frameSizeInches({ format: "tablet", orientation: o });
-    assert.ok(Math.abs(Math.max(i.width, i.height) / Math.min(i.width, i.height) - 4 / 3) < 0.001);
+test("presets: print A4/A5/Letter/half-Letter/Legal + screens 4:3/16:10/16:9, each both ways; no tablet preset", () => {
+  assert.deepEqual([...PRESET_PAGE_FORMATS], ["a4", "a5", "letter", "half-letter", "legal", "4:3", "16:10", "16:9"]);
+  assert.ok(!(PAGE_FORMATS as readonly string[]).includes("tablet"));
+  const inches: Record<string, [number, number]> = {
+    a4: [8.27, 11.7], a5: [5.83, 8.27], letter: [8.5, 11], "half-letter": [5.5, 8.5], legal: [8.5, 14],
+    "4:3": [7.5, 10], "16:10": [6.25, 10], "16:9": [7.5, 13.333],
+  };
+  for (const f of PRESET_PAGE_FORMATS) {
+    const p = frameSizeInches({ format: f, orientation: "portrait" });
+    const l = frameSizeInches({ format: f, orientation: "landscape" });
+    assert.ok(Math.abs(p.width - inches[f][0]) < 0.02 && Math.abs(p.height - inches[f][1]) < 0.02, `${f} ${JSON.stringify(p)}`);
+    assert.deepEqual([l.width, l.height], [p.height, p.width], f);
   }
+  assert.deepEqual(pngFrameSize({ format: "4:3", orientation: "landscape" }), { width: 1600, height: 1200 });
+});
+
+test("migration: sermons saved with any tablet preset load as 4:3 landscape without error", () => {
+  for (const page of [{ format: "tablet" }, { format: "tablet", orientation: "portrait" }, { format: "tablet", orientation: "landscape", textSizePt: 32 }]) {
+    const r = sermonDocumentSchemaLike.safeParse(page);
+    assert.ok(r.success, JSON.stringify(page));
+    const parsed = (r.data as { page: { format: string; orientation: string } }).page;
+    assert.deepEqual([parsed.format, parsed.orientation], ["4:3", "landscape"]);
+    assert.deepEqual(pngFrameSize(resolvePage(page as never)), { width: 1600, height: 1200 });
+  }
+  for (const t of ["tablet-portrait", "tablet-landscape"]) {
+    const s = { ...snap({ format: "16:9", orientation: "landscape" }), target: t, pageFormat: undefined, orientation: undefined } as unknown as CalibratedSnapshot;
+    assert.deepEqual([layoutSnapshot(s).frame.width, layoutSnapshot(s).frame.height], [1600, 1200]);
+    assert.ok(calibratedSnapshotSchema.safeParse({ ...s, pageFormat: "tablet" }).success);
+  }
+  // A snapshot with pageFormat "tablet" (old client) also works.
+  const old = { ...snap({ format: "16:9", orientation: "portrait" }), pageFormat: "tablet", orientation: "portrait" } as unknown as CalibratedSnapshot;
+  assert.deepEqual([layoutSnapshot(old).frame.width, layoutSnapshot(old).frame.height], [1600, 1200]);
 });
 
 const LONG =
@@ -532,7 +558,7 @@ function maxSnap(page: PageSpec): CalibratedSnapshot {
   } as CalibratedSnapshot;
 }
 
-for (const [fmt, orientation] of [["a4", "portrait"], ["tablet", "portrait"], ["16:9", "landscape"]] as const) {
+for (const [fmt, orientation] of [["a4", "portrait"], ["4:3", "portrait"], ["16:9", "landscape"]] as const) {
   test(`F3 max settings ${fmt} ${orientation}: no overflow, no mid-word split, citation fits, no lone heading`, async () => {
     const spec = resolvePage({ format: fmt, orientation } as never);
     const s = maxSnap(spec);
@@ -656,6 +682,12 @@ test("F4: export request takes margins as numbers or strings, and lineHeight/lin
   const customs = (() => {
     const r = rng(20261022);
     const out: PageSpec[] = [
+      // Odd ratios and extremes: 1:3, 3:1, 21:9, tiny, huge, 1:4 and 4:1 limits.
+      { format: "custom", orientation: "portrait", custom: { width: 3, height: 9, unit: "in" } },
+      { format: "custom", orientation: "landscape", custom: { width: 9, height: 3, unit: "in" } },
+      { format: "custom", orientation: "landscape", custom: { width: 2560, height: 1080, unit: "px", dpi: 96 } },
+      { format: "custom", orientation: "portrait", custom: { width: 2, height: 2, unit: "in" } },
+      { format: "custom", orientation: "landscape", custom: { width: 60, height: 60, unit: "in" } },
       { format: "custom", orientation: "portrait", custom: { width: 2, height: 8, unit: "in" } },
       { format: "custom", orientation: "landscape", custom: { width: 60, height: 15, unit: "in" } },
       { format: "custom", orientation: "portrait", custom: { width: 50.8, height: 50.8, unit: "mm" } },
@@ -712,15 +744,50 @@ test("F4: export request takes margins as numbers or strings, and lineHeight/lin
     assert.deepEqual(frameSizeInches({ format: "custom", orientation: "portrait", custom: { width: 0.5, height: 500, unit: "in" } }), { width: 15, height: 60 });
   });
 
-  test("sweep: random custom sizes × min/max margins, spacing and text size: every line box stays inside the margins", () => {
+  // Fit-to-screen pages (Frontend contract: last measured CSS px, 96 dpi, dpr ignored).
+  const fits: FitPageSpec[] = [
+    { kind: "fit", width: 390, height: 844, orientation: "portrait", dpr: 3 }, // phone
+    { kind: "fit", width: 844, height: 390, orientation: "landscape", dpr: 3 }, // phone rotated
+    { kind: "fit", width: 2560, height: 1080, orientation: "landscape" }, // 21:9 monitor
+    { kind: "fit", width: 800, height: 1280, orientation: "portrait", dpr: 1.5 }, // tablet
+    { kind: "fit", width: 180, height: 220, orientation: "portrait", dpr: 2 }, // watch: clamped to 2 in
+    { kind: "fit", width: 7680, height: 4320, orientation: "landscape" }, // 8K wall: clamped to 60 in
+    { kind: "fit", width: 300, height: 2000 }, // 1:6.7 → clamped to 1:4
+  ];
+  const pagesUnderTest: { name: string; page: PageInput; extra: Partial<CalibratedSnapshot> }[] = [
+    ...customs.map((c) => ({ name: `custom ${JSON.stringify(c.custom)} ${c.orientation}`, page: c as PageInput, extra: { customPage: c.custom } as Partial<CalibratedSnapshot> })),
+    ...fits.map((f) => ({ name: `fit ${f.width}x${f.height}`, page: f as PageInput, extra: { pageFormat: "fit-screen", pageSpec: f } as Partial<CalibratedSnapshot> })),
+  ];
+  function pageSnap(u: (typeof pagesUnderTest)[number], m: number, ls: number, ps: number, pt: number): CalibratedSnapshot {
+    const v = `${m}in`;
+    return { ...snap({ format: "16:9", orientation: "landscape" }), pageFormat: undefined, orientation: undefined, ...u.extra, textSizePt: pt, paragraphSpacingPt: ps, lineSpacing: ls, margins: { top: v, right: v, bottom: v, left: v }, semanticBlocks: blocks, content } as unknown as CalibratedSnapshot;
+  }
+
+  test("fit-screen: CSS px at 96 dpi, follows rotation, clamps instead of rejecting, schema accepts the contract", () => {
+    assert.deepEqual(frameSizeInches({ kind: "fit", width: 960, height: 480, orientation: "landscape" }), { width: 10, height: 5 });
+    assert.deepEqual(frameSizeInches({ kind: "fit", width: 960, height: 480, orientation: "portrait" }), { width: 5, height: 10 });
+    assert.deepEqual(frameSizeInches({ kind: "fit", width: 480, height: 960 }), { width: 5, height: 10 });
+    assert.deepEqual(frameSizeInches({ kind: "fit", width: 100, height: 100, dpr: 3 }), { width: 2, height: 2 });
+    assert.ok(sermonDocumentSchemaLike.safeParse({ format: "fit-screen", pageSpec: { kind: "fit", width: 390, height: 844, orientation: "portrait" } }).success);
+    assert.ok(sermonDocumentSchemaLike.safeParse({ format: "fit-screen", pageSpec: { kind: "fit", width: 50, height: 9000, dpr: 2 } }).success);
+    assert.ok(!sermonDocumentSchemaLike.safeParse({ format: "fit-screen" }).success);
+    assert.ok(!sermonDocumentSchemaLike.safeParse({ format: "fit-screen", pageSpec: { kind: "fit", width: -1, height: 10 } }).success);
+    const f = pageSnapshotFields({ format: "fit-screen", pageSpec: { kind: "fit", width: 1280, height: 800, orientation: "landscape" } });
+    assert.equal(f.pageFormat, "fit-screen");
+    const L = layoutSnapshot({ ...snap({ format: "16:9", orientation: "landscape" }), ...f } as unknown as CalibratedSnapshot);
+    assert.deepEqual([L.frame.width, L.frame.height], [2000, 1250]); // 13.33 × 8.33 in at 150 px/in
+    assert.ok(calibratedSnapshotSchema.safeParse({ ...snap({ format: "16:9", orientation: "landscape" }), ...f }).success);
+  });
+
+  test("sweep: custom + fit-screen sizes (odd ratios, tiny, huge) × min/max margins, spacing and text size: every line box stays inside the margins", () => {
     let checked = 0;
-    for (const spec of customs) {
+    for (const u of pagesUnderTest) {
       for (const m of [0.25, 2]) for (const ls of [1.2, 2]) for (const ps of [0, 48]) for (const pt of [24, 72]) {
-        const v = `${m}in`;
-        const s = { ...snap(spec), textSizePt: pt, paragraphSpacingPt: ps, lineSpacing: ls, margins: { top: v, right: v, bottom: v, left: v }, semanticBlocks: blocks, content } as CalibratedSnapshot;
+        const s = pageSnap(u, m, ls, ps, pt);
         const L = layoutSnapshot(s);
+        const spec = L.target;
         const f = pngFrame(spec, s.margins);
-        const tag = `${JSON.stringify(spec.custom)} ${spec.orientation} m${m} ls${ls} ps${ps} pt${pt}`;
+        const tag = `${u.name} m${m} ls${ls} ps${ps} pt${pt}`;
         assert.ok(f.left >= 0 && f.contentWidth > 0 && f.left + f.contentWidth <= f.width + 1e-6 && f.top < f.bottom && f.bottom <= f.height + 1e-6, `${tag}: frame`);
         for (const p of L.pages) for (const l of p.lines) {
           const b = L.blocks[l.blockIndex];
@@ -737,20 +804,40 @@ test("F4: export request takes margins as numbers or strings, and lineHeight/lin
     assert.ok(checked > 1000, String(checked));
   });
 
-  test("sweep: PDF, PPTX and PNG follow the layout on random custom sizes", async () => {
-    for (const spec of customs.slice(0, 10)) {
+  test("sweep: PDF, PNG, PPTX and DOCX keep every line on the page for odd ratios, tiny/huge and fit-screen sizes", async () => {
+    for (const u of [...pagesUnderTest.slice(0, 10), ...pagesUnderTest.slice(-fits.length)]) {
       for (const [m, ls, ps, pt] of [[0.25, 1.2, 0, 24], [2, 2, 48, 72]] as const) {
-        const v = `${m}in`;
-        const s = { ...snap(spec), textSizePt: pt, paragraphSpacingPt: ps, lineSpacing: ls, margins: { top: v, right: v, bottom: v, left: v }, semanticBlocks: blocks, content } as CalibratedSnapshot;
+        const s = pageSnap(u, m, ls, ps, pt);
+        const L = layoutSnapshot(s);
+        const spec = L.target;
+        const tag = `${u.name} m${m}`;
         const expected = layoutLines(s);
+        const inches = frameSizeInches(spec);
+        // PDF: same page size, same lines.
         const pdf = pdfPages(await buildPdf(s, { compress: false }));
-        assert.deepEqual(pdf.map((p) => p.lines), expected);
+        assert.deepEqual(pdf.map((p) => p.lines), expected, tag);
+        for (const p of pdf) assert.ok(Math.abs(p.w - inches.width * 72) < 0.01, tag);
+        // PPTX: same lines, slide within PowerPoint's 56 in.
         const pp = await pptxLines(await buildPptx(s));
-        assert.deepEqual(pp.slides, expected);
+        assert.deepEqual(pp.slides, expected, tag);
+        // PNG: same page count and pixel frame.
         const png = await buildPngPages(s);
-        assert.equal(png.length, expected.length);
+        assert.equal(png.length, expected.length, tag);
         const meta = await sharp(png[0]).metadata();
-        assert.deepEqual([meta.width, meta.height], [pngFrameSize(spec).width, pngFrameSize(spec).height]);
+        assert.deepEqual([meta.width, meta.height], [L.frame.width, L.frame.height], tag);
+        // DOCX: page = frame, margins = layout margins, no font larger than the layout's (so nothing wider than the column).
+        const docx = await JSZip.loadAsync(await buildDocx(s));
+        const xml = await docx.file("word/document.xml")!.async("string");
+        const pg = xml.match(/<w:pgSz [^>]*>/)![0];
+        assert.deepEqual([Number(pg.match(/w:w="(\d+)"/)![1]), Number(pg.match(/w:h="(\d+)"/)![1])], [Math.round(inches.width * 1440), Math.round(inches.height * 1440)], tag);
+        const mar = xml.match(/<w:pgMar [^>]*>/)![0];
+        const ppi = L.frame.width / inches.width;
+        const tw = (px: number) => Math.round((px / ppi) * 1440);
+        assert.ok(Math.abs(Number(mar.match(/w:top="(\d+)"/)![1]) - tw(L.frame.top)) <= 2, `${tag}: top ${mar}`);
+        assert.ok(Math.abs(Number(mar.match(/w:right="(\d+)"/)![1]) - tw(L.frame.width - L.frame.left - L.frame.contentWidth)) <= 2, `${tag}: right ${mar}`);
+        const maxPt = Math.max(...L.pages.flatMap((p) => p.lines.map((l) => l.size / pxPerPt(spec))));
+        for (const sz of xml.matchAll(/<w:sz w:val="(\d+)"/g)) assert.ok(Number(sz[1]) / 2 <= maxPt + 0.5, `${tag}: docx ${Number(sz[1]) / 2}pt > ${maxPt}`);
+        assert.ok(Number(pg.match(/w:w="(\d+)"/)![1]) - tw(L.frame.left) - tw(L.frame.width - L.frame.left - L.frame.contentWidth) >= 1.5 * 1440 - 4, `${tag}: docx column`);
       }
     }
   });

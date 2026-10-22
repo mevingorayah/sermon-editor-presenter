@@ -10,8 +10,11 @@ export type TypeScaleStep = -2 | -1 | 0 | 1 | 2;
 export type CalibrationTarget =
   | "screen-16-9"
   | "screen-16-10"
-  | "tablet-portrait"
-  | "tablet-landscape"
+  | "tablet-portrait" // legacy → 4:3 landscape
+  | "tablet-landscape" // legacy → 4:3 landscape
+  | "screen-4-3"
+  | "paper-a5"
+  | "paper-legal"
   | "paper-letter"
   | "paper-a4"
   | "paper-half-letter";
@@ -30,6 +33,18 @@ export interface PresentationSettings {
   page?: SermonPageSettings;
 }
 
+export type PageFormatName =
+  | "a4" | "a5" | "letter" | "half-letter" | "legal" | "4:3" | "16:10" | "16:9" | "custom" | "fit-screen";
+
+/** Fit-to-screen page (Frontend contract): last measured CSS px; 96 dpi; dpr ignored. */
+export interface FitPageSpecSettings {
+  kind: "fit";
+  width: number;
+  height: number;
+  orientation?: "portrait" | "landscape";
+  dpr?: number;
+}
+
 export interface CustomPageSettings {
   width: number;
   height: number;
@@ -39,8 +54,12 @@ export interface CustomPageSettings {
 
 /** The sermon's own page: Preach and every export use it. */
 export interface SermonPageSettings {
-  /** "tablet" = Galaxy Tab S10 Lite 4:3 (1600×1200 landscape default). "custom" uses `custom`. */
-  format?: "a4" | "letter" | "half-letter" | "tablet" | "16:9" | "16:10" | "custom";
+  /**
+   * Print: a4, a5, letter, half-letter, legal. Screen shapes: 4:3, 16:10, 16:9.
+   * "custom" uses `custom`; "fit-screen" uses `pageSpec`. Old saves with
+   * "tablet" (or tablet-* targets) load as 4:3 landscape.
+   */
+  format?: PageFormatName;
   orientation?: "portrait" | "landscape";
   /** 24–72 pt, step 2, default 28. */
   textSizePt?: number;
@@ -55,6 +74,8 @@ export interface SermonPageSettings {
    * swaps the sides (landscape = long side across).
    */
   custom?: CustomPageSettings;
+  /** Fit-to-screen: when present it is the page (wins over format/custom). */
+  pageSpec?: FitPageSpecSettings;
   /** Each side 0.25–2 in (e.g. "0.8in" or "20mm"); default 0.8in. */
   margins?: CalibratedMargins;
 }
@@ -110,6 +131,8 @@ export interface CalibratedSnapshot {
   orientation?: SermonPageSettings["orientation"];
   /** With pageFormat "custom": the user's size (same shape as page.custom). */
   customPage?: CustomPageSettings;
+  /** Fit-to-screen page (wins over pageFormat/customPage). */
+  pageSpec?: FitPageSpecSettings;
   textSizePt?: number;
   paragraphSpacingPt?: number;
   flattenGradient: true;
