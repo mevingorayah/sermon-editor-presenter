@@ -21,30 +21,33 @@ const content = {
 };
 
 async function seed(page: Page, opts: { theme?: "light" | "dark"; view?: "page" | "flow"; target?: string; format?: string } = {}) {
-  const res = await page.request.post("/api/sermons", {
-    data: {
-      title: "The Sower",
-      content,
-      presentation: {
+  const sermon = {
+    id: "11111111-2222-4333-8444-555555555555",
+    updatedAt: new Date().toISOString(),
+    notes: "",
+    title: "The Sower",
+    content,
+    presentationSettings: {
         theme: opts.theme ?? "light",
         bionic: false,
         typeScaleStep: 0,
         lineHeight: 1.55,
         calibrationTarget: opts.target ?? "screen-16-9",
         // New sermons default to A4 portrait (#29); seed a page only when asked.
-        ...(opts.format ? { page: { format: opts.format, orientation: "landscape" } } : {}),
+        page: opts.format ? { format: opts.format, orientation: "landscape" } : { format: "a4", orientation: "portrait" },
       },
-    },
-  });
-  expect(res.ok(), await res.text()).toBeTruthy();
-  const { sermon } = await res.json();
+  };
   await page.addInitScript(
-    ([k, id, vk, v]) => {
+    ([k, id, vk, v, doc]) => {
+      if (sessionStorage.getItem("__e2e_seeded")) return; // keep saves across reload
+      sessionStorage.setItem("__e2e_seeded", "1");
       localStorage.clear();
+      localStorage.setItem("sermon-editor-presenter:storage-mode:v1", "browser");
+      localStorage.setItem("sermon-editor-presenter:library:v1", doc);
       localStorage.setItem(k, id);
       localStorage.setItem(vk, v);
     },
-    [ACTIVE_ID_KEY, sermon.id, VIEW_KEY, opts.view ?? "flow"] as const,
+    [ACTIVE_ID_KEY, sermon.id, VIEW_KEY, opts.view ?? "flow", JSON.stringify({ [sermon.id]: { doc: sermon, savedAt: null, dirty: true } })] as const,
   );
 }
 
@@ -231,8 +234,8 @@ for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 800 }, { w
     await panel.locator('[data-format="16-10"]').click();
     await panel.getByRole("button", { name: "Larger text" }).click();
     await expect(panel.locator("[data-text-pt]")).toHaveText("30 pt");
-    // Saved to the sermon (debounced PATCH) before reloading.
-    await page.waitForResponse((r) => r.url().includes("/api/sermons/") && r.request().method() === "PATCH" && r.ok());
+    // Saved to the sermon's browser copy (local-only storage, #32) before reloading.
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("sermon-editor-presenter:library:v1") ?? "")).toContain('"16:10"');
     await page.reload({ waitUntil: "networkidle" });
     await page.getByRole("button", { name: "Reading settings" }).click();
     await expect(page.locator('[data-format="16-10"]')).toHaveAttribute("aria-pressed", "true");

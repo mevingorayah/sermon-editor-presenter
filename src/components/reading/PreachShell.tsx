@@ -1,13 +1,12 @@
 "use client";
 
-import { isServerSermonId, updateSermon } from "@/lib/sermonApi";
+import { readLibrary, setActiveDoc } from "@/lib/localStore/browserCache";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
   resolveActiveDocument,
   updatePresentationSettings,
-  setActiveSermonId,
 } from "@/lib/documentStore";
 import { typeScaleMultiplier } from "@/lib/calibration";
 import type {
@@ -120,7 +119,10 @@ export function PreachShell() {
     (async () => {
       // ?id=<uuid> (merges with the "which sermon Preach opens" PR).
       const urlId = new URLSearchParams(window.location.search).get("id");
-      if (urlId && /^[0-9a-f-]{36}$/i.test(urlId)) setActiveSermonId(urlId);
+      if (urlId) {
+        const hit = readLibrary()[urlId];
+        if (hit) setActiveDoc(hit.doc);
+      }
       const resolved = await resolveActiveDocument();
       if (cancelled) return;
       setDoc(resolved.doc);
@@ -157,27 +159,8 @@ export function PreachShell() {
   const timerRunningRef = useRef(false);
   timerRunningRef.current = timer.running;
 
-  // Page settings are the sermon's: save them to the server too (debounced), so
-  // Edit's Document setup, exports and a reload all see the same page.
-  const savedPs = useRef<string | null>(null);
-  const psJson = doc ? JSON.stringify(doc.presentationSettings) : null;
-  const docId = doc?.id;
-  useEffect(() => {
-    if (!psJson || !docId) return;
-    if (savedPs.current === null) {
-      savedPs.current = psJson;
-      return;
-    }
-    if (savedPs.current === psJson || !isServerSermonId(docId)) return;
-    const t = window.setTimeout(() => {
-      savedPs.current = psJson;
-      void updateSermon(docId, { presentation: JSON.parse(psJson) }).catch(() => {
-        savedPs.current = null; // offline: local copy kept; retry on next change
-      });
-    }, 400);
-    return () => window.clearTimeout(t);
-  }, [psJson, docId]);
-
+  // Page settings are the sermon's: updatePresentationSettings writes the
+  // browser copy (marked dirty), so Edit saves it to the Sermons folder (#32).
   const patchSettings = useCallback(
     (patch: Partial<SermonDocument["presentationSettings"]>) => {
       setDoc((prev) => {
