@@ -123,6 +123,26 @@ export interface FitPageSpec {
   textSizePt?: number;
 }
 
+/** New sermons start on A4 portrait. */
+export const DEFAULT_PAGE = { format: "a4", orientation: "portrait" } as const;
+
+/**
+ * Picker label for a fit page: "Fit this screen (1320×2112, 10:16)".
+ * Sides are the measured CSS px (rounded), ordered to match `orientation`
+ * when given; the ratio is reduced by their greatest common divisor, with
+ * 8:5 / 5:8 written the way screens are sold (16:10 / 10:16).
+ */
+export function fitScreenLabel(spec: { width: number; height: number; orientation?: PageOrientation }): string {
+  let w = Math.max(1, Math.round(Number(spec.width) || 0));
+  let h = Math.max(1, Math.round(Number(spec.height) || 0));
+  if ((spec.orientation === "portrait" && w > h) || (spec.orientation === "landscape" && h > w)) [w, h] = [h, w];
+  const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
+  const g = gcd(w, h);
+  let [rw, rh] = [w / g, h / g];
+  if ((rw === 8 && rh === 5) || (rw === 5 && rh === 8)) [rw, rh] = [rw * 2, rh * 2];
+  return `Fit this screen (${w}\u00d7${h}, ${rw}:${rh})`;
+}
+
 /** Fit spec → custom px at 96 dpi. */
 export function fitToCustom(f: { width: number; height: number }): CustomPageSize {
   const n = (v: unknown) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : 192);

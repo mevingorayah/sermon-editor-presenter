@@ -152,3 +152,19 @@ test("pngPageCount matches layout", () => {
   assert.equal(pngPageCount(b, T, LH), layoutPngPages(b, T, LH).length);
   assert.equal(pngPageCount([{ type: "Title", text: "X" }], T, LH), 1);
 });
+
+test("new sermons default to A4 portrait", async () => {
+  const { DEFAULT_PRESENTATION_SETTINGS } = await import("../../../types/document");
+  const { DEFAULT_PAGE } = await import("../export/pngLayout");
+  assert.deepEqual(DEFAULT_PRESENTATION_SETTINGS.page, { format: "a4", orientation: "portrait" });
+  assert.deepEqual({ ...DEFAULT_PAGE }, { format: "a4", orientation: "portrait" });
+});
+
+test("fitScreenLabel reduces the aspect", async () => {
+  const { fitScreenLabel } = await import("../export/pngLayout");
+  assert.equal(fitScreenLabel({ width: 1320, height: 2112, orientation: "portrait" }), "Fit this screen (1320\u00d72112, 10:16)");
+  assert.equal(fitScreenLabel({ width: 1320, height: 2112 }), "Fit this screen (1320\u00d72112, 10:16)");
+  assert.equal(fitScreenLabel({ width: 1320, height: 2112, orientation: "landscape" }), "Fit this screen (2112\u00d71320, 16:10)");
+  assert.equal(fitScreenLabel({ width: 1919.6, height: 1080.2 }), "Fit this screen (1920\u00d71080, 16:9)");
+  assert.equal(fitScreenLabel({ width: 1366, height: 768 }), "Fit this screen (1366\u00d7768, 683:384)");
+});

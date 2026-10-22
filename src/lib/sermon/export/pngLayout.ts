@@ -20,7 +20,7 @@ import { afmMeasurer, type MeasureStyle, type TextMeasurer } from "./textMeasure
 export {
   PAGE_FORMATS, PAGE_ORIENTATIONS, MIN_TEXT_PT, allPageSpecs, frameSizeInches, isPaperPage, pageSpecFromTarget,
   pngFrameSize, pngFrameWidthInches, pxPerInch, pxPerPt, resolvePage,
-  PRESET_PAGE_FORMATS, PAPER_PAGE_FORMATS, fitToCustom, CUSTOM_UNITS, CUSTOM_PAGE_LIMITS, customPageError, customSizeToInches, pageGeometry,
+  PRESET_PAGE_FORMATS, PAPER_PAGE_FORMATS, fitToCustom, CUSTOM_UNITS, CUSTOM_PAGE_LIMITS, customPageError, customSizeToInches, pageGeometry, fitScreenLabel, DEFAULT_PAGE,
   type CustomPageSize, type FitPageSpec, type CustomPageUnit, type ResolvedPage,
   type PageFormat, type PageInput, type PageOrientation, type PageSpec,
 } from "./frames";

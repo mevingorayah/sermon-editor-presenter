@@ -147,6 +147,8 @@ export const DEFAULT_PRESENTATION_SETTINGS: PresentationSettings = {
   lineHeight: 1.55,
   bionic: false,
   calibrationTarget: "screen-16-9",
+  /** New sermons: A4 portrait (frames.DEFAULT_PAGE). */
+  page: { format: "a4", orientation: "portrait" },
 };
 
 export const STORAGE_KEY = "sermon-editor-presenter:document:v1";
