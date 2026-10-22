@@ -253,9 +253,9 @@ describe("sanitizeFilenameStem", () => {
     assert.equal(sanitizeFilenameStem("Bondie ek nou lavi"), "Bondie-ek-nou-lavi");
   });
 
-  it("removes apostrophes and quotes without adding a dash", () => {
+  it("turns apostrophes and quotes into one dash", () => {
     assert.equal(sanitizeFilenameStem("l'Évangile"), "l-Evangile");
-    assert.equal(sanitizeFilenameStem("L’amour de Dieu"), "Lamour-de-Dieu");
+    assert.equal(sanitizeFilenameStem("L’amour de Dieu"), "L-amour-de-Dieu");
     assert.equal(sanitizeFilenameStem("«Le Berger»"), "Le-Berger");
   });
 
