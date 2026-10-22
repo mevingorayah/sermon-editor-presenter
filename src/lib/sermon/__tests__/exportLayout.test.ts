@@ -468,3 +468,98 @@ for (const id of APPROVED_FONT_IDS) {
     assert.equal((await buildPngPages(s)).length, expected.length);
   });
 }
+
+// ---- QA #29 fixes (F1–F4); made-up text only ----
+import { exportRequestSchema } from "../schema";
+
+test("F1: U+202F before French ?/! never draws a missing glyph in the PDF", async () => {
+  const t = "Est-ce vrai\u202F? Oui\u202F! Voyez\u00A0: «\u202Fbien\u202F».";
+  for (const id of APPROVED_FONT_IDS) {
+    const s = {
+      ...snap(A4),
+      content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: t, marks: [{ type: "textStyle", attrs: { fontFamily: id } }] }] }] },
+    } as CalibratedSnapshot;
+    const buf = await buildPdf(s, { compress: false });
+    const raw = buf.toString("latin1");
+    // No .notdef (glyph id 0000) in any shown hex string.
+    for (const tj of raw.matchAll(/\[([^\]]*)\]\s*TJ/g)) {
+      for (const m of tj[1].matchAll(/<([0-9a-fA-F]+)>/g)) {
+        for (let i = 0; i + 4 <= m[1].length; i += 4) assert.notEqual(m[1].slice(i, i + 4), "0000", `${id}: .notdef`);
+      }
+    }
+    const lines = pdfPages(buf).flatMap((p) => p.lines).join(" ");
+    assert.match(lines, /vrai[\u202F\u2009\u00A0 ]\?/, id);
+  }
+});
+
+test("F2: Galaxy Tab frame is 10:16 (1200×1920 upright, 1920×1200 sideways)", () => {
+  assert.deepEqual(pngFrameSize(resolvePage({ format: "tablet", orientation: "portrait" } as never)), { width: 1200, height: 1920 });
+  assert.deepEqual(pngFrameSize(resolvePage({ format: "tablet", orientation: "landscape" } as never)), { width: 1920, height: 1200 });
+  const i = frameSizeInches(resolvePage({ format: "tablet", orientation: "portrait" } as never));
+  assert.ok(Math.abs(i.height / i.width - 1.6) < 0.001);
+});
+
+const LONG =
+  "Considérablement inébranlables, les bienheureux contemporains reconnaissent la suffisance " +
+  "extraordinaire de la grâce. ";
+function maxSnap(page: PageSpec): CalibratedSnapshot {
+  const blocks: CalibratedSnapshot["semanticBlocks"] = [];
+  for (let i = 0; i < 6; i++) {
+    blocks.push({ type: "Title", text: "La suffisance incompréhensible de la grâce abondante" });
+    blocks.push({ type: "Body", text: LONG.repeat(3 + i) });
+    blocks.push({ type: "H1", text: "Deuxième considération fondamentale" });
+    blocks.push({ type: "H2", text: "Une remarque" });
+    blocks.push({ type: "Body", text: LONG.repeat(2) });
+    blocks.push({ type: "Scripture", text: LONG, citation: "Éphésiens 1.3–7" });
+  }
+  const v = "2in";
+  return {
+    ...snap(page),
+    textSizePt: 72,
+    paragraphSpacingPt: 48,
+    lineSpacing: 2,
+    margins: { top: v, right: v, bottom: v, left: v },
+    semanticBlocks: blocks,
+    content: { type: "doc", content: blocks.map((b) => ({ type: "paragraph", content: [{ type: "text", text: b.text }] })) },
+  } as CalibratedSnapshot;
+}
+
+for (const [fmt, orientation] of [["a4", "portrait"], ["tablet", "portrait"], ["16:9", "landscape"]] as const) {
+  test(`F3 max settings ${fmt} ${orientation}: no overflow, no mid-word split, citation fits, no lone heading`, async () => {
+    const spec = resolvePage({ format: fmt, orientation } as never);
+    const s = maxSnap(spec);
+    const L = layoutSnapshot(s);
+    const f = pngFrame(spec, s.margins);
+    const heads = new Set(["Title", "H1", "H2", "H3"]);
+    for (const [pi, p] of L.pages.entries()) {
+      for (const l of p.lines) {
+        assert.ok(l.y >= f.top - 1e-6 && l.y + l.lineHeight <= f.bottom + 1e-6, `page ${pi} overflow`);
+        assert.ok(l.size >= 24 * pxPerPt(spec) - 1e-6);
+        const b = L.blocks[l.blockIndex];
+        if (l.kind === "citation") {
+          const w = afmMeasurer(citationCaps(b.citation ?? ""), l.size, { font: "serif" });
+          assert.ok(w <= f.contentWidth + 1e-6, `citation ${w} > ${f.contentWidth}`);
+          continue;
+        }
+        if (l.end < b.text.length) assert.match(b.text.slice(l.end - 1, l.end + 1), /\s/, `split: ${b.text.slice(l.start, l.end + 3)}`);
+      }
+      const last = p.lines[p.lines.length - 1];
+      if (pi < L.pages.length - 1 && heads.has(L.blocks[last.blockIndex].type)) {
+        assert.ok(p.lines.every((l) => heads.has(L.blocks[l.blockIndex].type)), `heading alone at bottom of page ${pi}`);
+      }
+    }
+    const expected = layoutLines(s);
+    assert.deepEqual(pdfPages(await buildPdf(s, { compress: false })).map((p) => p.lines), expected);
+    assert.deepEqual((await pptxLines(await buildPptx(s))).slides, expected);
+  });
+}
+
+test("F4: export request takes margins as numbers or strings, and lineHeight/lineSpacing as aliases", () => {
+  const base = { ...snap(A4) } as Record<string, unknown>;
+  delete base.lineHeight;
+  const a = exportRequestSchema.parse({ ...base, lineSpacing: 1.8, margins: { top: 0.8, right: "1in", bottom: 2, left: 0.25 } }) as Record<string, unknown>;
+  assert.deepEqual(a.margins, { top: "0.8in", right: "1in", bottom: "2in", left: "0.25in" });
+  assert.equal(a.lineHeight, 1.8);
+  const b = exportRequestSchema.parse({ ...base, lineHeight: 1.6 }) as Record<string, unknown>;
+  assert.equal(snapshotLineSpacing(b as never), 1.6);
+});

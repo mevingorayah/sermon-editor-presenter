@@ -257,10 +257,33 @@ export function layoutPngPages(
         ? base.gap * k
         : clamp(opts.paragraphSpacingPt, PAGE_LIMITS.paragraphSpacingPt) * pxPerPt(target),
     };
+    const segs = blockSegments(b);
+    const measure = opts.measure ?? afmMeasurer;
+    // Fit: one line never taller than the content box, and the longest word
+    // fits the column, so large headings shrink instead of overflowing or
+    // splitting mid-word (never below 24 pt; only then can a word split).
+    r.size = Math.max(minPx, Math.min(r.size, avail / lineHeight));
+    let widest = 0;
+    for (const m of b.text.matchAll(/\S+/g)) {
+      const a = m.index ?? 0;
+      widest = Math.max(widest, measureRange(b.text, a, a + m[0].length, r.size, segs, measure));
+    }
+    if (widest > f.contentWidth) r.size = Math.max(minPx, r.size * (f.contentWidth / widest) * 0.999);
     const lh = r.size * lineHeight;
-    const ranges = wrapLineRanges(b.text, r.size, f.contentWidth, blockSegments(b), opts.measure);
-    const cite = b.citation ? citeLh : 0;
-    return { b, r, lh, ranges, cite, height: ranges.length * lh + cite };
+    const ranges = wrapLineRanges(b.text, r.size, f.contentWidth, segs, opts.measure);
+    // Citation: shrink to fit the column (min 24 pt).
+    let cSize = citeSize;
+    let cLh = citeLh;
+    if (b.citation) {
+      const cw = measure(b.citation.toLocaleUpperCase("fr"), cSize, { font: "serif" });
+      if (cw > f.contentWidth) {
+        const k2 = Math.max(minPx / cSize, (f.contentWidth / cw) * 0.999);
+        cSize *= k2;
+        cLh *= k2;
+      }
+    }
+    const cite = b.citation ? cLh : 0;
+    return { b, r, lh, ranges, cite, cSize, cLh, height: ranges.length * lh + cite };
   });
 
   const startsScripturePage = prepared.map((p, i) => {
@@ -277,6 +300,32 @@ export function layoutPngPages(
     if (n.b.type === "Scripture" && n.height <= avail) return n.height;
     if (HEADINGS.has(n.b.type)) return n.ranges.length * n.lh + n.r.gap + leadOf(i + 1);
     return n.lh;
+  };
+
+  /**
+   * Keep-with-next fallback: the page just broke before block `bi`'s first
+   * line; move heading lines left at the bottom of the previous page onto the
+   * new one, when they fit there with that line.
+   */
+  const carryHeadings = (bi: number) => {
+    const prev = pages[pages.length - 2];
+    let n = 0;
+    while (n < prev.lines.length && HEADINGS.has(prepared[prev.lines[prev.lines.length - 1 - n].blockIndex].b.type)) n++;
+    if (n === 0 || n === prev.lines.length) return;
+    const moved = prev.lines.splice(prev.lines.length - n, n);
+    const shift = moved[0].y - f.top;
+    let end = 0;
+    for (const l of moved) {
+      l.y -= shift;
+      end = l.y + l.lineHeight;
+    }
+    const gap = prepared[moved[n - 1].blockIndex].r.gap;
+    if (end + gap + prepared[bi].lh > f.bottom) {
+      prev.lines.push(...moved.map((l) => ({ ...l, y: l.y + shift })));
+      return;
+    }
+    page().lines.unshift(...moved);
+    y = end + gap;
   };
 
   prepared.forEach((p, bi) => {
@@ -299,12 +348,14 @@ export function layoutPngPages(
     p.ranges.forEach(([s, e], li) => {
       const last = li === p.ranges.length - 1;
       // Rule 2 (oversized Scripture): last line keeps its citation.
+      const before = pages.length;
       ensure(last && p.cite ? p.lh + p.cite : p.lh);
+      if (li === 0 && pages.length > before && !HEADINGS.has(p.b.type)) carryHeadings(bi);
       push("text", li, s, e, p.r.size, p.lh);
     });
     if (p.b.citation) {
       ensure(p.cite);
-      push("citation", p.ranges.length, 0, p.b.citation.length, citeSize, citeLh);
+      push("citation", p.ranges.length, 0, p.b.citation.length, p.cSize, p.cLh);
     }
     y += p.r.gap;
   });

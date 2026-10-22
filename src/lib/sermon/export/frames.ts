@@ -43,7 +43,7 @@ export type PageInput = PageSpec | string;
 const FORMATS: Record<PageFormat, { shortPx: number; longPx: number; shortIn: number; natural: PageOrientation }> = {
   "16:9": { shortPx: 1080, longPx: 1920, shortIn: 7.5, natural: "landscape" }, // 13.333in slide
   "16:10": { shortPx: 1000, longPx: 1600, shortIn: 6.25, natural: "landscape" }, // 10in slide
-  tablet: { shortPx: 900, longPx: 1200, shortIn: 9.25, natural: "portrait" }, // Galaxy Tab S10 Lite
+  tablet: { shortPx: 1200, longPx: 1920, shortIn: 9.25, natural: "portrait" }, // Galaxy Tab S10 Lite
   letter: { shortPx: 1275, longPx: 1650, shortIn: 8.5, natural: "portrait" },
   a4: { shortPx: 1240, longPx: 1754, shortIn: 8.27, natural: "portrait" },
   "half-letter": { shortPx: 825, longPx: 1275, shortIn: 5.5, natural: "portrait" },
