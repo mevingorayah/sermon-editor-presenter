@@ -16,6 +16,7 @@ import { presentationSettingsSchema } from "@/lib/sermon/schema";
 import { getSchema } from "@tiptap/core";
 import { Node as PMNode, type Schema } from "@tiptap/pm/model";
 import { createSchemaExtensions } from "@/extensions/schema";
+import { sanitizeFilenameStem } from "@/lib/sermon/export/filename";
 
 export const SERMON_FILE_KIND = "sermon-editor-presenter/sermon";
 export const SERMON_BACKUP_KIND = "sermon-editor-presenter/backup";
@@ -345,30 +346,16 @@ export function isNewerOnDisk(loadedSavedAt: string, diskSavedAt: string): boole
   return Date.parse(diskSavedAt) > Date.parse(loadedSavedAt);
 }
 
-const SERMON_NAME_MAX = 80;
-const SERMON_NAME_FALLBACK = "sermon";
-/** Names Windows refuses whatever the extension. */
-const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i;
+/** French elided articles/pronouns before an apostrophe: l', d', qu', … */
+const ELISION_RE =
+  /(^|[^\p{L}])(?:l|d|j|m|n|s|t|c|qu|jusqu|lorsqu|puisqu)['’ʼ](?=\p{L})/giu;
 
 /**
- * File name for a sermon. Accents and other letters are kept as written
- * ("Prédication été Noël" stays accented). Only characters that Windows,
- * macOS or Linux refuse in a file name are removed: < > : " / \ | ? * and
- * control characters. Leading/trailing dots and spaces are trimmed (Windows).
+ * File name for a sermon, using the export filename rules (accents become
+ * plain letters, hyphen-separated). French elisions are dropped first, so
+ * "L'été" gives "ete", not "Lete".
  */
 export function sermonFileName(title: string): string {
-  let s = (title ?? "")
-    .normalize("NFC")
-    .replace(/[<>:"/\\|?*\u0000-\u001f\u007f]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/^[. ]+|[. ]+$/g, "");
-  const chars = Array.from(s);
-  if (chars.length > SERMON_NAME_MAX) {
-    const cut = chars.slice(0, SERMON_NAME_MAX).join("");
-    const sp = cut.lastIndexOf(" ");
-    s = (sp > 0 ? cut.slice(0, sp) : cut).replace(/[. ]+$/g, "");
-  }
-  if (!s || WINDOWS_RESERVED.test(s)) s = s ? `${s}-${SERMON_NAME_FALLBACK}` : SERMON_NAME_FALLBACK;
-  return `${s}${SERMON_FILE_EXTENSION}`;
+  const stem = sanitizeFilenameStem((title ?? "").replace(ELISION_RE, "$1"));
+  return `${stem}${SERMON_FILE_EXTENSION}`;
 }

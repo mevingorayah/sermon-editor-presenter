@@ -180,25 +180,18 @@ describe("helpers", () => {
     assert.equal(isNewerOnDisk("2026-10-16T07:00:01Z", "2026-10-16T07:00:00Z"), false);
   });
 
-  it("sermonFileName keeps the title as written", () => {
-    assert.equal(sermonFileName("Joy Without Ceasing"), "Joy Without Ceasing.sermon");
+  it("sermonFileName uses the export filename rules", () => {
+    assert.equal(sermonFileName("Joy Without Ceasing"), "Joy-Without-Ceasing.sermon");
+    assert.equal(sermonFileName("Ésaïe 40"), "Esaie-40.sermon");
+    assert.equal(sermonFileName(""), "sermon-export.sermon");
   });
 
-  it("sermonFileName keeps accents and removes only illegal characters", () => {
-    assert.equal(
-      sermonFileName("Prédication : L'été à Noël / Église « joie »?"),
-      "Prédication L'été à Noël Église « joie ».sermon",
-    );
-    assert.equal(sermonFileName('a<b>c"d|e*f\\g\u0001h'), "a b c d e f g h.sermon");
-    assert.equal(sermonFileName("  ..Lafwa.. "), "Lafwa.sermon");
-    assert.equal(sermonFileName(""), "sermon.sermon");
-    assert.equal(sermonFileName("///"), "sermon.sermon");
-    assert.equal(sermonFileName("CON"), "CON-sermon.sermon");
-    // NFD input is stored as NFC so the same title gives the same name.
-    assert.equal(sermonFileName("e\u0301te\u0301"), "\u00e9t\u00e9.sermon");
-    const long = sermonFileName("Mo ".repeat(60));
-    assert.ok(Array.from(long).length <= 80 + ".sermon".length);
-    assert.ok(!long.includes(" .sermon"));
+  it("sermonFileName drops French elisions instead of gluing letters", () => {
+    assert.equal(sermonFileName("Prédication : L'été à Noël"), "Predication-ete-a-Noel.sermon");
+    assert.equal(sermonFileName("Lafwa d’amour qu'il donne"), "Lafwa-amour-il-donne.sermon");
+    assert.equal(sermonFileName("Prédication : L'été à Noël / Église « joie »?"), "Predication-ete-a-Noel-Eglise-joie.sermon");
+    // A word that merely ends in l/d before an apostrophe is not an elision.
+    assert.equal(sermonFileName("Rock'n roll"), "Rockn-roll.sermon");
   });
 });
 
