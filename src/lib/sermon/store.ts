@@ -15,6 +15,7 @@ import type {
   UpdateSermonInput,
 } from "./types";
 import { sanitizeDocumentJson, sanitizeText } from "./sanitize";
+import { normalizeBlockLayout, normalizeGlobalStyles } from "./blockStyle";
 
 const DATA_DIR =
   process.env.SERMON_DATA_DIR ||
@@ -92,7 +93,9 @@ export async function createSermon(
     id = input.id.toLowerCase();
   }
   const title = sanitizeText(input.title?.trim() || "Untitled sermon");
-  const content = sanitizeDocumentJson(input.content ?? EMPTY_DOC);
+  const content = normalizeBlockLayout(
+    sanitizeDocumentJson(input.content ?? EMPTY_DOC),
+  );
   const sermon: Sermon = {
     id,
     meta: { title, createdAt: now, updatedAt: now },
@@ -100,6 +103,9 @@ export async function createSermon(
     ...(input.presentation ? { presentation: input.presentation } : {}),
     ...(input.notes !== undefined
       ? { notes: sanitizeText(input.notes) }
+      : {}),
+    ...(input.globalStyles
+      ? { globalStyles: normalizeGlobalStyles(input.globalStyles) }
       : {}),
   };
   try {
@@ -138,9 +144,15 @@ export async function updateSermon(
     },
     content:
       input.content !== undefined
-        ? sanitizeDocumentJson(input.content)
+        ? normalizeBlockLayout(sanitizeDocumentJson(input.content))
         : existing.content,
   };
+
+  if (input.globalStyles === null) {
+    delete next.globalStyles;
+  } else if (input.globalStyles !== undefined) {
+    next.globalStyles = normalizeGlobalStyles(input.globalStyles);
+  }
 
   if (input.presentation === null) {
     delete next.presentation;
@@ -172,7 +184,7 @@ export async function updateContent(
     ...existing,
     content:
       rawDoc !== undefined
-        ? sanitizeDocumentJson(rawDoc)
+        ? normalizeBlockLayout(sanitizeDocumentJson(rawDoc))
         : existing.content,
     meta: {
       ...existing.meta,

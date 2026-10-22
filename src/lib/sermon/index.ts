@@ -1,5 +1,6 @@
 export * from "./types";
 export * from "./schema";
+export * from "./blockStyle";
 export * from "./sanitize";
 export * from "./store";
 export { exportSnapshot, buildDocx, buildPdf } from "./export";

@@ -8,6 +8,7 @@ import type {
   PresentationSettings,
   SermonContent,
 } from "@/types/document";
+import type { GlobalStyles } from "./blockStyle";
 
 export type {
   CalibratedSnapshot,
@@ -42,6 +43,8 @@ export interface Sermon {
   /** Optional client presentation prefs (may include bionic for editor). */
   presentation?: PresentationSettings;
   notes?: string;
+  /** Block builder: per-block-type default style/spacing. Missing = app defaults. */
+  globalStyles?: GlobalStyles;
 }
 
 export interface CreateSermonInput {
@@ -51,6 +54,7 @@ export interface CreateSermonInput {
   content?: SermonContent;
   presentation?: PresentationSettings;
   notes?: string;
+  globalStyles?: GlobalStyles;
 }
 
 export interface UpdateSermonInput {
@@ -58,6 +62,8 @@ export interface UpdateSermonInput {
   content?: SermonContent;
   presentation?: PresentationSettings | null;
   notes?: string | null;
+  /** `null` removes globalStyles. */
+  globalStyles?: GlobalStyles | null;
 }
 
 export interface UpdateContentInput {
@@ -70,3 +76,13 @@ export interface UpdateContentInput {
 
 /** Re-export for callers that already imported from this module. */
 export type ExportSnapshot = CalibratedSnapshot;
+
+export type {
+  BlockAlign,
+  BlockFontId,
+  BlockSpacing,
+  BlockStyle,
+  BlockType,
+  GlobalBlockStyle,
+  GlobalStyles,
+} from "./blockStyle";
