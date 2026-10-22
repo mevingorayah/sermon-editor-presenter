@@ -134,3 +134,14 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+.tag {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0 0.35rem;
+  border-radius: 0.25rem;
+  font-size: 0.75em;
+  background: #fff3cd;
+  color: #664d03;
+  white-space: nowrap;
+}

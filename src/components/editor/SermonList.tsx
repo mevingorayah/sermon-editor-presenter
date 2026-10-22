@@ -6,6 +6,8 @@ export interface SermonListItem {
   id: string;
   title: string;
   updatedAt: string;
+  /** Same sermon id as another file in the folder (e.g. Google Drive conflict copy). */
+  conflictCopy?: boolean;
 }
 
 interface SermonListProps {
@@ -56,6 +58,11 @@ export function SermonList({
                   <span className={styles.title}>
                     {s.title || "Untitled sermon"}
                   </span>
+                  {s.conflictCopy ? (
+                    <span className={styles.tag} data-testid="conflict-copy-tag">
+                      possible conflict copy
+                    </span>
+                  ) : null}
                 </button>
                 <button
                   type="button"

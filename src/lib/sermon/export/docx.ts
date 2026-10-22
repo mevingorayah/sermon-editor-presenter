@@ -1,3 +1,5 @@
+import { LineRuleType } from "docx";
+import { snapshotLineSpacing } from "./frames";
 import {
   AlignmentType,
   Document,
@@ -20,6 +22,8 @@ import {
   type TextAlign,
 } from "./contentWalk";
 import { docxFontName } from "./fonts";
+import { frameSizeInches, type PageInput } from "./frames";
+import { pageSpecFromSnapshot } from "./pngLayout";
 import { isPaperTarget, resolveMargins } from "./margins";
 
 export interface DocxBuildOptions {
@@ -28,31 +32,18 @@ export interface DocxBuildOptions {
   resolvedColors?: { accent: string };
 }
 
-/** Page size in twips (1440 per inch) for each calibration target. */
-export function docxPageSize(target: string): {
+/** Page size in twips (1440 per inch): the shared frame (frames.ts). */
+export function docxPageSize(target: PageInput): {
   width: number;
   height: number;
   orientation: (typeof PageOrientation)[keyof typeof PageOrientation];
 } {
-  const t = (w: number, h: number) => ({
-    width: Math.round(w * 1440),
-    height: Math.round(h * 1440),
-  });
-  switch (target) {
-    case "paper-letter":
-      return { ...t(8.5, 11), orientation: PageOrientation.PORTRAIT };
-    case "paper-half-letter":
-      return { ...t(5.5, 8.5), orientation: PageOrientation.PORTRAIT };
-    case "tablet-portrait":
-      return { ...t(8, 10.667), orientation: PageOrientation.PORTRAIT };
-    case "screen-16-9":
-      return { ...t(13.333, 7.5), orientation: PageOrientation.LANDSCAPE };
-    case "screen-16-10":
-      return { ...t(13.3, 8.3125), orientation: PageOrientation.LANDSCAPE };
-    case "paper-a4":
-    default:
-      return { ...t(8.27, 11.69), orientation: PageOrientation.PORTRAIT };
-  }
+  const { width, height } = frameSizeInches(target);
+  return {
+    width: Math.round(width * 1440),
+    height: Math.round(height * 1440),
+    orientation: width > height ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT,
+  };
 }
 
 function alignType(align: TextAlign) {
@@ -241,23 +232,37 @@ export async function buildDocx(
     );
   }
 
-  const margins = resolveMargins(snapshot.margins, String(snapshot.target));
+  const page = pageSpecFromSnapshot(snapshot);
+  const margins = resolveMargins(snapshot.margins, page);
   const inch = 1440;
   const leftInches = margins.left + margins.binderGutter;
 
   void isPaperTarget(String(snapshot.target));
-  const pageSize = docxPageSize(String(snapshot.target));
+  const pageSize = docxPageSize(page);
   void snapshot.theme;
 
   const doc = new Document({
     creator: "sermon-editor-presenter",
     title,
     description: `Calibrated export target=${snapshot.target}`,
+    // Page line spacing (1.2–2.0) as Word "multiple" spacing (240 = single).
+    styles: {
+      default: {
+        document: {
+          paragraph: { spacing: { line: Math.round(240 * snapshotLineSpacing(snapshot)), lineRule: LineRuleType.AUTO } },
+        },
+      },
+    },
     sections: [
       {
         properties: {
           page: {
-            size: pageSize,
+            // The docx library swaps width/height for landscape, so hand it
+            // portrait-ordered sides; the written page is then pageSize.
+            size:
+              pageSize.orientation === PageOrientation.LANDSCAPE
+                ? { ...pageSize, width: pageSize.height, height: pageSize.width }
+                : pageSize,
             margin: {
               top: Math.round(margins.top * inch),
               right: Math.round(margins.right * inch),

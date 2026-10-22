@@ -1,7 +1,7 @@
 import type { CalibratedSnapshot, ExportFormat } from "@/types/document";
 import { buildDocx } from "./docx";
 import { buildPdf } from "./pdf";
-import { buildPng } from "./png";
+import { buildPng, buildPngPages, zipPngPages } from "./png";
 import { buildPptx } from "./pptx";
 import { filenameWithExt, sanitizeFilenameStem } from "./filename";
 import { titleTextFromSnapshot } from "./contentWalk";
@@ -11,6 +11,8 @@ export interface ExportOptions {
   includeNotes?: boolean;
   notes?: string;
   resolvedColors?: { accent: string };
+  /** PDF/PNG/PPTX colours; PDF defaults to light, PNG/PPTX to the snapshot theme. */
+  exportTheme?: "light" | "dark";
 }
 
 export interface ExportResult {
@@ -53,7 +55,7 @@ export async function exportSnapshot(
   }
 
   if (format === "pdf") {
-    const buffer = await buildPdf(snapshot, workerOpts);
+    const buffer = await buildPdf(snapshot, { ...workerOpts, exportTheme: options.exportTheme });
     return {
       buffer,
       contentType: "application/pdf",
@@ -62,12 +64,20 @@ export async function exportSnapshot(
   }
 
   if (format === "png") {
-    // includeNotes ignored for PNG (slice 2).
-    const buffer = await buildPng(snapshot, {
+    // includeNotes ignored for PNG. One page → .png; several → .zip of pages.
+    const pages = await buildPngPages(snapshot, {
       resolvedColors: options.resolvedColors,
+      exportTheme: options.exportTheme,
     });
+    if (pages.length > 1) {
+      return {
+        buffer: await zipPngPages(pages, stem),
+        contentType: "application/zip",
+        filename: filenameWithExt(stem, "zip"),
+      };
+    }
     return {
-      buffer,
+      buffer: pages[0],
       contentType: "image/png",
       filename: filenameWithExt(stem, "png"),
     };
@@ -76,6 +86,7 @@ export async function exportSnapshot(
   if (format === "pptx") {
     const buffer = await buildPptx(snapshot, {
       resolvedColors: options.resolvedColors,
+      exportTheme: options.exportTheme,
     });
     return {
       buffer,

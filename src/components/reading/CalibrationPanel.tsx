@@ -32,7 +32,8 @@ import type {
   ReadingTheme,
   TypeScaleStep,
 } from "@/types/document";
-import { countPngPages, pngExportLabel } from "@/lib/sermon/export/pngLayout";
+import { PPTX_FONT_NOTICE } from "@/lib/sermon/export/textMeasure";
+import { countPngPages, pngExportLabel, pngFrame, pngFrameSize } from "@/lib/sermon/export/pngLayout";
 import { ReadingView } from "./ReadingView";
 import styles from "./CalibrationPanel.module.css";
 
@@ -86,6 +87,11 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
 
   const meta = CALIBRATION_TARGETS.find((t) => t.id === target)!;
   const margins = marginsFor(target);
+  // Preview is the export frame scaled down: margins in preview px (real
+  // inches on a 300px-wide A4 preview used to eat the whole page).
+  const previewFrame = pngFrame(target, margins);
+  const previewPx = (framePx: number) => `${((framePx * meta.previewWidth) / previewFrame.width).toFixed(2)}px`;
+  const previewSize = pngFrameSize(target);
   const previewTheme: ReadingTheme =
     meta.kind === "paper" ? "light" : theme;
   const scale = typeScaleMultiplier(typeScaleStep);
@@ -327,13 +333,12 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
           className={styles.frame}
           style={{
             width: meta.previewWidth,
-            aspectRatio: meta.aspect,
-            paddingTop: margins.top,
-            paddingRight: margins.right,
-            paddingBottom: margins.bottom,
-            paddingLeft: margins.binderGutter
-              ? `calc(${margins.left} + ${margins.binderGutter})`
-              : margins.left,
+            aspectRatio: `${previewSize.width} / ${previewSize.height}`,
+            boxSizing: "border-box",
+            paddingTop: previewPx(previewFrame.top),
+            paddingRight: previewPx(previewFrame.width - previewFrame.left - previewFrame.contentWidth),
+            paddingBottom: previewPx(previewFrame.height - previewFrame.bottom),
+            paddingLeft: previewPx(previewFrame.left),
           }}
           data-reading-mode=""
           data-theme={previewTheme}
@@ -377,6 +382,9 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
           </button>
         ))}
       </div>
+      <p className={styles.hint} data-testid="pptx-font-notice">
+        {PPTX_FONT_NOTICE}
+      </p>
       {/* Single persistent live region: hint until an export runs, then status. */}
       <p
         className={exportStatus ? styles.status : styles.hint}

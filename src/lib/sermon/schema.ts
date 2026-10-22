@@ -1,10 +1,16 @@
 import { z } from "zod";
 import type { SermonContent } from "@/types/document";
+import { DEFAULT_PAGE, customPageError, frameSizeInches, type PageInput, type PageSpec } from "@/lib/sermon/export/frames";
+import { marginMaxIn, parseLengthToInches } from "@/lib/sermon/export/margins";
 
 const calibrationTargetSchema = z.enum([
   "screen-16-9",
   "screen-16-10",
   "tablet-portrait",
+  "tablet-landscape",
+  "screen-4-3",
+  "paper-a5",
+  "paper-legal",
   "paper-letter",
   "paper-a4",
   "paper-half-letter",
@@ -24,12 +30,13 @@ const typeScaleStepSchema = z.union([
   z.literal(2),
 ]);
 
-const presentationSettingsSchema = z.object({
+export const presentationSettingsSchema = z.object({
   theme: z.enum(["light", "dark"]),
   typeScaleStep: typeScaleStepSchema,
   lineHeight: lineHeightSchema,
   bionic: z.boolean(),
   calibrationTarget: calibrationTargetSchema,
+  page: z.lazy(() => sermonPageSettingsSchema).optional(),
 });
 
 /** TipTap JSON — opaque; validated as non-null object then cast. */
@@ -44,13 +51,97 @@ const semanticBlockSchema = z.object({
   citation: z.string().max(500).optional(),
 });
 
+/** A margin: a CSS-ish length string ("0.8in", "20mm") or a number of inches (→ "0.8in"). */
+const marginLengthSchema = z.union([
+  z.string().min(1).max(32),
+  z.number().finite().min(0).max(100).transform((n) => `${n}in`),
+]);
+
 const calibratedMarginsSchema = z.object({
-  top: z.string().min(1).max(32),
-  right: z.string().min(1).max(32),
-  bottom: z.string().min(1).max(32),
-  left: z.string().min(1).max(32),
+  top: marginLengthSchema,
+  right: marginLengthSchema,
+  bottom: marginLengthSchema,
+  left: marginLengthSchema,
   binderGutter: z.string().min(1).max(32).optional(),
 });
+
+/** Old saves with "tablet" migrate to 4:3 (orientation forced to landscape in frames.resolvePage / below). */
+const pageFormatSchema = z.preprocess(
+  (v) => (v === "tablet" ? "4:3" : v),
+  z.enum(["a4", "a5", "letter", "half-letter", "legal", "4:3", "16:10", "16:9", "custom", "fit-screen"]),
+);
+/** Frontend fit-to-screen contract: CSS px; out-of-range sizes are clamped, not rejected. */
+const fitPageSpecSchema = z.object({
+  kind: z.literal("fit"),
+  width: z.number().positive().finite(),
+  height: z.number().positive().finite(),
+  orientation: z.enum(["portrait", "landscape"]).optional(),
+  dpr: z.number().positive().finite().optional(),
+});
+const migrateTabletPage = (v: unknown) =>
+  v && typeof v === "object" && (v as { format?: unknown }).format === "tablet"
+    ? { ...(v as object), format: "4:3", orientation: "landscape" }
+    : v;
+/** Custom page size: each side 2–60 in after unit conversion, aspect ≤ 1:4 (frames.ts). */
+const customPageSchema = z
+  .object({
+    width: z.number().positive().finite(),
+    height: z.number().positive().finite(),
+    unit: z.enum(["in", "mm", "cm", "px"]),
+    dpi: z.number().min(72).max(600).optional(),
+  })
+  .superRefine((c, ctx) => {
+    const err = customPageError(c);
+    if (err) ctx.addIssue({ code: z.ZodIssueCode.custom, message: err });
+  });
+const orientationSchema = z.enum(["portrait", "landscape"]);
+const textSizePtSchema = z.number().min(24).max(72);
+const lineSpacingSchema = z.number().min(1.2).max(2.0);
+const paragraphSpacingPtSchema = z.number().min(0).max(48);
+
+/** Per-sermon page settings: all optional, so older sermons still load. */
+const sermonPageSettingsSchema = z.preprocess(migrateTabletPage, z.object({
+  format: pageFormatSchema.optional(),
+  orientation: orientationSchema.optional(),
+  textSizePt: textSizePtSchema.optional(),
+  lineSpacing: lineSpacingSchema.optional(),
+  paragraphSpacingPt: paragraphSpacingPtSchema.optional(),
+  custom: customPageSchema.optional(),
+  pageSpec: fitPageSpecSchema.optional(),
+  margins: calibratedMarginsSchema.optional(),
+}).refine((p) => p.format !== "custom" || !!p.custom, {
+  message: 'format "custom" needs custom { width, height, unit }',
+  path: ["custom"],
+}).refine((p) => p.format !== "fit-screen" || !!p.pageSpec, {
+  message: 'format "fit-screen" needs pageSpec { kind: "fit", width, height }',
+  path: ["pageSpec"],
+}).transform(clampPageMargins));
+
+/**
+ * UI UX: a margin is at most min(2 in, 20% of the page's shorter side)
+ * (`marginMaxIn`). Larger stored margins are clamped (never rejected).
+ */
+function clampPageMargins<T extends { format?: string; orientation?: string; custom?: unknown; pageSpec?: unknown; margins?: Record<string, string | undefined> }>(p: T): T {
+  if (!p.margins) return p;
+  let page: PageInput;
+  let max: number;
+  let width: number;
+  try {
+    page = (p.pageSpec as { kind?: string } | undefined)?.kind === "fit"
+      ? (p.pageSpec as PageInput)
+      : ({ format: p.format ?? DEFAULT_PAGE.format, orientation: p.orientation ?? DEFAULT_PAGE.orientation, ...(p.custom ? { custom: p.custom } : {}) } as PageSpec);
+    max = marginMaxIn(page);
+    width = frameSizeInches(page).width;
+  } catch {
+    return p;
+  }
+  const margins = { ...p.margins };
+  for (const k of ["top", "right", "bottom", "left"] as const) {
+    const raw = margins[k];
+    if (raw !== undefined && parseLengthToInches(raw, width) > max) margins[k] = `${max}in`;
+  }
+  return { ...p, margins };
+}
 
 /** Sermon ids are UUID-only (matches store `assertSafeId`). */
 export const SERMON_ID_RE =
@@ -207,8 +298,15 @@ const calibratedSnapshotFields = {
   target: z.union([calibrationTargetSchema, z.string().min(1).max(64)]),
   margins: calibratedMarginsSchema,
   typeScaleStep: z.number().int().min(-2).max(2),
-  lineHeight: lineHeightSchema,
+  lineHeight: z.union([lineHeightSchema, lineSpacingSchema]),
+  lineSpacing: lineSpacingSchema.optional(),
   theme: z.enum(["light", "dark"]),
+  pageFormat: pageFormatSchema.optional(),
+  orientation: orientationSchema.optional(),
+  customPage: customPageSchema.optional(),
+  pageSpec: fitPageSpecSchema.optional(),
+  textSizePt: textSizePtSchema.optional(),
+  paragraphSpacingPt: paragraphSpacingPtSchema.optional(),
   flattenGradient: z.literal(true),
   bionic: z.literal(false),
   semanticBlocks: z.array(semanticBlockSchema).max(2000),
@@ -221,10 +319,19 @@ const calibratedSnapshotFields = {
  * - `flattenGradient` must be literal `true`
  * - TipTap color marks must not contain CSS `var(--…)`
  */
-export const calibratedSnapshotSchema = z
-  .object(calibratedSnapshotFields)
-  .strict()
-  .superRefine(refineNoCssVarColors);
+/** `lineSpacing` and `lineHeight` are aliases: either one fills the other. */
+function lineAlias(v: unknown): unknown {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return v;
+  const o = { ...(v as Record<string, unknown>) };
+  if (o.lineHeight === undefined && o.lineSpacing !== undefined) o.lineHeight = o.lineSpacing;
+  if (o.snapshot) o.snapshot = lineAlias(o.snapshot);
+  return o;
+}
+
+export const calibratedSnapshotSchema = z.preprocess(
+  lineAlias,
+  z.object(calibratedSnapshotFields).strict().superRefine(refineNoCssVarColors),
+);
 
 export const exportFormatSchema = z.enum(["docx", "pdf", "png", "pptx"]);
 
@@ -233,6 +340,8 @@ const exportExtrasFields = {
   filenameStem: z.string().max(200).optional(),
   includeNotes: z.boolean().optional(),
   notes: z.string().max(100_000).optional(),
+  /** PDF/PNG/PPTX colours only; never changes layout. */
+  exportTheme: z.enum(["light", "dark"]).optional(),
   resolvedColors: z
     .object({
       accent: resolvedColorSchema,
@@ -247,7 +356,7 @@ const exportExtrasFields = {
  * 2. `{ format, filenameStem?, includeNotes?, notes?, resolvedColors?, ...CalibratedSnapshot }`
  * 3. `{ format, snapshot: CalibratedSnapshot, filenameStem?, includeNotes?, notes?, resolvedColors? }`
  */
-export const exportRequestSchema = z.union([
+export const exportRequestSchema = z.preprocess(lineAlias, z.union([
   z
     .object({
       ...calibratedSnapshotFields,
@@ -261,7 +370,7 @@ export const exportRequestSchema = z.union([
       snapshot: calibratedSnapshotSchema,
     })
     .strict(),
-]);
+]));
 
 export const createSermonSchema = z.object({
   /** Optional client-chosen UUID (same-id restore). Existing id returns 409. */

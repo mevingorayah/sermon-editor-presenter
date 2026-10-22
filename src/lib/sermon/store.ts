@@ -5,6 +5,7 @@
  * Production can swap this module for a DB-backed store without changing API routes.
  */
 
+import { DEFAULT_PRESENTATION_SETTINGS } from "@/types/document";
 import { promises as fs } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
@@ -97,7 +98,11 @@ export async function createSermon(
     id,
     meta: { title, createdAt: now, updatedAt: now },
     content,
-    ...(input.presentation ? { presentation: input.presentation } : {}),
+    // New sermons default to an A4 portrait page unless the client chose one.
+    presentation: {
+      ...(input.presentation ?? DEFAULT_PRESENTATION_SETTINGS),
+      page: input.presentation?.page ?? { ...DEFAULT_PRESENTATION_SETTINGS.page },
+    },
     ...(input.notes !== undefined
       ? { notes: sanitizeText(input.notes) }
       : {}),

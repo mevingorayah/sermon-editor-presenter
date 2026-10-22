@@ -41,13 +41,13 @@ test("download name: Content-Disposition wins, else Content-Type picks .zip vs .
 
 // ---- Shared layout rules (UI UX ruling) ----
 import {
-  layoutPngPages, pngFrame, pngFrameWidthInches, pngPageCount, pngTypeScale, pxPerPt, MIN_BODY_PT, type LayoutBlock,
+  afmMeasurer, layoutPngPages, pngFrame, pngFrameWidthInches, pngPageCount, pngTypeScale, pxPerPt, MIN_BODY_PT, type LayoutBlock,
 } from "../export/pngLayout";
 
 const T = "screen-16-9";
 const LH = 1.7;
 const BODY = 20 * pngTypeScale(T); // px
-const CPL = Math.floor(pngFrame(T).contentWidth / (0.53 * BODY)); // chars per body line
+const CPL = Math.floor(pngFrame(T).contentWidth / (afmMeasurer("m000 ", BODY, { font: "sans" }) / 5)); // chars per body line
 const words = (n: number) => Array.from({ length: n }, (_, i) => `m${String(i).padStart(3, "0")}`).join(" ");
 // "mNNN " = 5 chars; ~CPL/5 words per line.
 const bodyLines = (lines: number): LayoutBlock => ({ type: "Body", text: words(Math.max(1, Math.round((lines * CPL) / 5) - lines)) });
@@ -56,31 +56,33 @@ const linesPerPage = Math.floor((pngFrame(T).bottom - pngFrame(T).top) / (BODY *
 const pageOf = (pages: ReturnType<typeof layoutPngPages>, bi: number, kind?: string) =>
   pages.map((p, i) => (p.lines.some((l) => l.blockIndex === bi && (!kind || l.kind === kind)) ? i : -1)).filter((i) => i >= 0);
 
-test("sizes: 16:9 is 2 px/pt and body is 24 pt = 48 px; all sizes scale together", () => {
+test("sizes: 16:9 is 2 px/pt and body defaults to 28 pt = 56 px; all sizes scale together", () => {
   assert.ok(Math.abs(pxPerPt(T) - 2) < 0.001);
-  assert.ok(Math.abs(BODY - 48) < 0.01);
+  assert.ok(Math.abs(BODY - 56) < 0.01);
   const pages = layoutPngPages(
     [{ type: "H1", text: "Titre" }, { type: "Body", text: "corps" }, { type: "Scripture", text: "verset", citation: "Jn 1.1" }],
     T, LH,
   );
   const lines = pages.flatMap((p) => p.lines);
   const k = pngTypeScale(T);
-  assert.deepEqual(lines.map((l) => +(l.size / k).toFixed(3)), [30, 20, 20, 16]);
-  assert.deepEqual(lines.map((l) => +(l.lineHeight / k).toFixed(3)), [51, 34, 34, 26]);
+  const cite = Math.max(16, (24 * pxPerPt(T)) / k); // citations are lifted to the 24 pt floor
+  assert.deepEqual(lines.map((l) => +(l.size / k).toFixed(3)), [30, 20, 20, +cite.toFixed(3)]);
+  assert.deepEqual(lines.slice(0, 3).map((l) => +(l.lineHeight / k).toFixed(3)), [51, 34, 34]);
+  for (const l of lines) assert.ok(l.size / pxPerPt(T) >= 24 - 1e-9);
   for (const t of ["screen-16-9", "screen-16-10", "tablet-portrait", "paper-letter", "paper-a4", "paper-half-letter"]) {
     const body = layoutPngPages([{ type: "Body", text: "x" }], t, LH)[0].lines[0].size;
     assert.ok(body / pxPerPt(t) >= MIN_BODY_PT - 1e-9, `${t}: ${body / pxPerPt(t)}pt`);
   }
 });
 
-test("frame widths: 16:9 13.333in, 16:10 10in, tablet 9.25in (Tab S10 Lite)", () => {
+test("frame widths: 16:9 13.333in, 16:10 10in, 4:3 10in (old tablet targets → 4:3 landscape)", () => {
   assert.equal(pngFrameWidthInches("screen-16-9"), 13.333);
   assert.equal(pngFrameWidthInches("screen-16-10"), 10);
-  assert.equal(pngFrameWidthInches("tablet-portrait"), 9.25);
-  // Tablet: 900px / (9.25in x 72) = 1.351 px/pt → body 24pt = 32.4px.
-  assert.ok(Math.abs(pxPerPt("tablet-portrait") - 900 / 666) < 1e-9);
-  const body = layoutPngPages([{ type: "Body", text: "x" }], "tablet-portrait", LH)[0].lines[0].size;
-  assert.ok(Math.abs(body - 32.432) < 0.01, String(body));
+  assert.equal(pngFrameWidthInches("tablet-portrait"), 10);
+  // 4:3 (1600x1200, 10in): 1600px / 720pt = 2.222 px/pt → body 28pt = 62.2px.
+  assert.ok(Math.abs(pxPerPt("screen-4-3") - 1600 / 720) < 1e-9);
+  const body = layoutPngPages([{ type: "Body", text: "x" }], "screen-4-3", LH)[0].lines[0].size;
+  assert.ok(Math.abs(body - 28 * 1600 / 720) < 0.01, String(body));
 });
 
 test("rule 1: lines never straddle a page, and every char is placed exactly once", () => {
@@ -149,4 +151,20 @@ test("pngPageCount matches layout", () => {
   const b = [bodyLines(100)];
   assert.equal(pngPageCount(b, T, LH), layoutPngPages(b, T, LH).length);
   assert.equal(pngPageCount([{ type: "Title", text: "X" }], T, LH), 1);
+});
+
+test("new sermons default to A4 portrait", async () => {
+  const { DEFAULT_PRESENTATION_SETTINGS } = await import("../../../types/document");
+  const { DEFAULT_PAGE } = await import("../export/pngLayout");
+  assert.deepEqual(DEFAULT_PRESENTATION_SETTINGS.page, { format: "a4", orientation: "portrait" });
+  assert.deepEqual({ ...DEFAULT_PAGE }, { format: "a4", orientation: "portrait" });
+});
+
+test("fitScreenLabel reduces the aspect", async () => {
+  const { fitScreenLabel } = await import("../export/pngLayout");
+  assert.equal(fitScreenLabel({ width: 1320, height: 2112, orientation: "portrait" }), "Fit this screen (1320\u00d72112, 10:16)");
+  assert.equal(fitScreenLabel({ width: 1320, height: 2112 }), "Fit this screen (1320\u00d72112, 10:16)");
+  assert.equal(fitScreenLabel({ width: 1320, height: 2112, orientation: "landscape" }), "Fit this screen (2112\u00d71320, 16:10)");
+  assert.equal(fitScreenLabel({ width: 1919.6, height: 1080.2 }), "Fit this screen (1920\u00d71080, 16:9)");
+  assert.equal(fitScreenLabel({ width: 1366, height: 768 }), "Fit this screen (1366\u00d7768, 683:384)");
 });
