@@ -25,7 +25,7 @@ const typeScaleStepSchema = z.union([
   z.literal(2),
 ]);
 
-const presentationSettingsSchema = z.object({
+export const presentationSettingsSchema = z.object({
   theme: z.enum(["light", "dark"]),
   typeScaleStep: typeScaleStepSchema,
   lineHeight: lineHeightSchema,
