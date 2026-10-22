@@ -249,7 +249,7 @@ export function frameSizeInches(input: PageInput): { width: number; height: numb
 
 /**
  * Frame width in inches (slide/paper geometry) used for pt → px:
- * 16:9 13.333in (1pt = 2px), 16:10 10in, tablet 9.25in upright, Letter 8.5in,
+ * 16:9 13.333in (1pt = 2px), 16:10 10in, 4:3 10in, Letter/Legal 8.5in, A5 5.83in,
  * A4 8.27in, half-Letter 5.5in; landscape uses the long side.
  */
 export function pngFrameWidthInches(input: PageInput): number {
