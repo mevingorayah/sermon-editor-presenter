@@ -206,12 +206,17 @@ export function wrapLineRanges(
         cut = next;
       }
       if (cut >= wordEnd) break;
-      // Last resort only: prefer a soft break after "/", "…", "–" or "—"
-      // (joined words like "suppléments/compléments") over a mid-word cut.
-      // A hyphen is never a break ("Jésus-Christ" stays whole).
-      const piece = text.slice(lineStart, cut);
-      const soft = Math.max(...["/", "…", "–", "—"].map((c) => piece.lastIndexOf(c)));
-      if (soft > 0) cut = lineStart + soft + 1;
+      // Last resort only: prefer a soft break after "…", "–" or "—" (or a
+      // "/" not between letters) over a mid-word cut. A hyphen is never a
+      // break ("Jésus-Christ" stays whole), nor a "/" between letters
+      // ("suppléments/compléments" is one word).
+      let soft = -1;
+      for (let k = cut - 1; k > lineStart && soft < 0; k--) {
+        const c = text[k];
+        if (c === "…" || c === "–" || c === "—") soft = k;
+        else if (c === "/" && !(/\p{L}/u.test(text[k - 1] ?? "") && /\p{L}/u.test(text[k + 1] ?? ""))) soft = k;
+      }
+      if (soft > lineStart) cut = soft + 1;
       out.push([lineStart, cut]);
       lineStart = cut;
     }
