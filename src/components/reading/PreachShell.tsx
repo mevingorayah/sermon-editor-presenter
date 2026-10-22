@@ -49,6 +49,19 @@ export function PreachShell() {
   }, [calibrationOpen]);
 
   useEffect(() => {
+    // Q3: Esc closes Document setup; the close effect above restores focus.
+    if (!calibrationOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      setCalibrationOpen(false);
+      setCalibrationDeepLink(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [calibrationOpen]);
+
+  useEffect(() => {
     // Read on the client only (no useSearchParams → no Suspense/CSR bailout).
     const params = new URLSearchParams(window.location.search);
     if (params.get("calibrate") === "1") {

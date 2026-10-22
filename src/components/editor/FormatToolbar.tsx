@@ -98,6 +98,7 @@ export function FormatToolbar({ editor }: FormatToolbarProps) {
   const [colorOpen, setColorOpen] = useState(false);
   const colorWrapRef = useRef<HTMLDivElement>(null);
   const colorMenuId = useId();
+  const colorTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!colorOpen) return;
@@ -111,8 +112,10 @@ export function FormatToolbar({ editor }: FormatToolbarProps) {
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        e.preventDefault();
         setColorOpen(false);
-        editor.chain().focus().run();
+        // Q3: Esc returns focus to the popover's trigger.
+        colorTriggerRef.current?.focus();
       }
     };
     document.addEventListener("mousedown", onDoc);
@@ -279,6 +282,7 @@ export function FormatToolbar({ editor }: FormatToolbarProps) {
         ref={colorWrapRef}
       >
         <button
+          ref={colorTriggerRef}
           type="button"
           className={`${styles.toolBtn} ${styles.colorTrigger}${
             colorOpen ? ` ${styles.toolBtnActive}` : ""

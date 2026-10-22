@@ -14,9 +14,10 @@ mark.sermon-highlight,
   -webkit-box-decoration-break: clone;
 }
 
-/* Dark Preach: dark amber variant so light text keeps its contrast */
+/* Dark Preach: a plain highlight is the default yellow, shown as the
+   yellow preset\'s dark value (DARK_YELLOW_PRESET in contrast.ts). */
 [data-reading-mode][data-theme="dark"] mark.sermon-highlight {
-  background: #5a4415;
+  background: #655F33;
 }
 
 .sermon-marks a {
