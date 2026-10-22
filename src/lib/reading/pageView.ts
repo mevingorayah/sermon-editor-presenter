@@ -1,7 +1,8 @@
 import type { JSONContent } from "@tiptap/react";
-import type { LineHeightOption, ReadingTheme } from "@/types/document";
-import { buildCalibratedSnapshot } from "@/lib/calibration";
-import { exportPages, sliceRuns } from "@/lib/sermon/export/pages";
+import type { PresentationSettings } from "@/types/document";
+import { sliceRuns } from "@/lib/sermon/export/pages";
+import { layoutSnapshot, roleStyle } from "@/lib/sermon/export/pngLayout";
+import { snapshotFor } from "@/lib/reading/pageSettings";
 import { citationCaps, type StyledBlock, type StyledRun } from "@/lib/sermon/export/contentWalk";
 import type { PngFrame } from "@/lib/sermon/export/pngLayout";
 
@@ -15,10 +16,13 @@ export interface PageViewLine {
   kind: "text" | "citation";
   blockType: StyledBlock["type"];
   blockIndex: number;
+  lineIndex: number;
   align: StyledBlock["align"];
   y: number;
   size: number;
   lineHeight: number;
+  /** Role style (headings bold, Scripture italic), as every export draws it. */
+  role: { bold: boolean; italic: boolean };
   tokens: Array<{ run: StyledRun; text: string }>;
 }
 
@@ -27,39 +31,31 @@ export interface PageViewModel {
   pages: PageViewLine[][];
 }
 
-export function buildPageView(opts: {
-  content: JSONContent;
-  target: string;
-  lineHeight: LineHeightOption;
-  theme: ReadingTheme;
-  typeScaleStep?: number;
-}): PageViewModel {
-  const snapshot = buildCalibratedSnapshot({
-    target: opts.target as never,
-    typeScaleStep: (opts.typeScaleStep ?? 0) as never,
-    lineHeight: opts.lineHeight,
-    theme: opts.theme,
-    content: opts.content as never,
-  });
-  const { frame, blocks, pages } = exportPages(snapshot);
+/** Page view model: Backend's layoutSnapshot (the export layout), not a copy of it. */
+export function buildPageView(opts: { content: JSONContent; settings: PresentationSettings }): PageViewModel {
+  const snapshot = snapshotFor(opts.content as never, opts.settings);
+  const { frame, styled, pages } = layoutSnapshot(snapshot);
   return {
     frame,
     pages: pages.map((pg, pi) =>
       pg.lines.map((l, li) => {
-        const block = blocks[l.blockIndex];
+        const block = styled[l.blockIndex];
+        const cite = citationCaps(block.citation ?? "");
         const tokens =
           l.kind === "citation"
-            ? [{ run: { text: citationCaps(block.citation ?? ""), fontFamily: "serif" } as StyledRun, text: citationCaps(block.citation ?? "") }]
+            ? [{ run: { text: cite, fontFamily: "serif" } as StyledRun, text: cite }]
             : sliceRuns(block, l.start, l.end);
         return {
           key: `${pi}-${li}`,
           kind: l.kind,
           blockType: block.type,
           blockIndex: l.blockIndex,
+          lineIndex: l.lineIndex,
           align: l.kind === "citation" ? "right" : block.align,
           y: l.y,
           size: l.size,
           lineHeight: l.lineHeight,
+          role: l.kind === "citation" ? { bold: false, italic: false } : roleStyle(block.type),
           tokens,
         };
       }),
@@ -112,7 +108,17 @@ export function clampPage(i: number, count: number): number {
 }
 
 /** Page holding a paragraph (block): keeps the reader in place after re-layout. */
-export function pageOfBlock(pages: Array<Array<{ blockIndex: number }>>, block: number): number {
+export function pageOfBlock(
+  pages: Array<Array<{ blockIndex: number; lineIndex?: number }>>,
+  block: number,
+  line = 0,
+): number {
+  // The page holding this paragraph's anchor line (or the closest earlier line of it).
+  let hit = -1;
+  for (let i = 0; i < pages.length; i++) {
+    if (pages[i].some((l) => l.blockIndex === block && (l.lineIndex ?? 0) <= line)) hit = i;
+  }
+  if (hit >= 0) return hit;
   for (let i = 0; i < pages.length; i++) {
     if (pages[i].some((l) => l.blockIndex >= block)) {
       if (pages[i].some((l) => l.blockIndex === block) || i === 0) return i;

@@ -184,9 +184,8 @@ export function PreachShell() {
       const touch = window.matchMedia?.("(pointer: coarse)").matches ?? false;
       const format = cur.format === "tablet" ? "tablet" : deviceDefaultFormat(viewport.w, viewport.h, touch) ?? cur.format;
       const next = { ...cur, format, orientation: deviceOrientation(viewport.w, viewport.h) };
+      if (next.format === cur.format && next.orientation === cur.orientation) return prev;
       const patch = toPatch(next);
-      if (patch.calibrationTarget === prev.presentationSettings.calibrationTarget) return prev;
-      if (format !== "tablet" && cur.format === format) return prev; // only the Tab rotates today
       return updatePresentationSettings(prev, patch);
     });
   }, [docLoaded, followDevice, viewport.w, viewport.h]);
@@ -273,10 +272,7 @@ export function PreachShell() {
           {view === "page" ? (
             <PageView
               content={doc.content}
-              target={String(ps.calibrationTarget)}
-              typeScaleStep={ps.typeScaleStep}
-              lineHeight={ps.lineHeight}
-              theme={ps.theme}
+              settings={ps}
               fill={fill}
             />
           ) : (
@@ -294,6 +290,7 @@ export function PreachShell() {
             typeScaleStep={ps.typeScaleStep}
             lineHeight={ps.lineHeight}
             theme={ps.theme}
+            page={ps.page}
             onTargetChange={(calibrationTarget: CalibrationTarget) =>
               patchSettings({ calibrationTarget })
             }

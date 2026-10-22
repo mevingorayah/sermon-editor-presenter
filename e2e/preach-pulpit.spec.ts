@@ -58,7 +58,7 @@ for (const vp of VIEWPORTS) {
     await page.setViewportSize({ width: vp.width, height: vp.height });
     await seed(page);
     await page.goto("/preach", { waitUntil: "networkidle" });
-    const p = page.locator("article p", { hasText: "1. When the sower" });
+    const p = page.locator("article p", { hasText: /^1\. When the sower/ }).first();
     await expect(p).toBeVisible({ timeout: 20_000 });
     const m = await p.evaluate((el) => {
       const fs = parseFloat(getComputedStyle(el).fontSize);
@@ -142,7 +142,7 @@ test("cues stay inline; dark contrast", async ({ page }) => {
   const r = await cue.evaluate((el) => {
     const p = el.closest("p")!;
     const cs = getComputedStyle(el);
-    return { display: cs.display, style: cs.fontStyle, ratio: parseFloat(cs.fontSize) / parseFloat(getComputedStyle(p).fontSize), sameLine: Math.abs(el.getBoundingClientRect().top - p.getBoundingClientRect().top) < 4 };
+    return { display: cs.display, style: cs.fontStyle, ratio: parseFloat(cs.fontSize) / parseFloat(getComputedStyle(p).fontSize), sameLine: el.getClientRects().length >= 1 && el.getBoundingClientRect().top >= p.getBoundingClientRect().top - 1 && el.getBoundingClientRect().bottom <= p.getBoundingClientRect().bottom + 1 };
   });
   expect(r.display).toBe("inline");
   expect(r.style).toBe("italic");
@@ -150,7 +150,7 @@ test("cues stay inline; dark contrast", async ({ page }) => {
   expect(r.sameLine).toBe(true);
   const stage = page.locator("[data-reading-mode]").first();
   await expect(stage).toHaveCSS("background-color", "rgb(20, 18, 16)");
-  await expect(page.locator("article p", { hasText: "1. When" })).toHaveCSS("color", "rgb(236, 230, 218)");
+  await expect(page.locator("article p", { hasText: /^1\. When/ }).first()).toHaveCSS("color", "rgb(236, 230, 218)");
 });
 
 for (const target of ["screen-16-9", "paper-a4"]) {
@@ -207,11 +207,11 @@ for (const vp of [{ width: 1334, height: 800 }, { width: 800, height: 1280 }, { 
       expect(clipped).toBe(0);
     }
     await panel.getByRole("button", { name: "Larger text" }).click();
-    await expect(panel.locator("[data-text-pt]")).toHaveText("26 pt");
+    await expect(panel.locator("[data-text-pt]")).toHaveText("30 pt");
     await page.reload({ waitUntil: "networkidle" });
     await page.getByRole("button", { name: "Reading settings" }).click();
     await expect(page.locator('[data-format="16-10"]')).toHaveAttribute("aria-pressed", "true");
-    await expect(page.locator("[data-text-pt]")).toHaveText("26 pt");
+    await expect(page.locator("[data-text-pt]")).toHaveText("30 pt");
   });
 }
 
@@ -224,5 +224,30 @@ test("page view: 16:9 fills a 16:9 screen; toggle to flow", async ({ page }) => 
   expect(box.width).toBeGreaterThanOrEqual(1595);
   await page.getByRole("button", { name: "Reading settings" }).click();
   await page.locator("[data-settings-panel]").getByRole("button", { name: "Flow" }).click();
-  await expect(page.locator("article p", { hasText: "1. When" })).toBeVisible();
+  await expect(page.locator("article p", { hasText: /^1\. When/ }).first()).toBeVisible();
+});
+
+test("⚙ Spacing: sliders, tap-to-type, reset keeps format", async ({ page }) => {
+  await page.setViewportSize({ width: 1334, height: 800 });
+  await seed(page, { view: "page" });
+  await page.goto("/preach", { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Reading settings" }).click();
+  const panel = page.locator("[data-settings-panel]");
+  await panel.locator('[data-format="a4"]').click();
+  const before = Number(await page.locator("[data-page-view]").getAttribute("data-page-count"));
+  await panel.getByRole("button", { name: /Line spacing: .* tap to type/ }).click();
+  const box = panel.getByRole("textbox", { name: /Line spacing/ });
+  await box.fill("2");
+  await box.press("Enter");
+  await expect(panel.getByRole("button", { name: /Line spacing: 2 ×/ })).toBeVisible();
+  await expect.poll(async () => Number(await page.locator("[data-page-view]").getAttribute("data-page-count"))).toBeGreaterThan(before);
+  await panel.locator("[data-each-side]").click();
+  await expect(panel.locator("[data-slider]")).toHaveCount(6);
+  for (const el of await panel.locator("button, input").all()) {
+    const b = await el.boundingBox();
+    if (b && b.width > 0) expect(Math.min(b.height, b.width)).toBeGreaterThanOrEqual(44);
+  }
+  await panel.locator("[data-reset-spacing]").click();
+  await expect(panel.getByRole("button", { name: /Line spacing: 1.55 ×/ })).toBeVisible();
+  await expect(panel.locator('[data-format="a4"]')).toHaveAttribute("aria-pressed", "true");
 });

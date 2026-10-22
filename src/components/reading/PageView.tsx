@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { JSONContent } from "@tiptap/react";
-import type { LineHeightOption, ReadingTheme } from "@/types/document";
+import type { PresentationSettings, ReadingTheme } from "@/types/document";
+import { metricCompatibleCss } from "@/lib/sermon/export/textMeasure";
 import {
   buildPageView,
   clampPage,
@@ -19,10 +20,7 @@ import styles from "./PageView.module.css";
 
 interface PageViewProps {
   content: JSONContent;
-  target: string;
-  lineHeight: LineHeightOption;
-  theme: ReadingTheme;
-  typeScaleStep?: number;
+  settings: PresentationSettings;
   /** Frame matches the screen: edge to edge, no bars. */
   fill?: boolean;
 }
@@ -34,11 +32,9 @@ function typingInControl(t: EventTarget | null): boolean {
   return Boolean(el.closest("input, select, textarea, [contenteditable], [role=dialog], [role=complementary]"));
 }
 
-export function PageView({ content, target, lineHeight, theme, typeScaleStep = 0, fill = false }: PageViewProps) {
-  const model = useMemo(
-    () => buildPageView({ content, target, lineHeight, theme, typeScaleStep }),
-    [content, target, lineHeight, theme, typeScaleStep],
-  );
+export function PageView({ content, settings, fill = false }: PageViewProps) {
+  const theme = settings.theme;
+  const model = useMemo(() => buildPageView({ content, settings }), [content, settings]);
   const hostRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
   const [page, setPage] = useState(0);
@@ -47,15 +43,16 @@ export function PageView({ content, target, lineHeight, theme, typeScaleStep = 0
   const touch = useRef<{ x: number; y: number } | null>(null);
 
   // Stay on the same paragraph after a re-layout (format, orientation, size).
-  const anchor = useRef(0);
+  const anchor = useRef({ blockIndex: 0, lineIndex: 0 });
   const lastModel = useRef(model);
   useEffect(() => {
     if (lastModel.current === model) return;
     lastModel.current = model;
-    setPage(pageOfBlock(model.pages, anchor.current));
+    setPage(pageOfBlock(model.pages, anchor.current.blockIndex, anchor.current.lineIndex));
   }, [model]);
   useEffect(() => {
-    anchor.current = model.pages[current]?.[0]?.blockIndex ?? 0;
+    const first = model.pages[current]?.find((l) => l.kind === "text") ?? model.pages[current]?.[0];
+    anchor.current = { blockIndex: first?.blockIndex ?? 0, lineIndex: first?.lineIndex ?? 0 };
   }, [current, model]);
 
   useEffect(() => {
@@ -97,7 +94,7 @@ export function PageView({ content, target, lineHeight, theme, typeScaleStep = 0
       ref={hostRef}
       className={styles.host}
       data-page-view=""
-      data-target={target}
+      data-format={settings.page?.format ?? String(settings.calibrationTarget)}
       data-fill={fill ? "true" : "false"}
       data-page-index={current}
       data-page-count={count}
@@ -163,9 +160,12 @@ function Line({
       {l.tokens.map((t, ti) => {
         const r = t.run;
         const cue = Boolean(r.italic && r.color?.toLowerCase() === CUE_COLOR);
-        const style: CSSProperties = {};
-        if (r.bold) style.fontWeight = 700;
-        if (r.italic) style.fontStyle = "italic";
+        const style: CSSProperties = {
+          fontFamily: metricCompatibleCss(r.fontFamily as Parameters<typeof metricCompatibleCss>[0]),
+          fontVariationSettings: '"opsz" 24',
+        };
+        if (r.bold || l.role.bold) style.fontWeight = 700;
+        if (r.italic || l.role.italic) style.fontStyle = "italic";
         const deco = [r.underline && "underline", r.strike && "line-through"].filter(Boolean).join(" ");
         if (deco) style.textDecorationLine = deco;
         if (r.color && !cue) style.color = readingTextColor(r.color, theme);

@@ -2,8 +2,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { renderToStaticMarkup } from "react-dom/server";
-import { buildCalibratedSnapshot } from "@/lib/calibration";
-import { exportPages } from "@/lib/sermon/export/pages";
+import { layoutSnapshot } from "@/lib/sermon/export/pngLayout";
+import { snapshotFor } from "@/lib/reading/pageSettings";
 import { countdown, shouldBarFade, formatElapsed, BAR_IDLE_MS } from "@/lib/reading/barFade";
 import { pageOfBlock, buildPageView, containScale, fillsScreen, pageStepForKey, pageStepForSwipe, clampPage } from "@/lib/reading/pageView";
 import { keepScreenAwake } from "@/lib/reading/wakeLock";
@@ -70,16 +70,25 @@ test("one page fits and centres; matching shape fills", () => {
   assert.equal(fillsScreen({ width: 1920, height: 1080 }, 800, 1333), false);
 });
 
-for (const target of ["screen-16-9", "paper-a4"]) {
-  test(`page view breaks equal the export layout (${target})`, () => {
-    const snap = buildCalibratedSnapshot({ target, typeScaleStep: 0, lineHeight: 1.55, theme: "light", content: doc } as never);
-    const ref = exportPages(snap);
-    const view = buildPageView({ content: doc as never, target, lineHeight: 1.55 as never, theme: "light" });
+const settingsFor = (page: Record<string, unknown>) =>
+  ({ calibrationTarget: "paper-a4", typeScaleStep: 0, lineHeight: 1.55, theme: "light", page }) as never;
+
+for (const page of [
+  { format: "16:9", orientation: "landscape" },
+  { format: "a4", orientation: "portrait" },
+  { format: "tablet", orientation: "portrait", textSizePt: 36, lineSpacing: 1.8, paragraphSpacingPt: 30, margins: { top: "0.5in", right: "1in", bottom: "0.5in", left: "1in" } },
+]) {
+  test(`page view breaks equal Backend layoutSnapshot (${page.format} ${page.orientation})`, () => {
+    const ref = layoutSnapshot(snapshotFor(doc as never, settingsFor(page)));
+    const view = buildPageView({ content: doc as never, settings: settingsFor(page) });
     assert.ok(ref.pages.length > 1);
     assert.equal(view.pages.length, ref.pages.length);
     view.pages.forEach((pg, i) => {
       assert.equal(pg.length, ref.pages[i].lines.length);
-      pg.forEach((l, j) => assert.equal(l.y, ref.pages[i].lines[j].y));
+      pg.forEach((l, j) => {
+        assert.equal(l.y, ref.pages[i].lines[j].y);
+        assert.equal(l.blockIndex, ref.pages[i].lines[j].blockIndex);
+      });
     });
   });
 }
@@ -112,25 +121,37 @@ test("wake lock: acquires, re-acquires on visible, releases, silent when unsuppo
   keepScreenAwake(failing, doc2 as never)();
 });
 
-test("page settings adapter: formats, orientation, text size ≥ 24 pt", async () => {
+test("page settings adapter: PresentationSettings.page round-trip and limits", async () => {
   const m = await import("@/lib/reading/pageSettings");
-  assert.equal(m.toPatch({ format: "tablet", orientation: "portrait", textStep: 0 as never }).calibrationTarget, "tablet-portrait");
-  assert.equal(m.toPatch({ format: "tablet", orientation: "landscape", textStep: 0 as never }).calibrationTarget, "screen-16-10");
-  assert.equal(m.toPatch({ format: "a4", orientation: "landscape", textStep: 0 as never }).calibrationTarget, "paper-a4");
-  for (const f of m.PAGE_FORMATS) {
-    const c = { format: f.id, orientation: m.orientationsFor(f.id)[0], textStep: 1 as never };
-    const back = m.fromSettings(m.toPatch(c) as never);
-    if (f.id !== "16-10") assert.equal(back.format, f.id);
-    assert.equal(back.textStep, 1);
+  for (const f of m.FORMAT_BUTTONS) {
+    for (const o of ["portrait", "landscape"] as const) {
+      const c = { ...m.fromSettings(settingsFor({})), format: f.format, orientation: o, textSizePt: 40 };
+      const back = m.fromSettings({ calibrationTarget: "paper-a4", ...m.toPatch(c) } as never);
+      assert.equal(back.format, f.format);
+      assert.equal(back.orientation, o);
+      assert.equal(back.textSizePt, 40);
+    }
   }
-  assert.ok(m.allowedSteps().every((s) => m.bodyPt(s) >= 24));
+  const d = m.fromSettings(settingsFor({}));
+  assert.deepEqual([d.textSizePt, d.lineSpacing, d.paragraphSpacingPt, d.margins.top], [28, 1.55, 20, 0.8]);
+  assert.equal(m.stepTextSize({ ...d, textSizePt: 24 }, -1).textSizePt, 24);
+  assert.equal(m.stepTextSize({ ...d, textSizePt: 72 }, 1).textSizePt, 72);
+  assert.equal(m.fromSettings(settingsFor({ margins: { top: "50mm", right: "6mm", bottom: "9in", left: "x" } })).margins.bottom, 2);
+  const r = m.resetSpacing({ ...d, format: "16:9", orientation: "landscape", lineSpacing: 2, margins: { top: 2, right: 2, bottom: 2, left: 2 } });
+  assert.equal(r.format, "16:9");
+  assert.deepEqual([r.lineSpacing, r.margins.left], [1.55, 0.8]);
   assert.equal(m.deviceOrientation(800, 1280), "portrait");
+  // #29 export request shape: margins as "Nin" strings, line spacing as lineHeight.
+  const snap = m.snapshotFor(doc as never, settingsFor({ lineSpacing: 1.8, margins: { top: "1in", right: "0.5in", bottom: "1in", left: "0.5in" } }));
+  assert.equal(snap.lineHeight, 1.8);
+  assert.deepEqual(snap.margins, { top: "1in", right: "0.5in", bottom: "1in", left: "0.5in" });
+  assert.equal(typeof (m.toPatch(d).page as { margins: { top: unknown } }).margins.top, "string");
 });
 
 test("re-layout keeps the reader on the same paragraph", () => {
-  const a = buildPageView({ content: doc as never, target: "paper-a4", lineHeight: 1.55 as never, theme: "light" });
-  const b = buildPageView({ content: doc as never, target: "screen-16-9", lineHeight: 1.55 as never, theme: "light" });
-  const block = a.pages[2][0].blockIndex;
-  const pb = pageOfBlock(b.pages, block);
+  const a = buildPageView({ content: doc as never, settings: settingsFor({ format: "a4" }) });
+  const b = buildPageView({ content: doc as never, settings: settingsFor({ format: "16:9", textSizePt: 48 }) });
+  const { blockIndex: block, lineIndex } = a.pages[2][0];
+  const pb = pageOfBlock(b.pages, block, lineIndex);
   assert.ok(b.pages[pb].some((l) => l.blockIndex === block));
 });

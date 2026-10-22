@@ -34,6 +34,8 @@ import type {
 } from "@/types/document";
 import { countPngPages, pngExportLabel, pngFrame, pngFrameSize } from "@/lib/sermon/export/pngLayout";
 import { ReadingView } from "./ReadingView";
+import { withPage } from "@/lib/reading/pageSettings";
+import type { SermonPageSettings } from "@/types/document";
 import styles from "./CalibrationPanel.module.css";
 
 /** Backend schema cap for `filenameStem`. */
@@ -50,6 +52,8 @@ interface CalibrationPanelProps {
   lineHeight: LineHeightOption;
   /** Live reading theme; print targets default preview to light. */
   theme: ReadingTheme;
+  /** Sermon page settings (Preach); exports then match page view. */
+  page?: SermonPageSettings;
   /** Move focus into the panel on mount (deep link `?calibrate=1`). */
   autoFocus?: boolean;
   onTargetChange: (t: CalibrationTarget) => void;
@@ -68,6 +72,7 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
     typeScaleStep,
     lineHeight,
     theme,
+    page,
     autoFocus = false,
     onTargetChange,
     onTypeScaleChange,
@@ -104,14 +109,18 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
 
   const snapshot = useMemo(
     () =>
-      buildCalibratedSnapshot({
+    {
+      const base = buildCalibratedSnapshot({
         target,
         typeScaleStep,
         lineHeight,
         theme: meta.kind === "paper" ? "light" : theme,
         content,
-      }),
-    [target, typeScaleStep, lineHeight, theme, content, meta.kind],
+      });
+      // Preach passes the sermon's page settings so exports match page view.
+      return page ? withPage(base, { calibrationTarget: target, page }) : base;
+    },
+    [target, typeScaleStep, lineHeight, theme, content, meta.kind, page],
   );
 
   // Same layout as the server's PNG paging: >1 page comes back as a .zip.

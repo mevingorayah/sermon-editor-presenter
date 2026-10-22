@@ -244,3 +244,10 @@
   flex: 1 1 auto;
   text-align: center;
 }
+
+.sliderRow { display: grid; grid-template-columns: 1fr; gap: 4px; margin: 6px 0; }
+.range { width: 100%; min-height: 44px; }
+.valueBtn, .valueInput, .link { min-height: 44px; min-width: 44px; font: inherit; }
+.valueBtn { background: none; border: 1px dashed currentColor; border-radius: 6px; color: inherit; justify-self: start; padding: 0 10px; }
+.valueInput { width: 7em; padding: 0 8px; }
+.link { background: none; border: 0; color: inherit; text-decoration: underline; padding: 0; justify-self: start; text-align: left; }
