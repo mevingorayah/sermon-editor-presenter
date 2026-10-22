@@ -32,6 +32,7 @@ import type {
   ReadingTheme,
   TypeScaleStep,
 } from "@/types/document";
+import { PPTX_FONT_NOTICE } from "@/lib/sermon/export/textMeasure";
 import { countPngPages, pngExportLabel, pngFrame, pngFrameSize } from "@/lib/sermon/export/pngLayout";
 import { ReadingView } from "./ReadingView";
 import styles from "./CalibrationPanel.module.css";
@@ -381,6 +382,9 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
           </button>
         ))}
       </div>
+      <p className={styles.hint} data-testid="pptx-font-notice">
+        {PPTX_FONT_NOTICE}
+      </p>
       {/* Single persistent live region: hint until an export runs, then status. */}
       <p
         className={exportStatus ? styles.status : styles.hint}

@@ -1,3 +1,4 @@
+import { snapshotLineSpacing } from "./frames";
 import type { CalibratedSnapshot } from "@/types/document";
 import { styledBlocksFromSnapshot, titleTextFromSnapshot, type StyledBlock, type StyledRun } from "./contentWalk";
 import { layoutPngPages, pngFrame, toLayoutBlocks, type PngFrame, type PngPage } from "./pngLayout";
@@ -35,6 +36,6 @@ export function exportPages(snapshot: CalibratedSnapshot): {
   return {
     frame: pngFrame(target, snapshot.margins),
     blocks,
-    pages: layoutPngPages(toLayoutBlocks(blocks), target, snapshot.lineHeight, snapshot.margins),
+    pages: layoutPngPages(toLayoutBlocks(blocks), target, snapshotLineSpacing(snapshot), snapshot.margins),
   };
 }

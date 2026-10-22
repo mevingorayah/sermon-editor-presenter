@@ -1,3 +1,4 @@
+import { snapshotLineSpacing } from "./frames";
 import type { CalibratedSnapshot } from "@/types/document";
 import { styledBlocksFromSnapshot, titleTextFromSnapshot, type StyledBlock } from "./contentWalk";
 import { DEFAULT_MARGINS, resolveMargins } from "./margins";
@@ -357,7 +358,7 @@ export function layoutSnapshot(snapshot: CalibratedSnapshot, opts: LayoutOptions
     styled = [{ type: "Title", align: "left", runs: [{ text: titleTextFromSnapshot(snapshot), fontFamily: "serif" }] }];
   }
   const blocks = toLayoutBlocks(styled);
-  const pages = layoutPngPages(blocks, target, snapshot.lineHeight, snapshot.margins, {
+  const pages = layoutPngPages(blocks, target, snapshotLineSpacing(snapshot), snapshot.margins, {
     paragraphSpacingPt: snapshot.paragraphSpacingPt,
     ...opts,
   });

@@ -1,3 +1,4 @@
+import { snapshotLineSpacing } from "./frames";
 import fs from "node:fs";
 import path from "node:path";
 import PDFDocument from "pdfkit";
@@ -297,7 +298,7 @@ export async function buildPdf(
       doc.x = doc.page.margins.left;
       doc.y = doc.page.margins.top;
       for (const block of notes) {
-        writeBlock(doc, block, 1, snapshot.lineHeight, accent);
+        writeBlock(doc, block, 1, snapshotLineSpacing(snapshot), accent);
       }
     }
 

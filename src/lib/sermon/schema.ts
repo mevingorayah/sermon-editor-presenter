@@ -225,6 +225,7 @@ const calibratedSnapshotFields = {
   margins: calibratedMarginsSchema,
   typeScaleStep: z.number().int().min(-2).max(2),
   lineHeight: z.union([lineHeightSchema, lineSpacingSchema]),
+  lineSpacing: lineSpacingSchema.optional(),
   theme: z.enum(["light", "dark"]),
   pageFormat: pageFormatSchema.optional(),
   orientation: orientationSchema.optional(),

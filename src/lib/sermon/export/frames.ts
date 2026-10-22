@@ -63,6 +63,14 @@ export function pageSpecFromTarget(target: string): PageSpec {
   }
 }
 
+/** Line spacing to lay out with: `lineSpacing` (preferred) or legacy `lineHeight`, clamped 1.2–2.0 on a 0.05 grid. */
+export function snapshotLineSpacing(s: { lineSpacing?: number; lineHeight?: number | string }): number {
+  const v = clamp(s.lineSpacing ?? s.lineHeight, PAGE_LIMITS.lineSpacing);
+  return Math.round(v / 0.05) * 0.05 > PAGE_LIMITS.lineSpacing.max
+    ? PAGE_LIMITS.lineSpacing.max
+    : Number((Math.round(v / 0.05) * 0.05).toFixed(2));
+}
+
 /** Normalize any PageInput into a complete spec (text size clamped). */
 export function resolvePage(input: PageInput): Required<PageSpec> {
   const s = typeof input === "string" ? pageSpecFromTarget(input) : input;
@@ -119,4 +127,40 @@ export function pxPerPt(input: PageInput): number {
 /** Every format × orientation (for tests and pickers). */
 export function allPageSpecs(): PageSpec[] {
   return PAGE_FORMATS.flatMap((format) => PAGE_ORIENTATIONS.map((orientation) => ({ format, orientation })));
+}
+
+/**
+ * PresentationSettings.page → snapshot fields. `page.margins` (top/right/
+ * bottom/left, inches, 0.25–2, default 0.8) → `snapshot.margins`;
+ * `page.lineSpacing` (1.2–2.0, step 0.05, default 1.55) → `snapshot.lineSpacing`
+ * (and legacy `lineHeight`). Every export reads these through pngLayout.
+ */
+export function pageSnapshotFields(page: {
+  format?: string;
+  orientation?: string;
+  textSizePt?: number;
+  lineSpacing?: number;
+  paragraphSpacingPt?: number;
+  margins?: { top?: string; right?: string; bottom?: string; left?: string; binderGutter?: string };
+} = {}) {
+  const m = (v: string | undefined) => {
+    const n = v === undefined ? NaN : parseFloat(String(v));
+    return `${clamp(Number.isFinite(n) ? n : undefined, PAGE_LIMITS.marginIn)}in`;
+  };
+  const lineSpacing = snapshotLineSpacing({ lineSpacing: page.lineSpacing });
+  return {
+    ...(page.format ? { pageFormat: page.format } : {}),
+    ...(page.orientation ? { orientation: page.orientation } : {}),
+    textSizePt: clamp(page.textSizePt, PAGE_LIMITS.textSizePt),
+    paragraphSpacingPt: clamp(page.paragraphSpacingPt, PAGE_LIMITS.paragraphSpacingPt),
+    lineSpacing,
+    lineHeight: lineSpacing,
+    margins: {
+      top: m(page.margins?.top),
+      right: m(page.margins?.right),
+      bottom: m(page.margins?.bottom),
+      left: m(page.margins?.left),
+      ...(page.margins?.binderGutter ? { binderGutter: page.margins.binderGutter } : {}),
+    },
+  };
 }
