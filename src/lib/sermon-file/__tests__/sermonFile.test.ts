@@ -180,8 +180,25 @@ describe("helpers", () => {
     assert.equal(isNewerOnDisk("2026-10-16T07:00:01Z", "2026-10-16T07:00:00Z"), false);
   });
 
-  it("sermonFileName uses the export filename rules", () => {
-    assert.match(sermonFileName("Joy Without Ceasing"), /^Joy-Without-Ceasing\.sermon$/);
+  it("sermonFileName keeps the title as written", () => {
+    assert.equal(sermonFileName("Joy Without Ceasing"), "Joy Without Ceasing.sermon");
+  });
+
+  it("sermonFileName keeps accents and removes only illegal characters", () => {
+    assert.equal(
+      sermonFileName("Prédication : L'été à Noël / Église « joie »?"),
+      "Prédication L'été à Noël Église « joie ».sermon",
+    );
+    assert.equal(sermonFileName('a<b>c"d|e*f\\g\u0001h'), "a b c d e f g h.sermon");
+    assert.equal(sermonFileName("  ..Lafwa.. "), "Lafwa.sermon");
+    assert.equal(sermonFileName(""), "sermon.sermon");
+    assert.equal(sermonFileName("///"), "sermon.sermon");
+    assert.equal(sermonFileName("CON"), "CON-sermon.sermon");
+    // NFD input is stored as NFC so the same title gives the same name.
+    assert.equal(sermonFileName("e\u0301te\u0301"), "\u00e9t\u00e9.sermon");
+    const long = sermonFileName("Mo ".repeat(60));
+    assert.ok(Array.from(long).length <= 80 + ".sermon".length);
+    assert.ok(!long.includes(" .sermon"));
   });
 });
 
@@ -205,19 +222,119 @@ describe("QA restore edge cases", () => {
 });
 
 describe("forward compatibility with v2 fields", () => {
-  it("keeps blockId, definitions and new block types untouched", () => {
+  it("keeps extra fields and unknown attrs on known blocks untouched", () => {
     const s = {
       ...sermon,
       definitions: [{ id: "d1", word: "agapē", language: "grc", gloss: "love", source: "user" }],
       content: {
         type: "doc",
         content: [
-          { type: "illustration", attrs: { blockId: "b1", label: "Story" }, content: [
-            { type: "text", text: "agapē", marks: [{ type: "definition", attrs: { id: "d1" } }] },
+          { type: "paragraph", attrs: { blockId: "b1", textAlign: "left" }, content: [
+            { type: "text", text: "agapē", marks: [{ type: "bold" }] },
           ] },
         ],
       },
     } as unknown as SermonDocument;
     assert.deepEqual(parseSermonFile(serializeSermonFile(s)).sermon, s);
+  });
+
+  it("refuses block or mark types this version of the editor doesn't know", () => {
+    const withNode = { ...sermon, content: { type: "doc", content: [
+      { type: "illustration", content: [{ type: "text", text: "Istwar" }] },
+    ] } } as unknown as SermonDocument;
+    const withMark = { ...sermon, content: { type: "doc", content: [
+      { type: "paragraph", content: [{ type: "text", text: "x", marks: [{ type: "definition" }] }] },
+    ] } } as unknown as SermonDocument;
+    assert.equal(code(() => parseSermonFile(serializeSermonFile(withNode))), "INVALID");
+    assert.equal(code(() => parseSermonFile(serializeSermonFile(withMark))), "INVALID");
+  });
+});
+
+describe("sermon content is checked against the editor schema", () => {
+  const fileWith = (content: unknown) =>
+    JSON.stringify({
+      kind: "sermon-editor-presenter/sermon",
+      schemaVersion: 1,
+      savedAt: "2026-01-01T00:00:00Z",
+      sermon: { ...sermon, content },
+    });
+
+  it("refuses an unknown node with a plain-language message (QA case)", () => {
+    try {
+      parseSermonFile(fileWith({ type: "doc", content: [{ type: "evil", content: 5 }] }));
+      assert.fail("should have thrown");
+    } catch (e) {
+      assert.ok(e instanceof SermonFileError);
+      assert.equal(e.code, "INVALID");
+      assert.match(e.message, /wasn't opened/);
+      assert.match(e.message, /doesn't recognise/);
+      assert.ok(e.details?.[0]?.startsWith("sermon.content:"));
+    }
+  });
+
+  for (const [name, content] of [
+    ["content is a number", { type: "doc", content: [{ type: "paragraph", content: 5 }] }],
+    ["text node without text", { type: "doc", content: [{ type: "paragraph", content: [{ type: "text" }] }] }],
+    ["text directly in doc", { type: "doc", content: [{ type: "text", text: "x" }] }],
+    ["list item outside a list", { type: "doc", content: [{ type: "listItem", content: [{ type: "paragraph" }] }] }],
+    ["node is not an object", { type: "doc", content: ["x"] }],
+    ["null node", { type: "doc", content: [null] }],
+    ["unknown mark", { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "x", marks: [{ type: "evil" }] }] }] }],
+  ] as const) {
+    it(`refuses: ${name}`, () => {
+      assert.equal(code(() => parseSermonFile(fileWith(content))), "INVALID");
+    });
+  }
+
+  it("refuses bad content inside a backup too", () => {
+    const bad = { ...sermon, content: { type: "doc", content: [{ type: "evil" }] } } as unknown as SermonDocument;
+    assert.equal(code(() => parseBackupFile(serializeBackupFile([sermon, bad]))), "INVALID");
+  });
+
+  it("opens every block type the editor makes, unchanged", () => {
+    const content = { type: "doc", content: [
+      { type: "title", content: [{ type: "text", text: "Tit" }] },
+      { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "H1" }] },
+      { type: "heading", attrs: { level: 2, textAlign: "right" }, content: [{ type: "text", text: "H2" }] },
+      { type: "paragraph", content: [
+        { type: "text", text: "a", marks: [{ type: "bold" }, { type: "italic" }, { type: "underline" }, { type: "strike" }] },
+        { type: "hardBreak" },
+        { type: "text", text: "b", marks: [{ type: "textStyle", attrs: { color: "#5c5c5c", fontFamily: null } }, { type: "highlight" }] },
+        { type: "text", text: "c", marks: [{ type: "code" }] },
+      ] },
+      { type: "paragraph" },
+      { type: "bulletList", content: [{ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "1" }] }] }] },
+      { type: "orderedList", attrs: { start: 1 }, content: [{ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "2" }] }] }] },
+      { type: "horizontalRule" },
+      { type: "scripture", attrs: { citation: "Jn 1:1" }, content: [{ type: "text", text: "Vers" }] },
+    ] };
+    const s = { ...sermon, content } as unknown as SermonDocument;
+    assert.deepEqual(parseSermonFile(serializeSermonFile(s)).sermon, s);
+  });
+
+  it("opens an empty document", () => {
+    const s = { ...sermon, content: { type: "doc" } } as unknown as SermonDocument;
+    assert.deepEqual(parseSermonFile(serializeSermonFile(s)).sermon, s);
+  });
+});
+
+describe("older server-shape files", () => {
+  it("keeps the stored creation date instead of dropping it", () => {
+    const old = {
+      id: "3f1c2a4e-9b7d-4e2f-8a1b-2c3d4e5f6a7b",
+      meta: { title: "Vye", createdAt: "2025-03-02T08:00:00.000Z", updatedAt: "2026-10-01T09:00:00.000Z" },
+      content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "x" }] }] },
+    };
+    const p = parseSermonFile(JSON.stringify(old)).sermon as SermonDocument & { createdAt?: string };
+    assert.equal(p.createdAt, "2025-03-02T08:00:00.000Z");
+    assert.equal(p.updatedAt, "2026-10-01T09:00:00.000Z");
+    // Survives a save and reopen.
+    const again = parseSermonFile(serializeSermonFile(p)).sermon as SermonDocument & { createdAt?: string };
+    assert.equal(again.createdAt, "2025-03-02T08:00:00.000Z");
+  });
+
+  it("doesn't invent a creation date when none was stored", () => {
+    const old = { id: "a1", meta: { title: "t", updatedAt: "2026-10-01T09:00:00.000Z" }, content: { type: "doc" } };
+    assert.equal("createdAt" in parseSermonFile(JSON.stringify(old)).sermon, false);
   });
 });

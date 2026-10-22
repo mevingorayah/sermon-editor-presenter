@@ -13,7 +13,9 @@ import { z } from "zod";
 import type { SermonDocument } from "@/types/document";
 import { DEFAULT_PRESENTATION_SETTINGS } from "@/types/document";
 import { presentationSettingsSchema } from "@/lib/sermon/schema";
-import { sanitizeFilenameStem } from "@/lib/sermon/export/filename";
+import { getSchema } from "@tiptap/core";
+import { Node as PMNode, type Schema } from "@tiptap/pm/model";
+import { createSchemaExtensions } from "@/extensions/schema";
 
 export const SERMON_FILE_KIND = "sermon-editor-presenter/sermon";
 export const SERMON_BACKUP_KIND = "sermon-editor-presenter/backup";
@@ -143,6 +145,8 @@ function upgradeSermon(raw: unknown): unknown {
       id: o.id,
       title: typeof meta.title === "string" ? meta.title : "",
       updatedAt: meta.updatedAt ?? meta.createdAt ?? new Date(0).toISOString(),
+      // Keep the original creation date; never replace it with "now".
+      ...(typeof meta.createdAt === "string" ? { createdAt: meta.createdAt } : {}),
       content: o.content,
       presentationSettings: o.presentation ?? DEFAULT_PRESENTATION_SETTINGS,
       notes: typeof o.notes === "string" ? o.notes : "",
@@ -155,6 +159,33 @@ function upgradeSermon(raw: unknown): unknown {
   };
 }
 
+let editorSchema: Schema | null = null;
+/** The same TipTap schema Edit and Preach use (built once, lazily). */
+function getEditorSchema(): Schema {
+  if (!editorSchema) editorSchema = getSchema(createSchemaExtensions());
+  return editorSchema;
+}
+
+/**
+ * Check the sermon body against the editor's schema: only known node and
+ * mark types, in allowed places, with the right shapes. Returns a problem
+ * description, or null when the document is fine. The original JSON is kept
+ * as-is (this only checks; it never rewrites the writer's content).
+ */
+export function checkSermonContent(content: unknown): string | null {
+  const inner = (content as { content?: unknown } | null)?.content;
+  // An empty sermon (no blocks yet) is valid; the editor adds an empty line.
+  if (Array.isArray(inner) && inner.length === 0) return null;
+  if (inner === undefined && (content as { type?: unknown })?.type === "doc") return null;
+  try {
+    const node = PMNode.fromJSON(getEditorSchema(), content as never);
+    node.check();
+    return null;
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}
+
 function validateSermon(raw: unknown, prefix: string): SermonDocument {
   const r = sermonDocumentSchema.safeParse(upgradeSermon(raw));
   if (!r.success) {
@@ -162,6 +193,14 @@ function validateSermon(raw: unknown, prefix: string): SermonDocument {
       "INVALID",
       "This sermon file is damaged or incomplete, so it wasn't opened.",
       issuesOf(r.error, prefix),
+    );
+  }
+  const problem = checkSermonContent(r.data.content);
+  if (problem) {
+    throw new SermonFileError(
+      "INVALID",
+      "This sermon file contains content the editor doesn't recognise, so it wasn't opened. It may be damaged or made by another program.",
+      [`${prefix ? prefix + "." : ""}content: ${problem}`],
     );
   }
   return r.data as unknown as SermonDocument;
@@ -306,7 +345,30 @@ export function isNewerOnDisk(loadedSavedAt: string, diskSavedAt: string): boole
   return Date.parse(diskSavedAt) > Date.parse(loadedSavedAt);
 }
 
-/** File name for a sermon, using the same rules as export filenames. */
+const SERMON_NAME_MAX = 80;
+const SERMON_NAME_FALLBACK = "sermon";
+/** Names Windows refuses whatever the extension. */
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i;
+
+/**
+ * File name for a sermon. Accents and other letters are kept as written
+ * ("Prédication été Noël" stays accented). Only characters that Windows,
+ * macOS or Linux refuse in a file name are removed: < > : " / \ | ? * and
+ * control characters. Leading/trailing dots and spaces are trimmed (Windows).
+ */
 export function sermonFileName(title: string): string {
-  return `${sanitizeFilenameStem(title)}${SERMON_FILE_EXTENSION}`;
+  let s = (title ?? "")
+    .normalize("NFC")
+    .replace(/[<>:"/\\|?*\u0000-\u001f\u007f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[. ]+|[. ]+$/g, "");
+  const chars = Array.from(s);
+  if (chars.length > SERMON_NAME_MAX) {
+    const cut = chars.slice(0, SERMON_NAME_MAX).join("");
+    const sp = cut.lastIndexOf(" ");
+    s = (sp > 0 ? cut.slice(0, sp) : cut).replace(/[. ]+$/g, "");
+  }
+  if (!s || WINDOWS_RESERVED.test(s)) s = s ? `${s}-${SERMON_NAME_FALLBACK}` : SERMON_NAME_FALLBACK;
+  return `${s}${SERMON_FILE_EXTENSION}`;
 }
