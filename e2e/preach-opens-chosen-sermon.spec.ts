@@ -97,3 +97,64 @@ test("Preach opens the chosen sermon, not the newest one", async ({ page, reques
   await expectPreachShows(p3, aMark, bMark);
   await fresh2.close();
 });
+
+const DOC_KEY = "sermon-editor-presenter:document:v1";
+
+async function chooseInEdit(page: Page, title: string, mark: string) {
+  await page.goto("/edit", { waitUntil: "networkidle" });
+  await page
+    .getByRole("navigation", { name: "Sermons" })
+    .getByRole("button", { name: title, exact: true })
+    .click();
+  await expect(page.locator(".ProseMirror")).toContainText(mark, { timeout: 15_000 });
+}
+
+test("Preach top bar shows the sermon title small, one line, ellipsis", async ({ page, request }) => {
+  const tag = randomUUID().slice(0, 8);
+  const title = `QA-Title ${tag} ${"very long words ".repeat(12)}`.trim();
+  const mark = `title-marker-${tag}`;
+  const id = await create(request, title, mark);
+  await page.goto(`/preach?id=${id}`, { waitUntil: "networkidle" });
+  const bar = page.getByRole("banner").getByTestId("preach-title");
+  await expect(bar).toHaveText(title, { timeout: 20_000 });
+  const css = await bar.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { ws: s.whiteSpace, to: s.textOverflow, h: el.getBoundingClientRect().height };
+  });
+  expect(css.ws).toBe("nowrap");
+  expect(css.to).toBe("ellipsis");
+  expect(css.h).toBeLessThan(30);
+});
+
+test("stale /preach?id=<unknown> keeps the stored choice and does not overwrite it", async ({ page, request }) => {
+  const tag = randomUUID().slice(0, 8);
+  const aTitle = `QA-Stale-A ${tag}`;
+  const aMark = `stale-a-${tag}`;
+  const bMark = `stale-b-${tag}`;
+  const aId = await create(request, aTitle, aMark);
+  await chooseInEdit(page, aTitle, aMark);
+  // B becomes the newest sermon.
+  await create(request, `QA-Stale-B ${tag}`, bMark);
+
+  await page.goto(`/preach?id=${randomUUID()}`, { waitUntil: "networkidle" });
+  await expectPreachShows(page, aMark, bMark);
+  expect(await page.evaluate((k) => localStorage.getItem(k), ACTIVE_ID_KEY)).toBe(aId);
+});
+
+test("opening a sermon in Preach does not re-stamp the local copy's updatedAt", async ({ page, request }) => {
+  const tag = randomUUID().slice(0, 8);
+  const mark = `ro-marker-${tag}`;
+  const id = await create(request, `QA-RO ${tag}`, mark);
+  const res = await request.get(`/api/sermons/${id}`);
+  const serverUpdatedAt = ((await res.json()) as { sermon: { meta: { updatedAt: string } } })
+    .sermon.meta.updatedAt;
+
+  await page.goto(`/preach?id=${id}`, { waitUntil: "networkidle" });
+  await expect(page.getByText(mark)).toBeVisible({ timeout: 20_000 });
+  await page.waitForTimeout(1100);
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page.getByText(mark)).toBeVisible({ timeout: 20_000 });
+  const cached = await page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? "{}"), DOC_KEY);
+  expect(cached.id).toBe(id);
+  expect(cached.updatedAt).toBe(serverUpdatedAt);
+});
