@@ -37,3 +37,12 @@ Errors throw `SermonFileError` with `code` (`TOO_LARGE`, `NOT_JSON`, `WRONG_KIND
 `schemaVersion` 1 is current. Files with a higher version are refused with "saved by a newer version of the app". Version 0 (no envelope) is upgraded on open: a bare `SermonDocument` from localStorage, or the old server `Sermon` shape (`meta.title`, `presentation`). When the shape changes, bump the version and add a step in `upgradeSermon`.
 
 Limits: 20 MB per sermon file, 200 MB per backup. v2 images will be stored as separate files next to the sermon, referenced by relative path, not embedded.
+
+## Block builder fields (optional, backward compatible)
+
+Defined in `src/lib/sermon/blockStyle.ts`. All optional; missing or empty means "use the global style for this block type". Sermons without them are stored and re-saved byte-identically, so no `schemaVersion` bump.
+
+- Block `attrs.style`: `font` (one of the 10 approved font ids), `size` (pt, 8–96), `weight` (400|700), `italic`, `color`, `highlight`, `background`, `borderLeft` (hex or `null`), `align` (`left|center|right|justify`). Colours accept #RGB/#RRGGBB/rgb() and are stored as uppercase `#RRGGBB`.
+- Block `attrs.spacing`: `mt`, `mb`, `pt`, `pr`, `pb`, `pl` — whole px, 0–64.
+- Sermon `globalStyles`: `{ [blockType]: { style?, spacing? } }` for `title|heading|paragraph|scripture|cue|quote|illustration|section`.
+- Node types `quote`, `illustration`, and `section` (`attrs.columns` 1|2|3, content = exactly that many `column` nodes holding blocks; no nested sections).

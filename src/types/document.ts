@@ -32,6 +32,11 @@ export interface SermonDocument {
   presentationSettings: PresentationSettings;
   /** Free-form study notes (edit chrome only) */
   notes: string;
+  /**
+   * Block builder: per-block-type default style/spacing
+   * (see `src/lib/sermon/blockStyle.ts`). Missing = app defaults.
+   */
+  globalStyles?: import("@/lib/sermon/blockStyle").GlobalStyles;
 }
 
 export type SemanticBlockType =
