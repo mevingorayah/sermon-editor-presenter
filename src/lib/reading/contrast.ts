@@ -5,7 +5,7 @@
  * other colour, and every colour in the light theme, is returned unchanged.
  */
 
-export const DARK_STAGE_BG = "#12110f"; // --rm-bg (dark), reading-mode.css
+export const DARK_STAGE_BG = "#141210"; // --rm-bg (dark), reading-mode.css
 export const MIN_CONTRAST = 4.5;
 /** #17 HIGHLIGHT_PRESETS yellow (light #FFF176) → its pre-mixed dark value. */
 export const DARK_YELLOW_PRESET = "#655F33";
@@ -125,7 +125,7 @@ export function effectiveDarkBackground(
 }
 
 /** Dark Preach body text (--rm-fg, reading-mode.css). */
-export const DARK_BODY_FG = "#ede8df";
+export const DARK_BODY_FG = "#ece6da";
 const YELLOW_PRESET_LIGHT = "#fff176";
 
 /**

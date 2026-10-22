@@ -26,3 +26,18 @@
   display: flex;
   flex-direction: column;
 }
+
+/* Page view: one page fits the screen; no page scroll. */
+.shell[data-view="page"] {
+  height: 100dvh;
+  overflow: hidden;
+}
+.shell[data-view="page"] .scroll {
+  overflow: hidden;
+}
+
+/* STOP: the sermon is over; dim the text. */
+.shell[data-stopped="true"] .scroll {
+  opacity: 0.35;
+  transition: opacity 300ms ease;
+}

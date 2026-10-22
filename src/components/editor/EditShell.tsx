@@ -48,7 +48,7 @@ import {
   isSaved,
   nextStatus,
   statusAction,
-  statusLabel,
+  statusDisplay,
   type SaveEvent,
   type SaveStatus,
 } from "@/lib/localStore/status";
@@ -165,7 +165,18 @@ export function EditShell() {
   /** The open sermon had edits not yet written when Restore was started. */
   const restoreOpenDirty = useRef(false);
 
-  const apply = useCallback((ev: SaveEvent) => setStatus((s) => nextStatus(s, ev)), []);
+  /** The save status stays empty until this session's first edit/save. */
+  const [statusShown, setStatusShown] = useState(false);
+  const statusShownRef = useRef(false);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const apply = useCallback((ev: SaveEvent) => {
+    if (ev.type === "edit" || ev.type === "write-failed" || ev.type === "conflict") {
+      statusShownRef.current = true;
+      setStatusShown(true);
+    }
+    if (ev.type === "write-ok" && statusShownRef.current) setSavedAt(new Date());
+    setStatus((s) => nextStatus(s, ev));
+  }, []);
   const broadcast = useCallback((m: Omit<SyncMessage, "tabId">) => {
     channel.current?.postMessage({ ...m, tabId: tabId.current } satisfies SyncMessage);
   }, []);
@@ -942,6 +953,13 @@ export function EditShell() {
 
   const outline = useMemo(() => extractOutline(doc?.content), [doc?.content]);
 
+  // "Not saved, retrying": a failed write is retried every 5 s until it lands.
+  useEffect(() => {
+    if (status.kind !== "error") return;
+    const id = window.setTimeout(() => void persist(), 5000);
+    return () => window.clearTimeout(id);
+  }, [status, persist]);
+
   if (mode === "first-run") {
     return (
       <FirstRunScreen
@@ -962,6 +980,7 @@ export function EditShell() {
   }
 
   const action = statusAction(status);
+  const display = statusDisplay(status, { shown: statusShown, savedAt });
   const onAction = () => {
     if (action === "choose-folder") void chooseFolder();
     else if (action === "allow-access") void allowAccess();
@@ -981,10 +1000,13 @@ export function EditShell() {
             aria-live="polite"
             data-testid="save-status"
             data-status={status.kind}
+            data-tone={display.tone}
+            data-empty={display.text ? undefined : ""}
             data-saved={isSaved(status) ? "true" : "false"}
-            title={status.kind === "error" ? status.detail : undefined}
+            title={display.label || undefined}
+            aria-label={display.label || undefined}
           >
-            {statusLabel(status)}
+            <span className={styles.savedText}>{display.text}</span>
           </span>
           {action ? (
             <button type="button" className={styles.retryBtn} onClick={onAction}>

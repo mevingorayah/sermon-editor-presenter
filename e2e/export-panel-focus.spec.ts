@@ -17,17 +17,6 @@ async function freshEdit(page: Page) {
   await expect(page.locator(".ProseMirror")).toBeVisible({ timeout: 20_000 });
 }
 
-async function activeElementInfo(page: Page) {
-  return page.evaluate(() => {
-    const el = document.activeElement as HTMLElement | null;
-    return {
-      tag: el?.tagName ?? null,
-      text: el?.textContent?.trim() ?? null,
-      pressed: el?.getAttribute("aria-pressed") ?? null,
-    };
-  });
-}
-
 const panelOf = (page: Page) =>
   page.getByRole("complementary", { name: /Document setup/ });
 
@@ -50,35 +39,27 @@ test("closing Document setup returns focus; filename/notes are not persisted", a
   await stem.fill("Temporary-Name");
   await panel.getByLabel("Include study notes").check();
 
-  // Close: the "Export…" link is gone (cross-route) → in-page Calibrate toggle.
+  // Close: the "Export…" link is gone (cross-route) → focus falls back to ⚙ (Calibrate… lives in its popover).
   await panel.getByRole("button", { name: "Close document setup" }).click();
   await expect(panel).toBeHidden();
-  const calibrate = page.getByRole("button", { name: "Calibrate" });
-  await expect(calibrate).toBeFocused();
-  expect(await activeElementInfo(page)).toEqual({
-    tag: "BUTTON",
-    text: "Calibrate",
-    pressed: "false",
-  });
+  const gear = page.getByRole("button", { name: "Reading settings" });
+  await expect(gear).toBeFocused();
+  const openCalibrate = async () => {
+    await gear.click();
+    await page.getByRole("button", { name: "Calibrate…" }).click();
+  };
 
   // Reopen from the in-page trigger: settings are fresh (not persisted).
-  await calibrate.click();
+  await openCalibrate();
   await expect(panel).toBeVisible();
   await expect(panel.getByLabel("Filename")).toHaveValue(defaultStem);
   await expect(panel.getByLabel("Include study notes")).not.toBeChecked();
 
-  // Close via the panel's Close button → focus returns to the opener.
+  // Close via the panel's Close button → focus returns to an in-page trigger.
   await panel.getByRole("button", { name: "Close document setup" }).focus();
   await page.keyboard.press("Enter");
   await expect(panel).toBeHidden();
-  await expect(calibrate).toBeFocused();
-
-  // Toggle closed from the trigger itself → focus stays on it.
-  await calibrate.click();
-  await expect(panel).toBeVisible();
-  await calibrate.click();
-  await expect(panel).toBeHidden();
-  expect((await activeElementInfo(page)).text).toBe("Calibrate");
+  expect(await page.evaluate(() => document.activeElement?.hasAttribute("data-settings-toggle") || document.activeElement?.textContent?.includes("Calibrate"))).toBe(true);
 
   expect(pageErrors).toEqual([]);
 });

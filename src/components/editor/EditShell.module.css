@@ -64,12 +64,47 @@
 }
 
 .saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   font-size: 0.75rem;
   color: var(--edit-fg-muted);
+  white-space: nowrap;
+}
+.saved[data-empty] {
+  display: none;
+}
+.saved[data-tone="error"] {
+  color: #c62828;
+  font-weight: 600;
+}
+/* Icon (decorative; the words live in title + aria-label). */
+.saved::before {
+  content: "✓";
+  font-size: 0.9rem;
+  line-height: 1;
+}
+.saved[data-status="saving"]::before {
+  content: "↻";
+}
+.saved[data-tone="error"]::before {
+  content: "!";
+}
+@media (max-width: 599.98px) {
+  /* Icon only under 600px. */
+  .savedText {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 .preachBtn {
   display: inline-flex;
+  min-height: 44px;
   align-items: center;
   padding: 0.45rem 0.9rem;
   border-radius: 8px;
@@ -89,6 +124,7 @@
 
 .exportLink {
   display: inline-flex;
+  min-height: 44px;
   align-items: center;
   padding: 0.45rem 0.9rem;
   border-radius: 8px;
@@ -172,7 +208,7 @@
 }
 
 .menu { position: relative; }
-.menuBtn { padding: 0.4rem 0.75rem; border-radius: 8px; border: 1px solid var(--edit-border); background: var(--edit-bg); color: var(--edit-fg); font-size: 0.85rem; cursor: pointer; }
+.menuBtn { min-height: 44px; min-width: 44px; padding: 0.4rem 0.75rem; border-radius: 8px; border: 1px solid var(--edit-border); background: var(--edit-bg); color: var(--edit-fg); font-size: 0.85rem; cursor: pointer; }
 .menuList { position: absolute; right: 0; top: calc(100% + 4px); min-width: 15rem; display: flex; flex-direction: column; padding: 0.35rem; border: 1px solid var(--edit-border); border-radius: 10px; background: var(--edit-bg-elevated); box-shadow: 0 8px 24px rgb(0 0 0 / 0.15); z-index: 20; }
 .menuList button { text-align: left; padding: 0.45rem 0.6rem; border: 0; border-radius: 6px; background: none; color: var(--edit-fg); cursor: pointer; font-size: 0.875rem; }
 .menuList button:hover { background: var(--edit-bg); }
