@@ -64,8 +64,42 @@
 }
 
 .saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   font-size: 0.75rem;
   color: var(--edit-fg-muted);
+  white-space: nowrap;
+}
+.saved[data-empty] {
+  display: none;
+}
+.saved[data-tone="error"] {
+  color: #c62828;
+  font-weight: 600;
+}
+/* Icon (decorative; the words live in title + aria-label). */
+.saved::before {
+  content: "✓";
+  font-size: 0.9rem;
+  line-height: 1;
+}
+.saved[data-status="saving"]::before {
+  content: "↻";
+}
+.saved[data-tone="error"]::before {
+  content: "!";
+}
+@media (max-width: 599.98px) {
+  /* Icon only under 600px. */
+  .savedText {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 .preachBtn {

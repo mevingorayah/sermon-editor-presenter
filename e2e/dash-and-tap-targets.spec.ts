@@ -40,9 +40,19 @@ test("typed hyphen range stays a hyphen in Edit and Preach; typed en dash kept",
   await expect(ed).not.toContainText("3.16\u201318");
   await page.waitForTimeout(1500); // let autosave run
   await page.goto("/preach");
-  const body = page.locator("body");
-  await expect(body).toContainText(`Lire ${RANGE} ${EN_DASH} -- fin`, { timeout: 20_000 });
-  await expect(body).not.toContainText("3.16\u201318");
+  // Page view shows one page at a time: read every page's lines.
+  const view = page.locator("[data-page-view]");
+  await expect(view).toBeVisible({ timeout: 20_000 });
+  const count = Number(await view.getAttribute("data-page-count"));
+  let all = "";
+  for (let i = 0; i < count; i++) {
+    await expect(view).toHaveAttribute("data-page-index", String(i));
+    all += (await view.locator("[data-line]").allTextContents()).join(" ") + " ";
+    if (i < count - 1) await page.keyboard.press("ArrowRight");
+  }
+  all = all.replace(/\s+/g, " ");
+  expect(all).toContain(`Lire ${RANGE} ${EN_DASH} -- fin`);
+  expect(all).not.toContain("3.16\u201318");
 });
 
 test("tap targets are at least 44x44 on /edit and /preach", async ({ page }) => {
@@ -68,8 +78,32 @@ test("tap targets are at least 44x44 on /edit and /preach", async ({ page }) => 
 
   await page.goto("/preach");
   await expectTap(page.getByRole("link", { name: /Back to Edit/ }), "Back to Edit");
-  await expectTap(page.getByRole("button", { name: "Dark", exact: true }), "Dark");
-  await expectTap(page.getByRole("button", { name: "Light", exact: true }), "Light");
-  await expectTap(page.getByRole("button", { name: "Calibrate", exact: true }), "Calibrate");
+  // Theme (Dark/Light) and Calibrate… now live in the ⚙ panel; the sweep below covers them.
+  // Every control in the bar and the ⚙ panel (incl. Page controls such as
+  // "Follow device rotation") is at least 44x44.
+  await page.getByRole("button", { name: "Reading settings" }).click();
+  const panel = page.locator("[data-settings-panel]");
+  await expect(panel).toBeVisible();
+  const small = await page.evaluate(() => {
+    const bad: string[] = [];
+    const sel = "header button, header a, header select, [data-settings-panel] button, [data-settings-panel] a, [data-settings-panel] select, [data-settings-panel] input";
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>(sel))) {
+      const st = getComputedStyle(el);
+      if (st.display === "none" || st.visibility === "hidden" || el.closest("[hidden]")) continue;
+      let target: HTMLElement = el;
+      if (el instanceof HTMLInputElement && (el.type === "checkbox" || el.type === "radio")) target = el.closest("label") ?? el;
+      const r = target.getBoundingClientRect();
+      if (!r.width && !r.height) continue;
+      const minW = el instanceof HTMLInputElement && el.type === "range" ? 0 : 44;
+      if (r.width < minW - 0.5 || r.height < 43.5) {
+        const name = el.getAttribute("aria-label") || target.textContent?.trim() || el.outerHTML.slice(0, 60);
+        bad.push(`${name}: ${Math.round(r.width)}x${Math.round(r.height)}`);
+      }
+    }
+    return bad;
+  });
+  expect(small, "controls under 44x44").toEqual([]);
+  const follow = panel.getByText("Follow device rotation");
+  if (await follow.count()) await expectTap(panel.locator("label").filter({ has: page.getByRole("checkbox", { name: "Follow device rotation" }) }), "Follow device rotation");
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/after-tap-preach.png` });
 });

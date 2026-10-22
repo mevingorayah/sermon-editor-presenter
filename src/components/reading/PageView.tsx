@@ -27,9 +27,15 @@ interface PageViewProps {
 
 /** Keys typed into a control never turn the page. */
 function typingInControl(t: EventTarget | null): boolean {
+  // Only controls that use the arrow keys themselves (text entry, sliders,
+  // lists, radios) or a modal dialog keep them. Buttons in the non-modal ⚙
+  // panel (page format, orientation…) do not, so pages still turn after a
+  // format change without first closing the panel.
   const el = t as HTMLElement | null;
   if (!el?.closest) return false;
-  return Boolean(el.closest("input, select, textarea, [contenteditable], [role=dialog], [role=complementary]"));
+  if (el.closest("textarea, select, [contenteditable]:not([contenteditable=false]), [role=slider], [role=listbox], [role=radiogroup], [aria-modal=true], dialog[open]")) return true;
+  if (el instanceof HTMLInputElement) return !["checkbox", "button", "submit", "reset"].includes(el.type);
+  return false;
 }
 
 export function PageView({ content, settings, fill = false }: PageViewProps) {

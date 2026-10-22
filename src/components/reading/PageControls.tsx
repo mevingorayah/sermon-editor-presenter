@@ -70,10 +70,10 @@ export function PageControls({ choice, followDevice, onChange, onFit, onFollowDe
           </button>
         ))}
       </div>
-      <label className={styles.row}>
+      <label className={styles.checkRow} data-follow-rotation="">
         <input
           type="checkbox"
-          className={styles.check}
+          className={styles.checkInput}
           checked={followDevice}
           onChange={(e) => onFollowDeviceChange(e.target.checked)}
         />

@@ -145,7 +145,8 @@
 .cue {
   font-size: 0.86em;
   font-style: italic;
-  margin-inline: 0.18em;
+  /* No margin: a cue touching punctuation ("esklav.»]") renders exactly as
+     typed; any space around a cue is the writer's own. */
 }
 .cue,
 .cue * {

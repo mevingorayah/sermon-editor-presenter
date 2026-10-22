@@ -4,6 +4,7 @@ import { test, expect, type Page } from "@playwright/test";
 
 const ACTIVE_ID_KEY = "sermon-editor-presenter:active-id:v1";
 const VIEW_KEY = "sermon-editor-presenter:preach-view:v1";
+const CUE = [{ type: "italic" }, { type: "textStyle", attrs: { color: "#5c5c5c" } }];
 const t = (text: string, marks?: unknown[]) => (marks ? { type: "text", text, marks } : { type: "text", text });
 const body =
   "When the sower went out to sow, some seed fell along the path and the birds came and ate it up, and some fell on rocky ground where it had little soil.";
@@ -326,4 +327,78 @@ test("⚙ Spacing: sliders, tap-to-type, reset keeps format", async ({ page }) =
   await panel.locator("[data-reset-spacing]").click();
   await expect(panel.getByRole("button", { name: /Line spacing: 1.55 ×/ })).toBeVisible();
   await expect(panel.locator('[data-format="a4"]')).toHaveAttribute("aria-pressed", "true");
+});
+
+for (const view of ["flow", "page"] as const) {
+  test(`French punctuation renders exactly as typed, no added space (${view})`, async ({ page }) => {
+    // Made-up fixture text.
+    const typed = "Li dir: «Mo pa enn esklav.»] Apre sa, nou al lakaz.";
+    await seed(page, {
+      view,
+      content: {
+        type: "doc",
+        content: [
+          { type: "heading", attrs: { level: 2 }, content: [t(typed)] },
+          { type: "paragraph", content: [t(typed)] },
+          { type: "paragraph", content: [t("Li dir: «Mo pa enn esklav."), t("»]", [{ type: "bold" }]), t(" Apre.")] },
+          { type: "paragraph", content: [t("[Li dir: «Mo pa enn esklav.", CUE), t("»]", CUE), t(" Apre ; non ! oui ?")] },
+          { type: "paragraph", content: [t("Li dir: «Mo pa enn esklav."), t("»] [Poz.]", CUE), t(" Apre.")] },
+          { type: "scripture", attrs: { citation: "Jn 8.33" }, content: [t(typed)] },
+        ],
+      },
+    });
+    await page.goto("/preach");
+    const scope = view === "page" ? page.locator("[data-page-view]") : page.locator("main, body").first();
+    await expect(scope).toContainText("esklav.»]", { timeout: 20_000 });
+    // Measure the rendered gap between "." and "»": glyphs must touch (no visual space).
+    // Measure the rendered gap between "." and "»" (also across run/cue
+    // boundaries): the glyphs must touch, i.e. no visual space is added.
+    const gaps = await page.evaluate(() => {
+      const nodes: Text[] = [];
+      const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let n = w.nextNode(); n; n = w.nextNode()) nodes.push(n as Text);
+      const chars: Array<{ n: Text; i: number }> = [];
+      for (const n of nodes) for (let i = 0; i < (n.textContent ?? "").length; i++) chars.push({ n, i });
+      const text = chars.map((c) => c.n.textContent![c.i]).join("");
+      const out: number[] = [];
+      const rect = (c: { n: Text; i: number }) => {
+        const r = document.createRange();
+        r.setStart(c.n, c.i);
+        r.setEnd(c.n, c.i + 1);
+        return r.getBoundingClientRect();
+      };
+      for (let k = text.indexOf(".»]"); k >= 0; k = text.indexOf(".»]", k + 1)) {
+        const dot = rect(chars[k]);
+        const q = rect(chars[k + 1]);
+        if (!dot.width || q.top >= dot.bottom || q.bottom <= dot.top) continue; // other page / line
+        out.push((q.left - dot.right) / dot.height);
+      }
+      return out;
+    });
+    expect(gaps.length).toBeGreaterThan(0);
+    expect(gaps.length).toBeGreaterThanOrEqual(view === "flow" ? 6 : 3);
+    for (const g of gaps) expect(g).toBeLessThan(0.06);
+  });
+}
+
+test("after changing page format in ⚙, arrow keys still turn pages (panel open or closed)", async ({ page }) => {
+  await seed(page, { view: "page" });
+  await page.goto("/preach");
+  const pv = page.locator("[data-page-view]");
+  await expect(pv).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Reading settings" }).click();
+  const panel = page.locator("[data-settings-panel]");
+  await panel.getByRole("button", { name: /Letter/ }).first().click();
+  await expect(pv).not.toHaveAttribute("data-format", "a4");
+  // Focus is still on the format button inside the open panel.
+  await expect(pv).toHaveAttribute("data-page-index", "0");
+  await page.keyboard.press("ArrowRight");
+  await expect(pv).toHaveAttribute("data-page-index", "1");
+  await page.keyboard.press("ArrowLeft");
+  await expect(pv).toHaveAttribute("data-page-index", "0");
+  // And after closing the panel.
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+  await page.keyboard.press("ArrowRight");
+  await expect(pv).toHaveAttribute("data-page-index", "1");
 });

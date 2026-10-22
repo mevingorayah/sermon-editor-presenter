@@ -220,11 +220,6 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.4rem;
 }
-.check {
-  width: 24px;
-  height: 24px;
-  margin: 10px;
-}
 .ptValue {
   min-width: 4ch;
   text-align: center;
@@ -252,5 +247,6 @@
 .valueInput { width: 7em; padding: 0 8px; }
 .link { background: none; border: 0; color: inherit; text-decoration: underline; padding: 0; justify-self: start; text-align: left; }
 
-.check { min-width: 44px; min-height: 44px; }
+.checkRow { display: flex; align-items: center; min-height: 44px; cursor: pointer; }
+.checkInput { width: 24px; height: 24px; margin: 10px; flex: none; accent-color: var(--rm-accent); }
 .sliderRow > label { min-height: 44px; display: flex; align-items: center; }
