@@ -19,6 +19,8 @@ import {
   globalStylesSchema,
   normalizeBlockLayout,
   normalizeGlobalStyles,
+  effectiveBlockSizePt,
+  PRESENTATION_MIN_PT,
 } from "../blockStyle";
 
 type Node = Record<string, unknown>;
@@ -121,7 +123,6 @@ describe("block style validation", () => {
     ["size above 96", { size: 97 }, /at most 96 pt/],
     ["weight 500", { weight: 500 }, /400 or 700/],
     ["unknown font", { font: "comic-sans" }, /font must be one of/],
-    ["old font id", { font: "serif" }, /font must be one of/],
     ["named colour", { color: "red" }, /Colour must be/],
     ["css var", { background: "var(--accent)" }, /Colour must be/],
     ["bad align", { align: "middle" }, /align must be one of/],
@@ -227,5 +228,71 @@ describe("store globalStyles", () => {
     assert.equal(u.globalStyles?.title?.style?.color, "#AABBCC");
     const c = await store.updateSermon(s.id, { globalStyles: null });
     assert.equal("globalStyles" in c, false);
+  });
+});
+
+describe("effectiveBlockSizePt (Preach/export clamp)", () => {
+  it("stores 8 pt but resolves to 24 pt in Preach/export", () => {
+    assert.equal(blockStyleSchema.parse({ size: 8 }).size, 8);
+    assert.equal(PRESENTATION_MIN_PT, 24);
+    assert.equal(effectiveBlockSizePt({ size: 8 }), 24);
+    assert.equal(effectiveBlockSizePt({}, { style: { size: 10 } }), 24);
+  });
+  it("keeps larger sizes and prefers block over global", () => {
+    assert.equal(effectiveBlockSizePt({ size: 40 }, { style: { size: 30 } }), 40);
+    assert.equal(effectiveBlockSizePt(undefined, { style: { size: 30 } }), 30);
+    assert.equal(effectiveBlockSizePt(undefined, undefined, 24, 28), 28);
+    assert.equal(effectiveBlockSizePt({ size: 8 }, null, 10), 10);
+  });
+});
+
+describe("legacy font ids", () => {
+  it("normalises sans/serif/mono in style and globalStyles", () => {
+    assert.equal(blockStyleSchema.parse({ font: "serif" }).font, "literata");
+    assert.equal(blockStyleSchema.parse({ font: "sans" }).font, "inter");
+    assert.equal(blockStyleSchema.parse({ font: "mono" }).font, "jetbrains-mono");
+    const gs = globalStylesSchema.parse({ paragraph: { style: { font: "serif" } } });
+    assert.equal(gs.paragraph?.style?.font, "literata");
+    assert.equal(normalizeGlobalStyles({ title: { style: { font: "sans" } } }).title.style.font, "inter");
+  });
+
+  it("sermon with sans/serif/mono everywhere saves on first builder edit, words and marks untouched", async () => {
+    const legacy = () => ({
+      type: "doc",
+      content: [
+        { type: "paragraph", attrs: { fontFamily: "serif" }, content: [
+          text("Alpha ", [{ type: "textStyle", attrs: { fontFamily: "sans", color: null } }]),
+          text("beta", [{ type: "textStyle", attrs: { fontFamily: "mono" } }]),
+        ] },
+        { type: "scripture", attrs: { citation: "Book 1:1", style: { font: "serif" } }, content: [text("Gamma verse")] },
+        { type: "heading", attrs: { level: 1, style: { font: "mono", size: 8 } }, content: [text("Delta")] },
+      ],
+    });
+    const doc = legacy();
+    const parsed = updateContentSchema.safeParse({ content: doc });
+    assert.equal(parsed.success, true, JSON.stringify(parsed.error?.issues));
+    const gsParsed = updateSermonSchema.safeParse({ globalStyles: { paragraph: { style: { font: "sans" } } } });
+    assert.equal(gsParsed.success, true);
+
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "sermons-legacy-"));
+    process.env.SERMON_DATA_DIR = tmp;
+    try {
+      const store: typeof import("../store") = await import(`../store.ts?lg=${Date.now()}`);
+      const s = await store.createSermon({ title: "L", content: legacy() });
+      const saved = await store.updateContent(s.id, { content: legacy() });
+      const c = saved.content as { content: Array<{ attrs: Node; content: Array<Node> }> };
+      // Words unchanged
+      const words = (d: typeof c) => d.content.map((b) => b.content.map((t) => t.text).join("")).join("|");
+      assert.equal(words(c), words(legacy() as typeof c));
+      // fontFamily outside `style` untouched
+      assert.equal(c.content[0].attrs.fontFamily, "serif");
+      assert.deepEqual(c.content[0].content, legacy().content[0].content);
+      // style.font normalised
+      assert.equal((c.content[1].attrs.style as Node).font, "literata");
+      assert.equal((c.content[2].attrs.style as Node).font, "jetbrains-mono");
+      assert.equal((c.content[2].attrs.style as Node).size, 8);
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true });
+    }
   });
 });

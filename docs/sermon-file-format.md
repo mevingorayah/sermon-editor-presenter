@@ -42,7 +42,7 @@ Limits: 20 MB per sermon file, 200 MB per backup. v2 images will be stored as se
 
 Defined in `src/lib/sermon/blockStyle.ts`. All optional; missing or empty means "use the global style for this block type". Sermons without them are stored and re-saved byte-identically, so no `schemaVersion` bump.
 
-- Block `attrs.style`: `font` (one of the 10 approved font ids), `size` (pt, 8–96), `weight` (400|700), `italic`, `color`, `highlight`, `background`, `borderLeft` (hex or `null`), `align` (`left|center|right|justify`). Colours accept #RGB/#RRGGBB/rgb() and are stored as uppercase `#RRGGBB`.
+- Block `attrs.style`: `font` (one of the 10 approved font ids, or `jetbrains-mono`; legacy `serif`→`literata`, `sans`→`inter`, `mono`→`jetbrains-mono` are accepted and normalised), `size` (pt, 8–96 stored; Preach/exports render via `effectiveBlockSizePt`, clamped to 24 pt minimum), `weight` (400|700), `italic`, `color`, `highlight`, `background`, `borderLeft` (hex or `null`), `align` (`left|center|right|justify`). Colours accept #RGB/#RRGGBB/rgb() and are stored as uppercase `#RRGGBB`.
 - Block `attrs.spacing`: `mt`, `mb`, `pt`, `pr`, `pb`, `pl` — whole px, 0–64.
 - Sermon `globalStyles`: `{ [blockType]: { style?, spacing? } }` for `title|heading|paragraph|scripture|cue|quote|illustration|section`.
 - Node types `quote`, `illustration`, and `section` (`attrs.columns` 1|2|3, content = exactly that many `column` nodes holding blocks; no nested sections).

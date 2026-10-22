@@ -24,8 +24,42 @@ export const BLOCK_FONT_IDS = [
   "lato",
   "montserrat",
   "nunito-sans",
+  // Mono kept for code/notes (spec §4.4) and as the target of legacy "mono".
+  "jetbrains-mono",
 ] as const;
 export type BlockFontId = (typeof BLOCK_FONT_IDS)[number];
+
+/**
+ * Legacy font ids from the v1 editor. Accepted on input and normalised;
+ * never rejected, so older sermons save on their first builder edit.
+ */
+export const LEGACY_FONT_MAP: Record<string, BlockFontId> = {
+  serif: "literata",
+  sans: "inter",
+  mono: "jetbrains-mono",
+};
+
+export function normalizeFontId(v: unknown): unknown {
+  return typeof v === "string" && v in LEGACY_FONT_MAP ? LEGACY_FONT_MAP[v] : v;
+}
+
+/** Minimum readable size in Preach and every export (pt). */
+export const PRESENTATION_MIN_PT = 24;
+
+/**
+ * Size a block renders at in Preach/exports: block style size, else the
+ * global style for its type, else `fallbackPt`; clamped up to `minPt`.
+ * Storage keeps the raw 8–96 pt value; only rendering is clamped.
+ */
+export function effectiveBlockSizePt(
+  style: { size?: number } | null | undefined,
+  globals?: { style?: { size?: number } } | null,
+  minPt: number = PRESENTATION_MIN_PT,
+  fallbackPt: number = minPt,
+): number {
+  const raw = style?.size ?? globals?.style?.size ?? fallbackPt;
+  return Math.max(minPt, raw);
+}
 
 /** Keys allowed in `globalStyles` (one entry per block type). */
 export const BLOCK_TYPES = [
@@ -83,11 +117,14 @@ const spacingValue = z
 
 export const blockStyleSchema = z
   .object({
-    font: z.enum(BLOCK_FONT_IDS, {
-      errorMap: () => ({
-        message: `font must be one of: ${BLOCK_FONT_IDS.join(", ")}`,
+    font: z.preprocess(
+      normalizeFontId,
+      z.enum(BLOCK_FONT_IDS, {
+        errorMap: () => ({
+          message: `font must be one of: ${BLOCK_FONT_IDS.join(", ")}`,
+        }),
       }),
-    }),
+    ),
     size: z
       .number({ invalid_type_error: "size must be a number (pt)" })
       .min(FONT_SIZE_MIN_PT, { message: `size must be at least ${FONT_SIZE_MIN_PT} pt` })
@@ -234,6 +271,11 @@ export function normalizeBlockLayout<T>(node: T): T {
         nextStyle = nextStyle ?? { ...style };
         nextStyle[k] = hex;
       }
+    }
+    const font = normalizeFontId(style.font);
+    if (font !== style.font) {
+      nextStyle = nextStyle ?? { ...style };
+      nextStyle.font = font;
     }
     if (nextStyle) next = { ...obj, attrs: { ...attrs, style: nextStyle } };
   }
