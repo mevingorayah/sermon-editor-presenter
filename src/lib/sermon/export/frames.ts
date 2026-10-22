@@ -8,9 +8,11 @@
  * `PageInput` is accepted; `pageSpecFromTarget` maps them.
  */
 
-export const PAGE_FORMATS = ["a4", "letter", "half-letter", "tablet", "16:9", "16:10", "custom"] as const;
+export const PAGE_FORMATS = ["a4", "a5", "letter", "half-letter", "legal", "4:3", "16:10", "16:9", "custom", "fit-screen"] as const;
 /** Formats with fixed geometry (everything except "custom"). */
-export const PRESET_PAGE_FORMATS = ["a4", "letter", "half-letter", "tablet", "16:9", "16:10"] as const;
+export const PRESET_PAGE_FORMATS = ["a4", "a5", "letter", "half-letter", "legal", "4:3", "16:10", "16:9"] as const;
+/** Print presets (the rest of PRESET_PAGE_FORMATS are screen shapes). */
+export const PAPER_PAGE_FORMATS = ["a4", "a5", "letter", "half-letter", "legal"] as const;
 export type PresetPageFormat = (typeof PRESET_PAGE_FORMATS)[number];
 export type PageFormat = (typeof PAGE_FORMATS)[number];
 export const PAGE_ORIENTATIONS = ["portrait", "landscape"] as const;
@@ -107,19 +109,41 @@ export interface PageSpec {
   custom?: CustomPageSize;
 }
 
+/**
+ * Frontend's fit-to-screen page: the last measured CSS px of the device
+ * (`dpr` optional and ignored). Treated as custom px at 96 dpi, clamped to
+ * the custom limits (never rejected for size). Orientation follows rotation.
+ */
+export interface FitPageSpec {
+  kind: "fit";
+  width: number;
+  height: number;
+  orientation?: PageOrientation;
+  dpr?: number;
+  textSizePt?: number;
+}
+
+/** Fit spec → custom px at 96 dpi. */
+export function fitToCustom(f: { width: number; height: number }): CustomPageSize {
+  const n = (v: unknown) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : 192);
+  return { width: n(f.width), height: n(f.height), unit: "px", dpi: 96 };
+}
+
 /** A normalized page: `custom` is present only for format "custom". */
 export type ResolvedPage = Required<Omit<PageSpec, "custom">> & { custom?: CustomPageSize };
 
 /** Either a full spec or a legacy target string. */
-export type PageInput = PageSpec | string;
+export type PageInput = PageSpec | FitPageSpec | string;
 
 /** Natural (portrait-or-native) geometry per format: px and inches across the short/long sides. */
 const FORMATS: Record<PresetPageFormat, { shortPx: number; longPx: number; shortIn: number; natural: PageOrientation }> = {
   "16:9": { shortPx: 1080, longPx: 1920, shortIn: 7.5, natural: "landscape" }, // 13.333in slide
   "16:10": { shortPx: 1000, longPx: 1600, shortIn: 6.25, natural: "landscape" }, // 10in slide
-  tablet: { shortPx: 1200, longPx: 1600, shortIn: 9.25, natural: "landscape" }, // Galaxy Tab S10 Lite, 4:3
+  "4:3": { shortPx: 1200, longPx: 1600, shortIn: 7.5, natural: "landscape" }, // 10in slide
   letter: { shortPx: 1275, longPx: 1650, shortIn: 8.5, natural: "portrait" },
+  legal: { shortPx: 1275, longPx: 2100, shortIn: 8.5, natural: "portrait" }, // 8.5 × 14in
   a4: { shortPx: 1240, longPx: 1754, shortIn: 8.27, natural: "portrait" },
+  a5: { shortPx: 874, longPx: 1240, shortIn: 5.83, natural: "portrait" }, // 148 × 210mm
   "half-letter": { shortPx: 825, longPx: 1275, shortIn: 5.5, natural: "portrait" },
 };
 
@@ -127,9 +151,13 @@ const FORMATS: Record<PresetPageFormat, { shortPx: number; longPx: number; short
 export function pageSpecFromTarget(target: string): PageSpec {
   switch (target) {
     case "screen-16-10": return { format: "16:10", orientation: "landscape" };
-    case "tablet": return { format: "tablet", orientation: "landscape" };
-    case "tablet-portrait": return { format: "tablet", orientation: "portrait" };
-    case "tablet-landscape": return { format: "tablet", orientation: "landscape" };
+    // Old tablet presets (any of them) migrate to 4:3 landscape.
+    case "tablet":
+    case "tablet-portrait":
+    case "tablet-landscape":
+    case "screen-4-3": return { format: "4:3", orientation: "landscape" };
+    case "paper-a5": return { format: "a5", orientation: "portrait" };
+    case "paper-legal": return { format: "legal", orientation: "portrait" };
     case "paper-letter": return { format: "letter", orientation: "portrait" };
     case "paper-a4": return { format: "a4", orientation: "portrait" };
     case "paper-half-letter": return { format: "half-letter", orientation: "portrait" };
@@ -148,9 +176,15 @@ export function snapshotLineSpacing(s: { lineSpacing?: number; lineHeight?: numb
 
 /** Normalize any PageInput into a complete spec (text size clamped). */
 export function resolvePage(input: PageInput): ResolvedPage {
-  const s = typeof input === "string" ? pageSpecFromTarget(input) : input;
+  const s0 = typeof input === "string" ? pageSpecFromTarget(input) : input;
+  const s: PageSpec = "kind" in s0
+    ? { format: "fit-screen", orientation: s0.orientation as PageOrientation, textSizePt: s0.textSizePt, custom: fitToCustom(s0) }
+    : (s0.format as string) === "tablet"
+      ? { ...s0, format: "4:3", orientation: "landscape" } // legacy tablet preset → 4:3 landscape
+      : s0;
   let format: PageFormat = (PAGE_FORMATS as readonly string[]).includes(s.format) ? s.format : "16:9";
   // "custom" without a usable size falls back to 16:9.
+  if (format === "fit-screen") format = s.custom ? "custom" : "16:9";
   if (format === "custom" && !(s.custom && (CUSTOM_UNITS as readonly string[]).includes(s.custom.unit))) format = "16:9";
   const natural = format === "custom" ? customGeometry(s.custom!).natural : FORMATS[format].natural;
   const orientation: PageOrientation = s.orientation === "portrait" || s.orientation === "landscape"
@@ -172,7 +206,7 @@ function geometry(p: ResolvedPage): { shortPx: number; longPx: number; shortIn: 
     // Inches follow the rounded pixel aspect exactly, as for presets.
     return { shortPx, longPx, shortIn: +shortIn.toFixed(3), longIn: +((shortIn * longPx) / shortPx).toFixed(3) };
   }
-  const g = FORMATS[p.format];
+  const g = FORMATS[p.format as PresetPageFormat];
   return { ...g, longIn: +((g.shortIn * g.longPx) / g.shortPx).toFixed(3) };
 }
 
@@ -192,7 +226,7 @@ export function isPaperPage(input: PageInput): boolean {
   const p = resolvePage(input);
   const f = p.format;
   if (f === "custom") return p.custom!.unit !== "px";
-  return f === "a4" || f === "letter" || f === "half-letter";
+  return (PAPER_PAGE_FORMATS as readonly string[]).includes(f);
 }
 
 /** Frame size in px (PNG pixels; also the layout coordinate space). */
@@ -250,6 +284,7 @@ export function pageSnapshotFields(page: {
   lineSpacing?: number;
   paragraphSpacingPt?: number;
   custom?: CustomPageSize;
+  pageSpec?: FitPageSpec;
   margins?: { top?: string; right?: string; bottom?: string; left?: string; binderGutter?: string };
 } = {}) {
   const m = (v: string | undefined) => {
@@ -261,6 +296,9 @@ export function pageSnapshotFields(page: {
     ...(page.format ? { pageFormat: page.format } : {}),
     ...(page.orientation ? { orientation: page.orientation } : {}),
     ...(page.format === "custom" && page.custom ? { customPage: { ...page.custom } } : {}),
+    ...(page.pageSpec?.kind === "fit"
+      ? { pageFormat: "fit-screen", pageSpec: { ...page.pageSpec }, ...(page.pageSpec.orientation ? { orientation: page.pageSpec.orientation } : {}) }
+      : {}),
     textSizePt: clamp(page.textSizePt, PAGE_LIMITS.textSizePt),
     paragraphSpacingPt: clamp(page.paragraphSpacingPt, PAGE_LIMITS.paragraphSpacingPt),
     lineSpacing,

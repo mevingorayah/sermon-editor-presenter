@@ -20,8 +20,8 @@ import { afmMeasurer, type MeasureStyle, type TextMeasurer } from "./textMeasure
 export {
   PAGE_FORMATS, PAGE_ORIENTATIONS, MIN_TEXT_PT, allPageSpecs, frameSizeInches, isPaperPage, pageSpecFromTarget,
   pngFrameSize, pngFrameWidthInches, pxPerInch, pxPerPt, resolvePage,
-  PRESET_PAGE_FORMATS, CUSTOM_UNITS, CUSTOM_PAGE_LIMITS, customPageError, customSizeToInches, pageGeometry,
-  type CustomPageSize, type CustomPageUnit, type ResolvedPage,
+  PRESET_PAGE_FORMATS, PAPER_PAGE_FORMATS, fitToCustom, CUSTOM_UNITS, CUSTOM_PAGE_LIMITS, customPageError, customSizeToInches, pageGeometry,
+  type CustomPageSize, type FitPageSpec, type CustomPageUnit, type ResolvedPage,
   type PageFormat, type PageInput, type PageOrientation, type PageSpec,
 } from "./frames";
 export { afmMeasurer, type MeasureStyle, type TextMeasurer } from "./textMeasure";
@@ -428,8 +428,12 @@ export function pngExportLabel(pages: number): string {
  * per-sermon `format` / `orientation` / `textSizePt` overrides.
  */
 export function pageSpecFromSnapshot(
-  snapshot: Pick<CalibratedSnapshot, "target"> & Partial<Pick<CalibratedSnapshot, "pageFormat" | "orientation" | "textSizePt" | "customPage">>,
+  snapshot: Pick<CalibratedSnapshot, "target"> & Partial<Pick<CalibratedSnapshot, "pageFormat" | "orientation" | "textSizePt" | "customPage" | "pageSpec">>,
 ): PageSpec {
+  if (snapshot.pageSpec?.kind === "fit") {
+    // Fit-to-screen wins: the device's measured CSS px, as custom px at 96 dpi.
+    return resolvePage({ ...snapshot.pageSpec, orientation: snapshot.pageSpec.orientation ?? snapshot.orientation, textSizePt: snapshot.textSizePt });
+  }
   const base = resolvePage(String(snapshot.target));
   return resolvePage({
     format: snapshot.pageFormat ?? base.format,
