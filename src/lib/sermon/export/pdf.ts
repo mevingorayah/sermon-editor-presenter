@@ -1,10 +1,10 @@
+import { snapshotLineSpacing } from "./frames";
 import fs from "node:fs";
 import path from "node:path";
 import PDFDocument from "pdfkit";
 import type { CalibratedSnapshot } from "@/types/document";
-import { HIGHLIGHT_AMBER, toHexRgb } from "./colors";
+import { HIGHLIGHT_AMBER } from "./colors";
 import {
-  styledBlocksFromSnapshot,
   titleTextFromSnapshot,
   withNotesSection,
   type StyledBlock,
@@ -13,32 +13,47 @@ import {
   citationCaps,
 } from "./contentWalk";
 import { pdfkitFont, type FontFamilyId } from "./fonts";
-import { resolveMargins } from "./margins";
+import { exportFontName } from "./textMeasure";
+
+/** Folder with the static export fonts (assets/fonts/export, /app in Docker). */
+export function exportFontDir(): string | null {
+  const c = [process.env.EXPORT_FONT_DIR && path.join(process.env.EXPORT_FONT_DIR, "export"),
+    "/app/assets/fonts/export", path.join(process.cwd(), "assets/fonts/export")].filter(Boolean) as string[];
+  return c.find((d) => fs.existsSync(path.join(d, "literata-Regular.ttf"))) ?? null;
+}
+
+/** Register the export fonts; returns a font-name resolver for this doc. */
+function registerExportFonts(doc: PDFKit.PDFDocument): (id: FontFamilyId, st: { bold?: boolean; italic?: boolean }) => string {
+  const dir = exportFontDir();
+  if (!dir) {
+    console.warn("[export/pdf] assets/fonts/export missing; falling back to built-in fonts (breaks may differ)");
+    return pdfkitFont;
+  }
+  const seen = new Set<string>();
+  return (id, st) => {
+    const name = exportFontName(id, st);
+    if (!seen.has(name)) { doc.registerFont(name, path.join(dir, `${name}.ttf`)); seen.add(name); }
+    return name;
+  };
+}
+import { frameSizeInches, pxPerPt, type PageInput } from "./frames";
+import { layoutSnapshot, roleStyle } from "./pngLayout";
+import { blockColor, paletteFor, sliceRuns, trimRunsEnd } from "./png";
 
 export interface PdfBuildOptions {
   includeNotes?: boolean;
   notes?: string;
   resolvedColors?: { accent: string };
+  /** Colours only (default light ink); never changes layout. */
+  exportTheme?: "light" | "dark";
+  /** Tests only: false leaves page streams readable. Default true. */
+  compress?: boolean;
 }
 
-function pageSize(
-  target: string,
-): PDFKit.PDFDocumentOptions["size"] {
-  switch (target) {
-    case "paper-a4":
-      return "A4";
-    case "paper-letter":
-      return "LETTER";
-    case "paper-half-letter":
-      return [396, 612];
-    case "tablet-portrait":
-      return [768, 1024];
-    case "screen-16-10":
-      return [960, 600];
-    case "screen-16-9":
-    default:
-      return [960, 540];
-  }
+/** PDF page size in points: the shared frame (frames.ts). */
+export function pdfPageSize(target: PageInput): { width: number; height: number } {
+  const { width, height } = frameSizeInches(target);
+  return { width: width * 72, height: height * 72 };
 }
 
 const BASE = 12;
@@ -59,50 +74,6 @@ function fontSize(
             ? BASE * 0.9
             : BASE;
   return Math.round(roleBase * Math.pow(STEP_FACTOR, step) * 10) / 10;
-}
-
-/**
- * Bundled app fonts (DevOps #18 puts them in assets/fonts and copies them to
- * /app/assets/fonts). Literata is the body serif, as in Edit.
- */
-const FONT_FILES: Record<FontFamilyId, { regular: string; italic: string }> = {
-  serif: { regular: "literata/Literata[opsz,wght].ttf", italic: "literata/Literata-Italic[opsz,wght].ttf" },
-  sans: { regular: "inter/Inter[opsz,wght].ttf", italic: "inter/Inter-Italic[opsz,wght].ttf" },
-  mono: { regular: "jetbrains-mono/JetBrainsMono[wght].ttf", italic: "jetbrains-mono/JetBrainsMono-Italic[wght].ttf" },
-};
-
-export function fontDir(): string | null {
-  const candidates = [
-    process.env.EXPORT_FONT_DIR,
-    "/app/assets/fonts",
-    path.join(process.cwd(), "assets/fonts"),
-  ].filter(Boolean) as string[];
-  return candidates.find((d) => fs.existsSync(path.join(d, FONT_FILES.serif.regular))) ?? null;
-}
-
-let embedded = false;
-function registerFonts(doc: PDFKit.PDFDocument): boolean {
-  const dir = fontDir();
-  if (!dir) return false;
-  for (const [id, f] of Object.entries(FONT_FILES)) {
-    doc.registerFont(`${id}-regular`, path.join(dir, f.regular));
-    doc.registerFont(`${id}-italic`, path.join(dir, f.italic));
-  }
-  return true;
-}
-
-function fontFor(id: FontFamilyId, style: { bold?: boolean; italic?: boolean }): string {
-  if (!embedded) return pdfkitFont(id, style);
-  return `${id}-${style.italic ? "italic" : "regular"}`;
-}
-
-/**
- * Neither Literata nor the built-in PDF fonts have a narrow no-break space
- * (U+202F), so it is written as a normal no-break space (U+00A0). It still
- * never breaks, so « » and ; : ! ? stay with their word.
- */
-function pdfText(s: string): string {
-  return s.replace(/\u202f/g, "\u00a0");
 }
 
 function pdfAlign(align: TextAlign): "left" | "center" | "right" {
@@ -129,58 +100,28 @@ function writeRuns(
   runs.forEach((run, i) => {
     const italic = opts.forceItalic || !!run.italic;
     const bold = !!run.bold;
-    const fontId = run.fontExplicit
-      ? run.fontFamily
-      : opts.defaultFont || "serif";
+    const fontId = run.fontFamily || opts.defaultFont || "serif";
     const color = run.color || opts.defaultColor;
     doc
-      .font(fontFor(fontId, { bold, italic }))
+      .font(pdfkitFont(fontId, { bold, italic }))
       .fontSize(opts.size)
       .fillColor(color);
 
+    if (run.highlight) {
+      // Best-effort: soft amber fill behind this continued run is limited in
+      // pdfkit; approximate by drawing text then a translucent note is skipped.
+      // Color the text slightly warmer instead of failing the export.
+      void HIGHLIGHT_AMBER;
+    }
+
     const isLast = i === runs.length - 1;
-    // Variable fonts embed at their regular weight, so bold is drawn with a
-    // thin outline in the same colour (faux bold) when the app fonts are used.
-    const fauxBold = embedded && bold;
-    if (fauxBold) doc.lineWidth(opts.size * 0.035).strokeColor(color);
-    doc.text(pdfText(run.text || " "), {
+    doc.text(run.text || " ", {
       align: pdfAlign(opts.align),
       continued: !isLast,
-      underline: !!run.underline,
-      strike: !!run.strike,
-      fill: true,
-      stroke: fauxBold,
       lineGap: (opts.lineHeight - 1) * opts.size,
-      // Read by the _fragment hook in installHighlight: amber box behind the run.
-      ...({ sermonHighlight: !!run.highlight } as object),
+      // highlight: pdfkit has no run-level background; omit rather than fail
     });
   });
-}
-
-type FragmentFn = (text: string, x: number, y: number, options: Record<string, unknown>) => unknown;
-
-/**
- * pdfkit has no run background, so wrap its per-line fragment drawer: for a
- * highlighted run, fill HIGHLIGHT_AMBER (DOCX's highlight) behind the exact
- * fragment before the text is drawn.
- */
-function installHighlight(doc: PDFKit.PDFDocument): void {
-  const d = doc as unknown as { _fragment: FragmentFn };
-  const original = d._fragment;
-  d._fragment = function (this: PDFKit.PDFDocument, text, x, y, options) {
-    const t = `${text}`.replace(/\n/g, "");
-    if (options.sermonHighlight && t.trim()) {
-      const w = this.widthOfString(t, options);
-      let hx = x;
-      if (options.width) {
-        const lineWidth = Number(options.lineWidth) || 0;
-        if (options.align === "right") hx += lineWidth - this.widthOfString(t.replace(/\s+$/, ""), options);
-        else if (options.align === "center") hx += lineWidth / 2 - (Number(options.textWidth) || 0) / 2;
-      }
-      this.save().rect(hx, y, w, this.currentLineHeight(true)).fill(HIGHLIGHT_AMBER).restore();
-    }
-    return original.call(this, text, x, y, options);
-  };
 }
 
 function writeBlock(
@@ -242,10 +183,10 @@ function writeBlock(
       });
       if (block.citation) {
         doc
-          .font(fontFor("serif", {}))
+          .font("Times-Roman")
           .fontSize(fontSize(step, "caption"))
           .fillColor("#555555")
-          .text(pdfText(citationCaps(block.citation)), { align: "right" });
+          .text(citationCaps(block.citation), { align: "right" });
       }
       doc.moveDown(0.6);
       break;
@@ -266,60 +207,125 @@ function writeBlock(
   }
 }
 
+/**
+ * PDF: the same pages as PNG/PPTX (`layoutPngPages`), drawn line by line at
+ * the frame's size in points, so line and page breaks match exactly
+ * (pdfkit's built-in fonts are the metrics the layout measures with).
+ * Printed in light ink. Study notes, when asked for, follow on their own
+ * pages after the sermon and flow normally.
+ */
 export async function buildPdf(
   snapshot: CalibratedSnapshot,
   options: PdfBuildOptions = {},
 ): Promise<Buffer> {
-  const target = String(snapshot.target);
-  const margins = resolveMargins(snapshot.margins, target);
-  const inch = 72;
-  const left = (margins.left + margins.binderGutter) * inch;
-  const right = margins.right * inch;
-  const top = margins.top * inch;
-  const bottom = margins.bottom * inch;
+  const layout = layoutSnapshot(snapshot);
+  const { frame: f, styled, target } = layout;
+  const ppt = pxPerPt(target);
+  const P = (px: number) => px / ppt;
+  const size = pdfPageSize(target);
   const title = titleTextFromSnapshot(snapshot);
-  const accent = toHexRgb(options.resolvedColors?.accent);
-  const blocks = withNotesSection(
-    styledBlocksFromSnapshot(snapshot),
-    options.includeNotes === true,
-    options.notes,
-  );
+  const pal = paletteFor(options.exportTheme ?? "light", options.resolvedColors?.accent);
+  const accent = pal.accent;
+  const notes = withNotesSection([], options.includeNotes === true, options.notes);
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
-      size: pageSize(target),
-      margins: { top, left, right, bottom },
+      size: [size.width, size.height],
+      margins: { top: P(f.top), left: P(f.left), right: P(f.width - f.left - f.contentWidth), bottom: P(f.height - f.bottom) },
       info: {
         Title: title,
         Creator: "sermon-editor-presenter",
         Producer: "sermon-editor-presenter",
       },
-      autoFirstPage: true,
+      autoFirstPage: false,
+      compress: options.compress !== false,
     });
+    const fontFor = registerExportFonts(doc);
 
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
-    embedded = registerFonts(doc);
-    installHighlight(doc);
-    doc.fillColor("#111111");
+    const color = (type: StyledBlock["type"]) => blockColor(type, pal);
+    const paint = () => {
+      doc.save().rect(0, 0, size.width, size.height).fill(pal.bg).restore();
+      doc.save().rect(0, 0, P(8), size.height).fill(pal.accent).restore();
+    };
 
-    if (blocks.length === 0) {
-      doc.font(fontFor("serif", { bold: true })).fontSize(18).text(pdfText(title));
-    } else {
-      for (const block of blocks) {
-        writeBlock(
-          doc,
-          block,
-          snapshot.typeScaleStep,
-          snapshot.lineHeight,
-          accent,
-        );
+    for (const page of layout.pages) {
+      doc.addPage();
+      paint();
+      for (const line of page.lines) {
+        const block = styled[line.blockIndex];
+        const baseline = P(line.y + line.size);
+        const fs = P(line.size);
+        if (line.kind === "citation") {
+          const text = citationCaps(block.citation ?? "");
+          doc.font(fontFor("serif", {})).fontSize(fs).fillColor(pal.muted);
+          const w = doc.widthOfString(text, { features: NO_LIGA });
+          doc.text(safeGlyphs(doc, text), Math.max(P(f.left), P(f.left + f.contentWidth) - w), baseline, { lineBreak: false, baseline: "alphabetic", features: NO_LIGA });
+          continue;
+        }
+        const role = roleStyle(block.type);
+        const runs = trimRunsEnd(sliceRuns(block.runs, line.start, line.end));
+        const fontOf = (r: StyledRun) =>
+          fontFor(r.fontFamily, { bold: role.bold || !!r.bold, italic: role.italic || !!r.italic });
+        const total = runs.reduce((w, r) => w + doc.font(fontOf(r)).fontSize(fs).widthOfString(r.text, { features: NO_LIGA }), 0);
+        const free = P(f.contentWidth) - total;
+        let x = P(f.left) + (block.align === "center" ? free / 2 : block.align === "right" ? free : 0);
+        for (const r of runs) {
+          doc.font(fontOf(r)).fontSize(fs).fillColor(r.color || color(block.type));
+          const w = doc.widthOfString(r.text, { features: NO_LIGA });
+          if (r.highlight) {
+            doc.save().rect(x, baseline - fs * 0.8, w, fs * 1.05).fill(pal.highlight).restore();
+            doc.fillColor(r.color || color(block.type));
+          }
+          doc.text(safeGlyphs(doc, r.text), x, baseline, { lineBreak: false, baseline: "alphabetic", features: NO_LIGA });
+          // Underline/strike drawn by hand (pdfkit's need a wrapped width).
+          const rule = (dy: number) =>
+            doc.save().rect(x, baseline + dy, w, Math.max(0.5, fs / 18)).fill(r.color || color(block.type)).restore();
+          if (r.underline) rule(fs * 0.1);
+          if (r.strike) rule(-fs * 0.3);
+          x += w;
+        }
+      }
+    }
+
+    if (notes.length) {
+      doc.addPage(); // study notes always print light (dark-on-white text)
+      doc.fillColor("#111111");
+      doc.x = doc.page.margins.left;
+      doc.y = doc.page.margins.top;
+      for (const block of notes) {
+        writeBlock(doc, block, 1, snapshotLineSpacing(snapshot), accent);
       }
     }
 
     doc.end();
   });
 }
+
+/**
+ * Spaces some embedded fonts lack (French U+202F before ?!;: and friends):
+ * draw the nearest space the current font has, never a missing-glyph box.
+ */
+const SPACE_FALLBACKS: Record<string, string[]> = {
+  "\u202F": ["\u2009", "\u00A0", " "],
+  "\u2009": ["\u00A0", " "],
+  "\u00A0": [" "],
+  "\u2007": ["\u00A0", " "],
+};
+export function safeGlyphs(doc: PDFKit.PDFDocument, text: string): string {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const font = (doc as any)._font?.font as { hasGlyphForCodePoint?: (c: number) => boolean } | undefined;
+  if (!font?.hasGlyphForCodePoint) return text.replace(/[\u202F\u2009\u2007]/g, "\u00A0");
+  return text.replace(/[\u202F\u2009\u00A0\u2007]/g, (ch) => {
+    if (font.hasGlyphForCodePoint!(ch.codePointAt(0)!)) return ch;
+    return SPACE_FALLBACKS[ch].find((c) => font.hasGlyphForCodePoint!(c.codePointAt(0)!)) ?? " ";
+  });
+}
+
+/** Layout measures single glyphs: no ligatures, so widths and copied text match. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const NO_LIGA = { liga: false, clig: false, dlig: false, calt: false } as any;

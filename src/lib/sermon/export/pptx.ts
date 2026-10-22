@@ -1,130 +1,96 @@
 import PptxGenJS from "pptxgenjs";
 import type { CalibratedSnapshot } from "@/types/document";
-import {
-  DEFAULT_ACCENT_DARK,
-  DEFAULT_ACCENT_LIGHT,
-  HIGHLIGHT_AMBER,
-  toHexRgb,
-} from "./colors";
-import {
-  titleTextFromSnapshot,
-  type StyledBlock,
-  type StyledRun,
-  citationCaps,
-} from "./contentWalk";
-import { exportPages, sliceRuns } from "./pages";
-import { ensureContrast } from "../../reading/contrast";
-import { docxFontName } from "./fonts";
-import { isPaperTarget } from "./margins";
+import { citationCaps, titleTextFromSnapshot, type StyledRun } from "./contentWalk";
+import { blockColor, paletteFor, sliceRuns, trimRunsEnd } from "./png";
+import { frameSizeInches, pxPerInch, pxPerPt, type PageInput } from "./frames";
+import { layoutSnapshot, roleStyle } from "./pngLayout";
+import { metricCompatibleOffice } from "./textMeasure";
 
 export interface PptxBuildOptions {
   resolvedColors?: { accent: string };
+  /** Colours only; defaults to the snapshot theme. */
+  exportTheme?: "light" | "dark";
 }
+
+const hex = (c: string) => c.replace(/^#/, "");
 
 function runsToPptxText(
   runs: StyledRun[],
-  opts: {
-    fontSize: number;
-    defaultColor: string;
-    forceItalic?: boolean;
-    bold?: boolean;
-  },
+  opts: { fontSize: number; defaultColor: string; bold: boolean; italic: boolean; highlight: string },
 ): PptxGenJS.TextProps[] {
   return runs.map((run) => ({
     text: run.text,
     options: {
       fontSize: opts.fontSize,
-      fontFace: docxFontName(run.fontExplicit ? run.fontFamily : "serif"),
-      bold: opts.bold || run.bold,
-      italic: opts.forceItalic || run.italic,
+      fontFace: metricCompatibleOffice(run.fontFamily),
+      bold: opts.bold || !!run.bold,
+      italic: opts.italic || !!run.italic,
       underline: run.underline ? { style: "sng" } : undefined,
       strike: run.strike ? "sngStrike" : undefined,
-      color: (run.color || opts.defaultColor).replace(/^#/, ""),
-      highlight: run.highlight
-        ? HIGHLIGHT_AMBER.replace(/^#/, "")
-        : undefined,
+      color: hex(run.color || opts.defaultColor),
+      highlight: run.highlight ? hex(opts.highlight) : undefined,
     },
   }));
 }
 
+/** Slide size in inches for a target: the shared frame (frames.ts). */
+export function pptxSlideSize(target: PageInput): { width: number; height: number } {
+  return frameSizeInches(target);
+}
+
 /**
- * PPTX: one slide per page of the shared PNG page split (pngLayout.ts), so
- * slides and images break in the same places. Every line is placed.
- * Notes ignored for PPTX v1.
+ * PPTX: one slide per page of the shared layout (`layoutPngPages`), so the
+ * slides match the PNG pages line for line. Each layout line is its own
+ * non-wrapping text box, so PowerPoint cannot re-break it.
+ * Notes ignored for PPTX.
  */
 export async function buildPptx(
   snapshot: CalibratedSnapshot,
   options: PptxBuildOptions = {},
 ): Promise<Buffer> {
-  const { frame, blocks, pages } = exportPages(snapshot);
-  const title =
-    blocks.find((b) => b.type === "Title")?.runs.map((r) => r.text).join("").trim() ||
-    titleTextFromSnapshot(snapshot);
-  const paper = isPaperTarget(String(snapshot.target));
-  const light = paper || snapshot.theme === "light";
-  const accent =
-    toHexRgb(options.resolvedColors?.accent) ||
-    (light ? DEFAULT_ACCENT_LIGHT : DEFAULT_ACCENT_DARK);
-  const bgHex = light ? "#F7F4EF" : "#1A1A1A";
-  const bg = bgHex.slice(1);
-  const fg = light ? "111111" : "F0EDE6";
-  const muted = light ? "555555" : "A8A29A";
-  const titleColor = (light ? accent : ensureContrast(accent, bgHex)).replace(/^#/, "").toUpperCase();
+  const layout = layoutSnapshot(snapshot);
+  const { frame: f, styled, target } = layout;
+  const p = paletteFor(options.exportTheme ?? snapshot.theme, options.resolvedColors?.accent);
+  const ppi = pxPerInch(target);
+  const ppt = pxPerPt(target);
+  const inch = (px: number) => +(px / ppi).toFixed(4);
+  const pt = (px: number) => +(px / ppt).toFixed(2);
 
   const pptx = new PptxGenJS();
   pptx.author = "sermon-editor-presenter";
-  pptx.title = title;
-  pptx.subject = `Calibrated export target=${snapshot.target}`;
-
-  const W = 13.333;
-  const k = W / frame.width; // inches per frame pixel
-  pptx.defineLayout({ name: "CAL", width: W, height: frame.height * k });
+  pptx.title = titleTextFromSnapshot(snapshot);
+  pptx.subject = `Calibrated export ${target.format} ${target.orientation}`;
+  const size = pptxSlideSize(target);
+  pptx.defineLayout({ name: "CAL", width: size.width, height: size.height });
   pptx.layout = "CAL";
-  const pt = (px: number) => Math.round(px * k * 72 * 10) / 10;
 
-  const colorFor = (type: StyledBlock["type"]) =>
-    type === "Title" ? titleColor : type === "Caption" ? muted : type === "H2" && !light ? "D4CFC5" : fg;
-
-  for (const page of pages) {
+  for (const page of layout.pages) {
     const slide = pptx.addSlide();
-    slide.background = { color: bg };
+    slide.background = { color: hex(p.bg) };
     slide.addShape(pptx.ShapeType.rect, {
-      x: 0, y: 0, w: 8 * k, h: frame.height * k,
-      fill: { color: accent.replace(/^#/, "") }, line: { color: accent.replace(/^#/, "") },
+      x: 0, y: 0, w: inch(8), h: size.height,
+      fill: { color: hex(p.accent) }, line: { color: hex(p.accent), width: 0 },
     });
-    // Consecutive lines of one block become one text box.
-    let i = 0;
-    while (i < page.lines.length) {
-      const first = page.lines[i];
-      const block = blocks[first.blockIndex];
-      if (first.kind === "citation") {
+    for (const line of page.lines) {
+      const block = styled[line.blockIndex];
+      const box = {
+        x: inch(f.left), y: inch(line.y), w: inch(f.contentWidth), h: inch(line.lineHeight),
+        margin: 0, valign: "top" as const, wrap: false, fit: "none" as const,
+      };
+      if (line.kind === "citation") {
         slide.addText(citationCaps(block.citation ?? ""), {
-          x: frame.left * k, y: first.y * k, w: frame.contentWidth * k, h: first.lineHeight * k,
-          fontSize: pt(first.size), color: muted, align: "right", fontFace: docxFontName("serif"),
-          margin: 0, valign: "top",
+          ...box, align: "right", fontSize: pt(line.size), color: hex(p.muted),
+          fontFace: metricCompatibleOffice("serif"),
         });
-        i++;
         continue;
       }
-      let j = i;
-      while (j + 1 < page.lines.length && page.lines[j + 1].blockIndex === first.blockIndex && page.lines[j + 1].kind === "text") j++;
-      const last = page.lines[j];
-      const runs = sliceRuns(block, first.start, last.end).map((t) => ({ ...t.run, text: t.text }));
-      const heading = block.type === "Title" || block.type === "H1" || block.type === "H2";
+      const role = roleStyle(block.type);
+      const runs = trimRunsEnd(sliceRuns(block.runs, line.start, line.end));
+      if (!runs.length) continue;
       slide.addText(
-        runsToPptxText(runs.length ? runs : [{ text: " ", fontFamily: "serif" }], {
-          fontSize: pt(first.size),
-          defaultColor: `#${colorFor(block.type)}`,
-          forceItalic: block.type === "Scripture",
-          bold: heading,
-        }),
-        {
-          x: frame.left * k, y: first.y * k, w: frame.contentWidth * k,
-          h: (last.y + last.lineHeight - first.y) * k,
-          valign: "top", align: block.align, margin: 0, lineSpacingMultiple: snapshot.lineHeight,
-        },
+        runsToPptxText(runs, { fontSize: pt(line.size), defaultColor: blockColor(block.type, p), highlight: p.highlight, ...role }),
+        { ...box, align: block.align },
       );
-      i = j + 1;
     }
   }
 
