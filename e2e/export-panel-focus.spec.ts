@@ -12,6 +12,7 @@ async function freshEdit(page: Page) {
     if (sessionStorage.getItem("__e2e_seeded")) return;
     sessionStorage.setItem("__e2e_seeded", "1");
     localStorage.clear();
+    localStorage.setItem("sermon-editor-presenter:storage-mode:v1", "browser");
   });
   await page.goto("/edit", { waitUntil: "networkidle" });
   await expect(page.locator(".ProseMirror")).toBeVisible({ timeout: 20_000 });
