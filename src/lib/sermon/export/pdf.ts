@@ -263,25 +263,30 @@ export async function buildPdf(
         if (line.kind === "citation") {
           const text = citationCaps(block.citation ?? "");
           doc.font(fontFor("serif", {})).fontSize(fs).fillColor(pal.muted);
-          const w = doc.widthOfString(text, { features: NO_LIGA });
-          doc.text(safeGlyphs(doc, text), Math.max(P(f.left), P(f.left + f.contentWidth) - w), baseline, { lineBreak: false, baseline: "alphabetic", features: NO_LIGA });
+          const shown = safeGlyphs(doc, text);
+          const w = doc.widthOfString(shown, { features: NO_LIGA });
+          doc.text(shown, Math.max(P(f.left), P(f.left + f.contentWidth) - w), baseline, { lineBreak: false, baseline: "alphabetic", features: NO_LIGA });
           continue;
         }
         const role = roleStyle(block.type);
         const runs = splitRunsByGlyph(trimRunsEnd(sliceRuns(block.runs, line.start, line.end)), role);
         const fontOf = (r: GlyphRun) =>
           fontFor(r.fontFamily, { bold: role.bold || !!r.bold, italic: role.italic || !!r.italic, fallback: r.glyphFallback });
-        const total = runs.reduce((w, r) => w + doc.font(fontOf(r)).fontSize(fs).widthOfString(r.text, { features: NO_LIGA }), 0);
+        // Measure exactly what is drawn: safeGlyphs swaps spaces the font
+        // lacks (U+202F before « ! ? ») for narrower ones; measuring the
+        // original left a gap before the next run, e.g. after "(" (QA #29).
+        const total = runs.reduce((w, r) => { doc.font(fontOf(r)).fontSize(fs); return w + doc.widthOfString(safeGlyphs(doc, r.text), { features: NO_LIGA }); }, 0);
         const free = P(f.contentWidth) - total;
         let x = P(f.left) + (block.align === "center" ? free / 2 : block.align === "right" ? free : 0);
         for (const r of runs) {
           doc.font(fontOf(r)).fontSize(fs).fillColor(r.color || color(block.type));
-          const w = doc.widthOfString(r.text, { features: NO_LIGA });
+          const drawn = safeGlyphs(doc, r.text);
+          const w = doc.widthOfString(drawn, { features: NO_LIGA });
           if (r.highlight) {
             doc.save().rect(x, baseline - fs * 0.8, w, fs * 1.05).fill(pal.highlight).restore();
             doc.fillColor(r.color || color(block.type));
           }
-          doc.text(safeGlyphs(doc, r.text), x, baseline, { lineBreak: false, baseline: "alphabetic", features: NO_LIGA });
+          doc.text(drawn, x, baseline, { lineBreak: false, baseline: "alphabetic", features: NO_LIGA });
           // Underline/strike drawn by hand (pdfkit's need a wrapped width).
           const rule = (dy: number) =>
             doc.save().rect(x, baseline + dy, w, Math.max(0.5, fs / 18)).fill(r.color || color(block.type)).restore();

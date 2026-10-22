@@ -60,7 +60,10 @@ export function resolveMargins(
   const width = pageWidthInchesFor(target);
   // Every side is 0.25–2 in on every format (PM limits); legacy % values are
   // converted against the page width, then clamped.
-  const side = (raw: string) => clamp(parseLengthToInches(raw, width), PAGE_LIMITS.marginIn);
+  // Stored margins above marginMaxIn(page) (min(2 in, 20% of the shorter
+  // side)) are clamped at export, never rejected.
+  const lim = { ...PAGE_LIMITS.marginIn, max: marginMaxIn(target) };
+  const side = (raw: string) => clamp(parseLengthToInches(raw, width), lim);
   const out = {
     top: side(margins.top),
     right: side(margins.right),
@@ -90,3 +93,6 @@ export function isPaperTarget(target: PageInput): boolean {
 }
 
 export type { CalibrationTarget };
+
+/** Alias of `marginMaxIn` under the UI UX ruling's name (Frontend slider max). */
+export const maxMarginIn = marginMaxIn;

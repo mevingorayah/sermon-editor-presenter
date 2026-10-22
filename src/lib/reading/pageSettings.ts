@@ -7,7 +7,7 @@
  */
 import type { FitPageSpecSettings, CustomPageSettings, CalibratedMargins, CalibratedSnapshot, PresentationSettings, SermonContent, SermonPageSettings } from "@/types/document";
 import { buildCalibratedSnapshot } from "@/lib/calibration";
-import { marginMaxIn } from "@/lib/sermon/export/margins";
+import { maxMarginIn } from "@/lib/sermon/export/margins";
 import { pageSpecFromSnapshot } from "@/lib/sermon/export/pngLayout";
 import { PAGE_LIMITS, clamp, customPageError, fitScreenLabel, pageSnapshotFields, pageSpecFromTarget, type PageFormat, type PageOrientation } from "@/lib/sermon/export/frames";
 
@@ -110,7 +110,7 @@ export function marginMax(c: Pick<PageChoice, "format" | "orientation" | "custom
   } as SermonPageSettings;
   try {
     const f = pageSnapshotFields(page as Parameters<typeof pageSnapshotFields>[0]);
-    return marginMaxIn(pageSpecFromSnapshot({ target: (c.target ?? "screen-16-9") as never, ...(f as object) }) as never);
+    return maxMarginIn(pageSpecFromSnapshot({ target: (c.target ?? "screen-16-9") as never, ...(f as object) }) as never);
   } catch {
     return PAGE_LIMITS.marginIn.max;
   }
