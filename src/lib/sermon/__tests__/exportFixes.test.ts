@@ -33,10 +33,10 @@ async function xml(buf: Buffer, path: RegExp) {
 }
 
 describe("export fixes after batch 8b1ba7a", () => {
-  it("keeps a second extension: a.pdf.docx", () => {
+  it("second extension becomes a hyphen: a-pdf.docx", () => {
     const stem = sanitizeFilenameStem("a.pdf.docx");
     assert.equal(stem, "a-pdf");
-    assert.equal(filenameWithExt(stem, "docx"), "a.pdf.docx");
+    assert.equal(filenameWithExt(stem, "docx"), "a-pdf.docx");
   });
   it("citations print in capitals, accents kept", () => {
     assert.equal(citationCaps("Ésaïe 40:31"), "ÉSAÏE 40:31");

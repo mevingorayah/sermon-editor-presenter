@@ -269,7 +269,7 @@ describe("sanitizeFilenameStem", () => {
     assert.equal(sanitizeFilenameStem("notes.pdf"), "notes");
     assert.equal(sanitizeFilenameStem("Sermon.DOCX"), "Sermon");
     assert.equal(sanitizeFilenameStem("slides.pptx.pptx"), "slides-pptx");
-    assert.equal(sanitizeFilenameStem("v1.2"), "v1.2");
+    assert.equal(sanitizeFilenameStem("v1.2"), "v1-2");
   });
 
   it("caps at 80 chars, cutting at the last dash", () => {
