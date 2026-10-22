@@ -35,7 +35,7 @@ import type {
 import { PPTX_FONT_NOTICE } from "@/lib/sermon/export/textMeasure";
 import { countPngPages, pngExportLabel, pngFrame, pngFrameSize } from "@/lib/sermon/export/pngLayout";
 import { ReadingView } from "./ReadingView";
-import { withPage } from "@/lib/reading/pageSettings";
+import { fitLabel, fromSettings, withPage } from "@/lib/reading/pageSettings";
 import type { SermonPageSettings } from "@/types/document";
 import styles from "./CalibrationPanel.module.css";
 
@@ -371,6 +371,10 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
         </div>
       </div>
 
+      {page && fitLabel(fromSettings({ calibrationTarget: target, page })) ? (
+        // Fit sermons export at the last measured size (PDF, PNG and PowerPoint).
+        <p className={styles.hint} data-fit-label="">{fitLabel(fromSettings({ calibrationTarget: target, page }))}</p>
+      ) : null}
       <div
         className={styles.exportRow}
         role="group"

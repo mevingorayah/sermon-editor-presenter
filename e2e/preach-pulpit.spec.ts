@@ -20,7 +20,7 @@ const content = {
   ],
 };
 
-async function seed(page: Page, opts: { theme?: "light" | "dark"; view?: "page" | "flow"; target?: string } = {}) {
+async function seed(page: Page, opts: { theme?: "light" | "dark"; view?: "page" | "flow"; target?: string; format?: string } = {}) {
   const res = await page.request.post("/api/sermons", {
     data: {
       title: "The Sower",
@@ -31,6 +31,8 @@ async function seed(page: Page, opts: { theme?: "light" | "dark"; view?: "page" 
         typeScaleStep: 0,
         lineHeight: 1.55,
         calibrationTarget: opts.target ?? "screen-16-9",
+        // New sermons default to A4 portrait (#29); seed a page only when asked.
+        ...(opts.format ? { page: { format: opts.format, orientation: "landscape" } } : {}),
       },
     },
   });
@@ -240,7 +242,7 @@ for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 800 }, { w
 
 test("page view: 16:9 fills a 16:9 screen; toggle to flow", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
-  await seed(page, { view: "page" });
+  await seed(page, { view: "page", format: "16:9" });
   await page.goto("/preach", { waitUntil: "networkidle" });
   await expect(page.locator("[data-page-view]")).toHaveAttribute("data-fill", "true", { timeout: 20_000 });
   const box = (await page.locator("section[data-page]").boundingBox())!;
