@@ -18,6 +18,7 @@ import { ProgressBar } from "./ProgressBar";
 import { ReadingToolbar } from "./ReadingToolbar";
 import { ReadingView } from "./ReadingView";
 import { CalibrationPanel } from "./CalibrationPanel";
+import { restoreFocus } from "@/lib/focusReturn";
 import styles from "./PreachShell.module.css";
 
 export function PreachShell() {
@@ -27,6 +28,38 @@ export function PreachShell() {
   // Deep link from Edit's "Export…": /preach?calibrate=1 opens Document setup.
   const [calibrationDeepLink, setCalibrationDeepLink] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const calibrationToggleRef = useRef<HTMLButtonElement>(null);
+  /** Element that opened Document setup; focus returns here on close. */
+  const calibrationOpenerRef = useRef<Element | null>(null);
+  const wasCalibrationOpen = useRef(false);
+
+  useEffect(() => {
+    const wasOpen = wasCalibrationOpen.current;
+    wasCalibrationOpen.current = calibrationOpen;
+    if (!wasOpen || calibrationOpen) return;
+    // Closed: back to the opener. Via ?calibrate=1 the opener (Edit's
+    // "Export…" link) lived on another route and is gone, so fall back to
+    // the in-page Calibrate toggle, then the sermon's main heading, then body.
+    const opener = calibrationOpenerRef.current;
+    calibrationOpenerRef.current = null;
+    restoreFocus(opener, [
+      () => calibrationToggleRef.current,
+      () => scrollRef.current?.querySelector("h1") ?? null,
+    ]);
+  }, [calibrationOpen]);
+
+  useEffect(() => {
+    // Q3: Esc closes Document setup; the close effect above restores focus.
+    if (!calibrationOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      setCalibrationOpen(false);
+      setCalibrationDeepLink(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [calibrationOpen]);
 
   useEffect(() => {
     // Read on the client only (no useSearchParams → no Suspense/CSR bailout).
@@ -104,15 +137,17 @@ export function PreachShell() {
           patchSettings({ lineHeight })
         }
         onBionicChange={(bionic: boolean) => patchSettings({ bionic })}
-        onToggleCalibration={() => {
+        calibrationToggleRef={calibrationToggleRef}
+        onToggleCalibration={(trigger) => {
           setCalibrationDeepLink(false);
+          if (!calibrationOpen) calibrationOpenerRef.current = trigger;
           setCalibrationOpen((v) => !v);
         }}
       />
 
       <div className={styles.body}>
         <div className={styles.scroll} ref={scrollRef} onScroll={onScroll}>
-          <ReadingView content={doc.content} bionic={ps.bionic} />
+          <ReadingView content={doc.content} bionic={ps.bionic} theme={ps.theme} />
         </div>
 
         {calibrationOpen ? (

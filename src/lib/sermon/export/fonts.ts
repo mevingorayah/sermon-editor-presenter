@@ -25,12 +25,12 @@ export function mapFontFamily(
 export function cssFontStack(id: FontFamilyId): string {
   switch (id) {
     case "mono":
-      return 'ui-monospace, "Liberation Mono", Menlo, monospace';
+      return '"JetBrains Mono", ui-monospace, "Liberation Mono", Menlo, "DejaVu Sans Mono", monospace';
     case "serif":
-      return 'Georgia, "Times New Roman", "Liberation Serif", serif';
+      return 'Literata, "Source Serif 4", Lora, Georgia, "Liberation Serif", "DejaVu Serif", serif';
     case "sans":
     default:
-      return 'system-ui, -apple-system, "Segoe UI", "Liberation Sans", sans-serif';
+      return 'system-ui, "Segoe UI", "Liberation Sans", "DejaVu Sans", "Noto Sans", sans-serif';
   }
 }
 

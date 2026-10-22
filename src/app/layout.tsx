@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Literata, Source_Serif_4 } from "next/font/google";
 import "./globals.css";
 import "@/styles/reading-mode.css";
+import "@/styles/sermon-marks.css";
 
 const literata = Literata({
   subsets: ["latin", "latin-ext"],

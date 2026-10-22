@@ -68,7 +68,7 @@ test("Edit Export… → Preach Calibration → DOCX + PNG downloads", async ({ 
   for (const name of [
     "Export DOCX",
     "Export PDF",
-    "Export image (PNG)",
+    "Image (.png)",
     "Export PowerPoint (PPTX)",
   ]) {
     await expect(panel.getByRole("button", { name })).toBeEnabled();
@@ -83,7 +83,7 @@ test("Edit Export… → Preach Calibration → DOCX + PNG downloads", async ({ 
   expect(docxBytes.subarray(0, 2).toString("latin1")).toBe("PK");
   await expect(panel.getByRole("status")).toHaveText(`Downloaded ${STEM}.docx`);
 
-  const png = await exportAndDownload(page, "Export image (PNG)");
+  const png = await exportAndDownload(page, "Image (.png)");
   expect(png.suggestedFilename()).toBe(`${STEM}.png`);
   const pngBytes = await readFile((await png.path())!);
   expect(pngBytes.subarray(1, 4).toString("latin1")).toBe("PNG");

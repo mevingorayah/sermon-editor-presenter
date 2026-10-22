@@ -14,17 +14,39 @@ RUN npm run build
 
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
+# Pull Debian security fixes (e.g. perl-base CVEs fixed in 5.36.0-7+deb12u4).
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends --only-upgrade perl-base \
+  && apt-get upgrade -y --no-install-recommends \
+  && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=8080
 ENV HOSTNAME=0.0.0.0
 ENV SERMON_DATA_DIR=/app/data/sermons
-RUN useradd --system --uid 1001 nextjs \
+# nextjs has no home dir; give fontconfig a writable per-user cache (system cache is prebuilt).
+ENV XDG_CACHE_HOME=/tmp/.cache
+# Runtime only needs node; drop the bundled npm/yarn/corepack CLIs (Trivy HIGHs live there).
+# System fonts match Dockerfile.export (Noto core covers Greek/Hebrew) so PNG export has no tofu.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    fonts-liberation \
+    fonts-noto-core \
+    fontconfig \
+  && rm -rf /var/lib/apt/lists/* \
+  && useradd --system --uid 1001 nextjs \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-* \
+    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg \
   && mkdir -p /app/data/sermons \
   && chown -R nextjs:nextjs /app/data
 COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nextjs /app/public ./public
+# App's own editor fonts (OFL), registered with fontconfig for the PNG renderer.
+COPY --chown=root:root assets/fonts /app/assets/fonts
+RUN printf '<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig><dir>/app/assets/fonts</dir></fontconfig>\n' > /etc/fonts/conf.d/50-app-fonts.conf \
+  && fc-cache -f
 USER nextjs
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

@@ -1,0 +1,31 @@
+/**
+ * Mark styles shared by Edit (.ProseMirror) and Preach (ReadingView).
+ * Inline user styles (colour, font family) always win over these rules.
+ */
+
+/* Soft amber highlight — readable on light edit chrome and light Preach */
+mark.sermon-highlight,
+.sermon-highlight {
+  background: rgba(212, 168, 75, 0.42);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0.05em 0.12em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* Dark Preach: a plain highlight is the default yellow, shown as the
+   yellow preset\'s dark value (DARK_YELLOW_PRESET in contrast.ts). */
+[data-reading-mode][data-theme="dark"] mark.sermon-highlight {
+  background: #655F33;
+}
+
+.sermon-marks a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.sermon-marks code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}

@@ -10,8 +10,12 @@ export interface StyledRun {
   bold?: boolean;
   italic?: boolean;
   highlight?: boolean;
+  underline?: boolean;
+  strike?: boolean;
   color?: string; // #RRGGBB
   fontFamily: FontFamilyId;
+  /** True when the text carries its own font choice (not the document default). */
+  fontExplicit?: boolean;
 }
 
 export interface StyledBlock {
@@ -37,13 +41,18 @@ function runsFromNode(node: JSONContent): StyledRun[] {
       let bold = inherited.bold;
       let italic = inherited.italic;
       let highlight = inherited.highlight;
+      let underline = inherited.underline;
+      let strike = inherited.strike;
       let color = inherited.color;
       let fontFamily = inherited.fontFamily ?? ("sans" as FontFamilyId);
+      let fontExplicit = inherited.fontExplicit;
 
       for (const mark of n.marks ?? []) {
         if (mark.type === "bold") bold = true;
         if (mark.type === "italic") italic = true;
         if (mark.type === "highlight") highlight = true;
+        if (mark.type === "underline") underline = true;
+        if (mark.type === "strike") strike = true;
         if (mark.type === "textStyle") {
           const attrs = mark.attrs ?? {};
           if (typeof attrs.color === "string") {
@@ -51,6 +60,7 @@ function runsFromNode(node: JSONContent): StyledRun[] {
           }
           if (typeof attrs.fontFamily === "string") {
             fontFamily = mapFontFamily(attrs.fontFamily);
+            fontExplicit = true;
           }
         }
       }
@@ -60,8 +70,11 @@ function runsFromNode(node: JSONContent): StyledRun[] {
         bold,
         italic,
         highlight,
+        underline,
+        strike,
         color,
         fontFamily,
+        fontExplicit,
       });
       return;
     }
@@ -191,4 +204,55 @@ export function withNotesSection(
       runs: [{ text, fontFamily: "sans" }],
     },
   ];
+}
+
+/** Scripture citations print in capitals in every export, matching Preach (#5). */
+export function citationCaps(citation: string): string {
+  return citation.toLocaleUpperCase("fr");
+}
+
+/**
+ * Split styled runs into chunks of at most ~maxChars characters, breaking
+ * after a sentence end when possible, otherwise at a space. Marks are kept
+ * on every piece, and no characters are added or lost.
+ */
+export function chunkRuns(runs: StyledRun[], maxChars: number): StyledRun[][] {
+  const text = runs.map((r) => r.text).join("");
+  if (text.length <= maxChars) return [runs];
+  const cuts: number[] = [];
+  let start = 0;
+  while (text.length - start > maxChars) {
+    const window = text.slice(start, start + maxChars);
+    let cut = -1;
+    const re = /[.!?»;:]\s/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(window))) cut = m.index + m[0].length;
+    if (cut < maxChars * 0.4) {
+      const sp = window.lastIndexOf(" ");
+      cut = sp > 0 ? sp + 1 : maxChars;
+    }
+    start += cut;
+    cuts.push(start);
+  }
+  const out: StyledRun[][] = [];
+  let pos = 0;
+  let ci = 0;
+  let cur: StyledRun[] = [];
+  for (const run of runs) {
+    let t = run.text;
+    let runStart = pos;
+    while (ci < cuts.length && cuts[ci] < runStart + t.length) {
+      const k = cuts[ci] - runStart;
+      if (k > 0) cur.push({ ...run, text: t.slice(0, k) });
+      out.push(cur);
+      cur = [];
+      t = t.slice(k);
+      runStart = cuts[ci];
+      ci++;
+    }
+    if (t) cur.push({ ...run, text: t });
+    pos += run.text.length;
+  }
+  if (cur.length) out.push(cur);
+  return out.filter((c) => c.length > 0);
 }
