@@ -217,9 +217,19 @@ export function EditShell() {
   // cancel (not dispose) so a StrictMode effect re-run keeps the controller usable.
   useEffect(() => () => autosave.cancel(), [autosave]);
 
-  // Stamp the time shown as "Saved 14:05" whenever a save completes.
+  // Stamp "Saved 14:05" only after a real save (a save started since open).
+  const saveStartedRef = useRef(false);
   useEffect(() => {
-    if (status === "saved-server" || status === "saved-local") {
+    saveStartedRef.current = false;
+    setSavedAt(null);
+  }, [editorKey]);
+  useEffect(() => {
+    if (status === "saving" || status === "retrying") {
+      saveStartedRef.current = true;
+    } else if (
+      (status === "saved-server" || status === "saved-local") &&
+      saveStartedRef.current
+    ) {
       setSavedAt(new Date());
     }
   }, [status]);
@@ -407,18 +417,22 @@ export function EditShell() {
         <div className={styles.brand}>
           <span className={styles.modeBadge}>Editing</span>
           <h1 className={styles.docTitle}>{doc.title || "Untitled sermon"}</h1>
-        </div>
-        <div className={styles.actions}>
           <span
             className={styles.saved}
+            role="status"
             aria-live="polite"
+            aria-label={statusLabel || undefined}
             data-testid="save-status"
             data-status={status}
             data-tone={statusView.tone}
+            data-empty={statusLabel ? undefined : ""}
             title={STATUS_LABELS[status]}
           >
-            {statusLabel}
+            <span className={styles.savedText}>{statusLabel}</span>
           </span>
+        </div>
+        <div className={styles.actions}>
+
           {canRetry ? (
             <button
               type="button"

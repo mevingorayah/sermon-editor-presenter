@@ -4,6 +4,7 @@
  * - "Saved 14:05" once everything is saved
  * - "Not saved, retrying" (red) when a save failed
  * Rule: never show "Saved" while any change is still pending.
+ * On open, nothing is shown until the first real save completes.
  */
 export type SaveTone = "neutral" | "ok" | "error";
 
@@ -22,8 +23,13 @@ export interface SaveStatusView {
   tone: SaveTone;
 }
 
-function hhmm(d: Date): string {
-  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+/** Always 24h "HH:MM", whatever the browser locale (en-US included). */
+export function formatSavedTime(d: Date, locale?: string): string {
+  return d.toLocaleTimeString(locale, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
 }
 
 export function saveStatusView(
@@ -42,9 +48,8 @@ export function saveStatusView(
     case "saved-server":
     case "saved-local":
       if (opts.pending) return { label: "Saving…", tone: "neutral" };
-      return {
-        label: opts.savedAt ? `Saved ${hhmm(opts.savedAt)}` : "Saved",
-        tone: "ok",
-      };
+      // Nothing saved yet since open → show nothing.
+      if (!opts.savedAt) return { label: "", tone: "neutral" };
+      return { label: `Saved ${formatSavedTime(opts.savedAt)}`, tone: "ok" };
   }
 }

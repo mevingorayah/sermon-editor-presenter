@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { saveStatusView, type SaveStatusKind } from "../saveStatusView";
+import { formatSavedTime, saveStatusView, type SaveStatusKind } from "../saveStatusView";
 
 const at = new Date(2026, 9, 22, 14, 5);
 const ALL: SaveStatusKind[] = [
@@ -22,5 +22,22 @@ test("saved shows time; saving and failure wording", () => {
     const v = saveStatusView(s, { pending: false, savedAt: at });
     assert.equal(v.label, "Not saved, retrying");
     assert.equal(v.tone, "error");
+  }
+});
+
+test("time is always 24h HH:MM, including en-US", () => {
+  const pm = new Date(2026, 9, 22, 14, 5);
+  const am = new Date(2026, 9, 22, 9, 7);
+  assert.equal(formatSavedTime(pm, "en-US"), "14:05");
+  assert.equal(formatSavedTime(am, "en-US"), "09:07");
+  assert.equal(formatSavedTime(pm, "en-GB"), "14:05");
+  assert.doesNotMatch(formatSavedTime(pm, "en-US"), /AM|PM/i);
+});
+
+test("on open, nothing is shown until the first real save", () => {
+  for (const s of ["saved-server", "saved-local"] as const) {
+    const v = saveStatusView(s, { pending: false, savedAt: null });
+    assert.equal(v.label, "");
+    assert.equal(v.tone, "neutral");
   }
 });
