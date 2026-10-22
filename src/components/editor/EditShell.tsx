@@ -437,7 +437,8 @@ export function EditShell() {
             disabled={busy}
           />
           <OutlineNav items={outline} />
-          <FindBar editor={editor} />
+          {/* Keyed by sermon: switching sermons resets query, replace text and matches. */}
+          <FindBar key={editorKey || doc.id} editor={editor} />
           <NotesPanel value={doc.notes} onChange={onNotesChange} />
         </aside>
 
