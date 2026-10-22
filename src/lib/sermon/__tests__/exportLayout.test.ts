@@ -563,3 +563,70 @@ test("F4: export request takes margins as numbers or strings, and lineHeight/lin
   const b = exportRequestSchema.parse({ ...base, lineHeight: 1.6 }) as Record<string, unknown>;
   assert.equal(snapshotLineSpacing(b as never), 1.6);
 });
+
+// ---- Guarantee: no text leaves the margins, at every limit combination ----
+{
+  const words = ["Anticonstitutionnellement", "grâce", "Éphésiens", "considérablement", "paix", "cœur", "là", "Dieu"];
+  const text = (n: number, seed: number) =>
+    Array.from({ length: n }, (_, i) => words[(i * 7 + seed) % words.length]).join(" ");
+  const blocks: CalibratedSnapshot["semanticBlocks"] = [
+    { type: "Title", text: text(9, 1) },
+    { type: "H1", text: text(5, 2) },
+    { type: "Body", text: text(60, 3) },
+    { type: "H2", text: text(4, 4) },
+    { type: "Scripture", text: text(30, 5), citation: "Éphésiens 1.3–7 ; Philippiens 4.4–7" },
+    { type: "H2", text: text(3, 6) },
+    { type: "Body", text: text(25, 7) },
+    { type: "Caption", text: text(8, 8) },
+  ];
+  const content = { type: "doc", content: blocks.map((b) => ({ type: "paragraph", content: [{ type: "text", text: b.text }] })) };
+  const heads = new Set(["Title", "H1", "H2", "H3"]);
+  test("sweep: min/max margins × line spacing × paragraph spacing × text size, every frame: every line box stays inside the margins", () => {
+    let checked = 0;
+    for (const spec of allPageSpecs()) {
+      for (const m of [0.25, 2]) for (const ls of [1.2, 2]) for (const ps of [0, 48]) for (const pt of [24, 72]) {
+        const v = `${m}in`;
+        const s = {
+          ...snap(spec),
+          textSizePt: pt,
+          paragraphSpacingPt: ps,
+          lineSpacing: ls,
+          margins: { top: v, right: v, bottom: v, left: v },
+          semanticBlocks: blocks,
+          content,
+        } as CalibratedSnapshot;
+        const L = layoutSnapshot(s);
+        const f = pngFrame(spec, s.margins);
+        const tag = `${spec.format} ${spec.orientation} m${m} ls${ls} ps${ps} pt${pt}`;
+        for (const p of L.pages) for (const l of p.lines) {
+          const b = L.blocks[l.blockIndex];
+          assert.ok(l.y >= f.top - 1e-6 && l.y + l.lineHeight <= f.bottom + 1e-6, `${tag}: vertical`);
+          assert.ok(l.size >= 24 * pxPerPt(spec) - 1e-6, `${tag}: under 24pt`);
+          const t = l.kind === "citation" ? citationCaps(b.citation ?? "") : b.text.slice(l.start, l.end).trimEnd();
+          const role = l.kind === "citation" ? { font: "serif" as const } : { font: b.runs?.[0]?.fontFamily ?? "serif", ...roleStyle(b.type) };
+          const w = afmMeasurer(t, l.size, role as never);
+          assert.ok(w <= f.contentWidth + 1e-6, `${tag}: "${t}" ${w} > ${f.contentWidth}`);
+          checked++;
+        }
+        // No heading left alone at a page bottom.
+        L.pages.slice(0, -1).forEach((p, pi) => {
+          const last = L.blocks[p.lines[p.lines.length - 1].blockIndex];
+          if (heads.has(last.type)) assert.ok(p.lines.every((l) => heads.has(L.blocks[l.blockIndex].type)), `${tag}: lone heading p${pi}`);
+        });
+      }
+    }
+    assert.ok(checked > 1000);
+  });
+  test("sweep: PDF and PPTX follow the layout at the extreme corners", async () => {
+    for (const spec of allPageSpecs()) {
+      for (const [m, ls, ps, pt] of [[0.25, 1.2, 0, 24], [2, 2, 48, 72]] as const) {
+        const v = `${m}in`;
+        const s = { ...snap(spec), textSizePt: pt, paragraphSpacingPt: ps, lineSpacing: ls, margins: { top: v, right: v, bottom: v, left: v }, semanticBlocks: blocks, content } as CalibratedSnapshot;
+        const expected = layoutLines(s);
+        assert.deepEqual(pdfPages(await buildPdf(s, { compress: false })).map((p) => p.lines), expected);
+        assert.deepEqual((await pptxLines(await buildPptx(s))).slides, expected);
+        assert.equal((await buildPngPages(s)).length, expected.length);
+      }
+    }
+  });
+}
