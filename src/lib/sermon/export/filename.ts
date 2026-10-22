@@ -6,7 +6,7 @@
  *
  * 1. Accents are transliterated, never dropped: "Ésaïe 40" → "Esaie-40".
  *    Apostrophes and quote marks are removed: "l'Évangile" → "lEvangile".
- * 2. Any other run of characters outside [A-Za-z0-9._-] becomes one "-";
+ * 2. Any other run of characters outside [A-Za-z0-9_-] (full stops too) becomes one "-";
  *    "-", "." and "_" are stripped from both ends.
  * 3. One trailing export extension (.docx/.pdf/.png/.pptx, any case) is
  *    removed first, so "notes.pdf" never becomes "notes.pdf.docx".
@@ -52,7 +52,7 @@ export function sanitizeFilenameStem(raw: string | undefined | null): string {
   let s = (raw ?? "").trim().replace(EXPORT_EXT_RE, "");
   s = transliterate(s)
     .replace(APOSTROPHES_QUOTES_RE, "")
-    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/[^A-Za-z0-9_-]+/g, "-")
     .replace(/-{2,}/g, "-");
   s = trimEnds(s);
 

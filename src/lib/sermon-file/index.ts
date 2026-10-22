@@ -355,6 +355,6 @@ const APOSTROPHE_RE = /['‘’ʼ]/g;
  * letters are dropped or glued together.
  */
 export function sermonFileName(title: string): string {
-  const stem = sanitizeFilenameStem((title ?? "").replace(APOSTROPHE_RE, "-").replace(/\.+/g, "-"));
+  const stem = sanitizeFilenameStem((title ?? "").replace(APOSTROPHE_RE, "-"));
   return `${stem}${SERMON_FILE_EXTENSION}`;
 }

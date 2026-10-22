@@ -268,7 +268,7 @@ describe("sanitizeFilenameStem", () => {
   it("drops one trailing export extension, any case", () => {
     assert.equal(sanitizeFilenameStem("notes.pdf"), "notes");
     assert.equal(sanitizeFilenameStem("Sermon.DOCX"), "Sermon");
-    assert.equal(sanitizeFilenameStem("slides.pptx.pptx"), "slides.pptx");
+    assert.equal(sanitizeFilenameStem("slides.pptx.pptx"), "slides-pptx");
     assert.equal(sanitizeFilenameStem("v1.2"), "v1.2");
   });
 
