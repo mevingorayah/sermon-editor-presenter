@@ -14,6 +14,11 @@
 }
 
 .back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 0.5rem;
   color: var(--rm-accent);
   text-decoration: none;
   font-size: 0.875rem;
@@ -45,6 +50,8 @@
   font: inherit;
   font-size: 0.8125rem;
   padding: 0.3rem 0.55rem;
+  min-height: 44px;
+  min-width: 44px;
   border-radius: 6px;
   border: 1px solid var(--rm-border);
   background: transparent;
