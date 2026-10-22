@@ -346,16 +346,15 @@ export function isNewerOnDisk(loadedSavedAt: string, diskSavedAt: string): boole
   return Date.parse(diskSavedAt) > Date.parse(loadedSavedAt);
 }
 
-/** French elided articles/pronouns before an apostrophe: l', d', qu', … */
-const ELISION_RE =
-  /(^|[^\p{L}])(?:l|d|j|m|n|s|t|c|qu|jusqu|lorsqu|puisqu)['’ʼ](?=\p{L})/giu;
+/** Apostrophes (straight or curly) become word separators: "L'été" → "L-ete". */
+const APOSTROPHE_RE = /['‘’ʼ]/g;
 
 /**
  * File name for a sermon, using the export filename rules (accents become
- * plain letters, hyphen-separated). French elisions are dropped first, so
- * "L'été" gives "ete", not "Lete".
+ * plain letters, hyphen-separated). Every apostrophe becomes a hyphen, so no
+ * letters are dropped or glued together.
  */
 export function sermonFileName(title: string): string {
-  const stem = sanitizeFilenameStem((title ?? "").replace(ELISION_RE, "$1"));
+  const stem = sanitizeFilenameStem((title ?? "").replace(APOSTROPHE_RE, "-"));
   return `${stem}${SERMON_FILE_EXTENSION}`;
 }

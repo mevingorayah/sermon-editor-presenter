@@ -186,12 +186,11 @@ describe("helpers", () => {
     assert.equal(sermonFileName(""), "sermon-export.sermon");
   });
 
-  it("sermonFileName drops French elisions instead of gluing letters", () => {
-    assert.equal(sermonFileName("Prédication : L'été à Noël"), "Predication-ete-a-Noel.sermon");
-    assert.equal(sermonFileName("Lafwa d’amour qu'il donne"), "Lafwa-amour-il-donne.sermon");
-    assert.equal(sermonFileName("Prédication : L'été à Noël / Église « joie »?"), "Predication-ete-a-Noel-Eglise-joie.sermon");
-    // A word that merely ends in l/d before an apostrophe is not an elision.
-    assert.equal(sermonFileName("Rock'n roll"), "Rockn-roll.sermon");
+  it("sermonFileName turns every apostrophe into a hyphen", () => {
+    assert.equal(sermonFileName("Qu'est-ce que l'amour ?"), "Qu-est-ce-que-l-amour.sermon");
+    assert.equal(sermonFileName("Jusqu’à la fin"), "Jusqu-a-la-fin.sermon");
+    assert.equal(sermonFileName("l'été"), "l-ete.sermon");
+    assert.equal(sermonFileName("Prédication : L'été à Noël"), "Predication-L-ete-a-Noel.sermon");
   });
 });
 
