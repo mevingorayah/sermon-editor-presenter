@@ -13,7 +13,7 @@ import {
   citationCaps,
 } from "./contentWalk";
 import { pdfkitFont, type FontFamilyId } from "./fonts";
-import { exportFontName } from "./textMeasure";
+import { exportFontName, fallbackFontName } from "./textMeasure";
 
 /** Folder with the static export fonts (assets/fonts/export, /app in Docker). */
 export function exportFontDir(): string | null {
@@ -23,7 +23,7 @@ export function exportFontDir(): string | null {
 }
 
 /** Register the export fonts; returns a font-name resolver for this doc. */
-function registerExportFonts(doc: PDFKit.PDFDocument): (id: FontFamilyId, st: { bold?: boolean; italic?: boolean }) => string {
+function registerExportFonts(doc: PDFKit.PDFDocument): (id: FontFamilyId, st: { bold?: boolean; italic?: boolean; fallback?: boolean }) => string {
   const dir = exportFontDir();
   if (!dir) {
     console.warn("[export/pdf] assets/fonts/export missing; falling back to built-in fonts (breaks may differ)");
@@ -31,14 +31,14 @@ function registerExportFonts(doc: PDFKit.PDFDocument): (id: FontFamilyId, st: { 
   }
   const seen = new Set<string>();
   return (id, st) => {
-    const name = exportFontName(id, st);
+    const name = st.fallback ? fallbackFontName(st) : exportFontName(id, st);
     if (!seen.has(name)) { doc.registerFont(name, path.join(dir, `${name}.ttf`)); seen.add(name); }
     return name;
   };
 }
 import { frameSizeInches, pxPerPt, type PageInput } from "./frames";
 import { layoutSnapshot, roleStyle } from "./pngLayout";
-import { blockColor, paletteFor, sliceRuns, trimRunsEnd } from "./png";
+import { blockColor, paletteFor, sliceRuns, splitRunsByGlyph, trimRunsEnd, type GlyphRun } from "./png";
 
 export interface PdfBuildOptions {
   includeNotes?: boolean;
@@ -268,9 +268,9 @@ export async function buildPdf(
           continue;
         }
         const role = roleStyle(block.type);
-        const runs = trimRunsEnd(sliceRuns(block.runs, line.start, line.end));
-        const fontOf = (r: StyledRun) =>
-          fontFor(r.fontFamily, { bold: role.bold || !!r.bold, italic: role.italic || !!r.italic });
+        const runs = splitRunsByGlyph(trimRunsEnd(sliceRuns(block.runs, line.start, line.end)), role);
+        const fontOf = (r: GlyphRun) =>
+          fontFor(r.fontFamily, { bold: role.bold || !!r.bold, italic: role.italic || !!r.italic, fallback: r.glyphFallback });
         const total = runs.reduce((w, r) => w + doc.font(fontOf(r)).fontSize(fs).widthOfString(r.text, { features: NO_LIGA }), 0);
         const free = P(f.contentWidth) - total;
         let x = P(f.left) + (block.align === "center" ? free / 2 : block.align === "right" ? free : 0);

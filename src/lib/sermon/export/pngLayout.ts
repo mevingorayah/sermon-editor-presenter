@@ -219,7 +219,8 @@ export function wrapLineRanges(
  *    empty page, it splits between lines and the citation stays with the
  *    last line.
  * 3. A heading (Title/H1/H2) is never left at the bottom of a page: it moves
- *    to the next page with the start of the following block.
+ *    to the next page unless the following block's first two lines fit
+ *    under it (keep-with-next).
  * 4. Each Scripture block starts a new page (never after earlier text);
  *    headings directly before it move with it.
  * Sizes: body ≥ 24 pt via pngTypeScale(); renderers must draw each line with
@@ -301,7 +302,8 @@ export function layoutPngPages(
     if (!n) return 0;
     if (n.b.type === "Scripture" && n.height <= avail) return n.height;
     if (HEADINGS.has(n.b.type)) return n.ranges.length * n.lh + n.r.gap + leadOf(i + 1);
-    return n.lh;
+    // Keep-with-next: the first two lines of what follows (or all, if shorter).
+    return Math.min(2, n.ranges.length) * n.lh;
   };
 
   /**
