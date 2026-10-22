@@ -1,5 +1,7 @@
 "use client";
 
+import { isServerSermonId, updateSermon } from "@/lib/sermonApi";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
@@ -154,6 +156,27 @@ export function PreachShell() {
   }, []);
   const timerRunningRef = useRef(false);
   timerRunningRef.current = timer.running;
+
+  // Page settings are the sermon's: save them to the server too (debounced), so
+  // Edit's Document setup, exports and a reload all see the same page.
+  const savedPs = useRef<string | null>(null);
+  const psJson = doc ? JSON.stringify(doc.presentationSettings) : null;
+  const docId = doc?.id;
+  useEffect(() => {
+    if (!psJson || !docId) return;
+    if (savedPs.current === null) {
+      savedPs.current = psJson;
+      return;
+    }
+    if (savedPs.current === psJson || !isServerSermonId(docId)) return;
+    const t = window.setTimeout(() => {
+      savedPs.current = psJson;
+      void updateSermon(docId, { presentation: JSON.parse(psJson) }).catch(() => {
+        savedPs.current = null; // offline: local copy kept; retry on next change
+      });
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [psJson, docId]);
 
   const patchSettings = useCallback(
     (patch: Partial<SermonDocument["presentationSettings"]>) => {
