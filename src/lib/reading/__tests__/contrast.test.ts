@@ -68,9 +68,9 @@ import {
   rgbToHsl as hslOf,
 } from "../contrast";
 
-const TEXT_PRESETS = ["#6b6b6b", "#5c4a1f", "#b0463d", "#3f6f93", "#3d7a4c"];
+const TEXT_PRESETS = ["#5c5c5c", "#5c4a1f", "#9b3e36", "#376080", "#336640"];
 // Old files keep the previous swatch values (no migration); they must still pass.
-const LEGACY_TEXT = ["#9a948a", "#d47870", "#6a9fc4", "#6aaa7a"];
+const LEGACY_TEXT = ["#9a948a", "#d47870", "#6a9fc4", "#6aaa7a", "#6b6b6b", "#b0463d", "#3f6f93", "#3d7a4c"];
 const DARK_HIGHLIGHTS = [
   HL_DEFAULT,
   ...["#fff176", "#fde68a", "#fef08a", "#d4a84b", "#93c5fd", "#86efac", "#f9a8d4", "#c4b5fd"].map((c) => hlDark(c, "dark")),
@@ -129,16 +129,35 @@ test("sermon-marks.css: dark plain highlight is #655F33, no #3d2e0e", () => {
   );
 });
 
-test("Muted gray #6b6b6b: dark Preach lifts it to >= 4.5:1 on the page and every dark highlight; light keeps it", () => {
+test("Muted gray #5c5c5c: dark Preach lifts it to >= 4.5:1 on the page and every dark highlight; light keeps it", () => {
   for (const bg of ["#12110f", ...DARK_HIGHLIGHTS]) {
-    const out = textOn("#6b6b6b", "dark", bg);
+    const out = textOn("#5c5c5c", "dark", bg);
     assert.ok(ratioOf(rgbOf(out)!, rgbOf(bg)!) >= 4.5, `on ${bg} -> ${out}`);
   }
-  assert.equal(textOn("#6b6b6b", "light"), "#6b6b6b");
+  assert.equal(textOn("#5c5c5c", "light"), "#5c5c5c");
   assert.equal(textOn("#9a948a", "light"), "#9a948a"); // legacy files unchanged
 });
 
-test("every text colour preset in FormatToolbar.tsx is >= 4.5:1 on white", () => {
+/** Light-theme highlight backgrounds, read from the source. */
+function lightHighlightBackgrounds(): Array<[string, [number, number, number]]> {
+  const css = readFileSync(new URL("../../../styles/sermon-marks.css", import.meta.url), "utf8");
+  const m = css.match(/mark\.sermon-highlight,\s*\.sermon-highlight\s*\{[^}]*background:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/);
+  assert.ok(m, "light highlight rgba() not found in sermon-marks.css");
+  const [r, g, b, a] = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
+  const over = (bg: string): [number, number, number] =>
+    rgbOf(bg)!.map((c, i) => Math.round([r, g, b][i] * a + c * (1 - a))) as [number, number, number];
+  const ts = readFileSync(new URL("../contrast.ts", import.meta.url), "utf8");
+  const y = ts.match(/YELLOW_PRESET_LIGHT = "(#[0-9a-fA-F]{6})"/);
+  assert.ok(y, "YELLOW_PRESET_LIGHT not found in contrast.ts");
+  return [
+    [`amber highlight on white`, over("#ffffff")],
+    [`amber highlight on Edit #f4f1ea`, over("#f4f1ea")],
+    [`amber highlight on light Preach #f7f3eb`, over("#f7f3eb")],
+    [`yellow preset ${y[1]}`, rgbOf(y[1])!],
+  ];
+}
+
+test("every text colour preset in FormatToolbar.tsx is >= 4.5:1 on white, Edit #f4f1ea and every light highlight", () => {
   const src = readFileSync(new URL("../../../components/editor/FormatToolbar.tsx", import.meta.url), "utf8");
   const block = src.match(/export const TEXT_COLORS = \[([\s\S]*?)\] as const;/);
   assert.ok(block, "TEXT_COLORS not found in FormatToolbar.tsx; point this test at the new preset list");
@@ -146,7 +165,14 @@ test("every text colour preset in FormatToolbar.tsx is >= 4.5:1 on white", () =>
   assert.ok(values.length >= 5, `found ${values.length} presets`);
   assert.deepEqual(values.map((v) => v.toLowerCase()), TEXT_PRESETS);
   for (const v of values) {
-    const r = ratioOf(rgbOf(v)!, [255, 255, 255]);
-    assert.ok(r >= 4.5, `${v} is ${r.toFixed(2)}:1 on white`);
+    const bgs: Array<[string, [number, number, number]]> = [
+      ["white", rgbOf("#ffffff")!],
+      ["Edit #f4f1ea", rgbOf("#f4f1ea")!],
+      ...lightHighlightBackgrounds(),
+    ];
+    for (const [name, bg] of bgs) {
+      const r = ratioOf(rgbOf(v)!, bg);
+      assert.ok(r >= 4.5, `${v} is ${r.toFixed(2)}:1 on ${name}`);
+    }
   }
 });
