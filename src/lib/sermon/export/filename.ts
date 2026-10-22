@@ -5,7 +5,7 @@
  * so "Will save as: …" always matches the file the server sends.
  *
  * 1. Accents are transliterated, never dropped: "Ésaïe 40" → "Esaie-40".
- *    Apostrophes and quote marks are removed: "l'Évangile" → "lEvangile".
+ *    Apostrophes and quote marks become "-": "l'Évangile" → "l-Evangile".
  * 2. Any other run of characters outside [A-Za-z0-9_-] (full stops too) becomes one "-";
  *    "-", "." and "_" are stripped from both ends.
  * 3. One trailing export extension (.docx/.pdf/.png/.pptx, any case) is
@@ -51,7 +51,7 @@ function trimEnds(s: string): string {
 export function sanitizeFilenameStem(raw: string | undefined | null): string {
   let s = (raw ?? "").trim().replace(EXPORT_EXT_RE, "");
   s = transliterate(s)
-    .replace(APOSTROPHES_QUOTES_RE, "")
+    .replace(APOSTROPHES_QUOTES_RE, "-")
     .replace(/[^A-Za-z0-9_-]+/g, "-")
     .replace(/-{2,}/g, "-");
   s = trimEnds(s);
@@ -68,7 +68,7 @@ export function sanitizeFilenameStem(raw: string | undefined | null): string {
 /**
  * Append the extension to a stem. A stem that is already clean (as the
  * export route passes it) is used as-is, so a second extension is never
- * stripped: "a.pdf.docx" -> stem "a.pdf" -> "a.pdf.docx", not "a.docx".
+ * stripped: "a.pdf.docx" -> stem "a-pdf" -> "a-pdf.docx", not "a.docx".
  */
 export function filenameWithExt(
   stem: string | undefined | null,
