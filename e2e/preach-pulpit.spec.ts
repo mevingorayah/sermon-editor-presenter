@@ -180,8 +180,8 @@ for (const target of ["screen-16-9", "paper-a4"]) {
   });
 }
 
-const FORMATS = ["a4", "letter", "half-letter", "tab-upright", "tab-sideways", "16-9", "16-10"];
-for (const vp of [{ width: 1334, height: 800 }, { width: 800, height: 1280 }, { width: 390, height: 844 }]) {
+const FORMATS = ["a4", "letter", "half-letter", "16-9", "16-10"];
+for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 800 }, { width: 2112, height: 1320 }, { width: 800, height: 1280 }, { width: 1000, height: 300 }]) {
   test(`⚙ Page: every format re-renders live, saved, never clipped (${vp.width}x${vp.height})`, async ({ page }) => {
     await page.setViewportSize(vp);
     await seed(page, { view: "page" });
@@ -201,11 +201,32 @@ for (const vp of [{ width: 1334, height: 800 }, { width: 800, height: 1280 }, { 
         const s = document.querySelector("section[data-page]")!.getBoundingClientRect();
         return Array.from(document.querySelectorAll("section[data-page] [data-line]")).filter((l) => {
           const r = l.getBoundingClientRect();
-          return r.bottom > s.bottom + 1 || r.top < s.top - 1;
+          // Off the page vertically, or text wider than its line box (runs off the side).
+          return r.bottom > s.bottom + 1 || r.top < s.top - 1 || r.right > s.right + 1 || (l as HTMLElement).scrollWidth > (l as HTMLElement).clientWidth + 1;
         }).length;
       });
       expect(clipped).toBe(0);
     }
+    // Extremes: 72 pt with 2in margins and 2.0 line spacing still never runs off the page.
+    await panel.locator('[data-format="half-letter"]').click();
+    for (let i = 0; i < 24; i++) await panel.getByRole("button", { name: "Larger text" }).click({ force: true }).catch(() => {});
+    await expect(panel.locator("[data-text-pt]")).toHaveText("72 pt");
+    for (const [name, v] of [["Margins", "2"], ["Line spacing", "2"]] as const) {
+      await panel.getByRole("button", { name: new RegExp(`^${name}: .* tap to type`) }).click();
+      const box = panel.getByRole("textbox", { name: new RegExp(name) });
+      await box.fill(v);
+      await box.press("Enter");
+    }
+    const over = await page.evaluate(() => {
+      const s = document.querySelector("section[data-page]")!.getBoundingClientRect();
+      return Array.from(document.querySelectorAll("section[data-page] [data-line]")).filter((l) => {
+        const r = l.getBoundingClientRect();
+        return r.bottom > s.bottom + 1 || r.right > s.right + 1 || (l as HTMLElement).scrollWidth > (l as HTMLElement).clientWidth + 1;
+      }).length;
+    });
+    expect(over).toBe(0);
+    await panel.locator('[data-reset-spacing]').click();
+    await panel.locator('[data-format="16-10"]').click();
     await panel.getByRole("button", { name: "Larger text" }).click();
     await expect(panel.locator("[data-text-pt]")).toHaveText("30 pt");
     // Saved to the sermon (debounced PATCH) before reloading.

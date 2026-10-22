@@ -2,7 +2,7 @@
 
 import type { PageChoice, PageOrientation } from "@/lib/reading/pageSettings";
 import { useState } from "react";
-import { FORMAT_BUTTONS, LIMITS, naturalOrientation, resetSpacing, stepTextSize } from "@/lib/reading/pageSettings";
+import { FIT_BUTTON, FORMAT_GROUPS, LIMITS, naturalOrientation, resetSpacing, stepTextSize } from "@/lib/reading/pageSettings";
 import styles from "./PreachBar.module.css";
 
 interface Props {
@@ -25,26 +25,31 @@ export function PageControls({ choice, followDevice, onChange, onFollowDeviceCha
   return (
     <section className={styles.section} aria-label="Page" data-page-controls="">
       <h2 className={styles.sectionTitle}>Page</h2>
-      <div className={styles.formatGrid} role="group" aria-label="Format">
-        {FORMAT_BUTTONS.map((f) => {
-          const on = f.format === choice.format && (!f.orientation || f.orientation === choice.orientation);
-          return (
-            <button
-              key={f.key}
-              type="button"
-              className={on ? styles.active : styles.btn}
-              aria-pressed={on}
-              data-format={f.key}
-              onClick={() => {
-                if (f.orientation) onFollowDeviceChange(false);
-                onChange({ ...choice, format: f.format, orientation: f.orientation ?? naturalOrientation(f.format) });
-              }}
-            >
-              {f.label}
-            </button>
-          );
-        })}
-      </div>
+      {[{ label: "", items: [FIT_BUTTON] }, ...FORMAT_GROUPS].map((g) => (
+        <div key={g.label || "fit"} className={styles.formatGrid} role="group" aria-label={g.label || "Fit"}>
+          {g.label ? <h3 className={styles.rowLabel}>{g.label}</h3> : null}
+          {g.items.map((f) => {
+            const on = Boolean(f.format) && f.format === choice.format;
+            return (
+              <button
+                key={f.key}
+                type="button"
+                className={on ? styles.active : styles.btn}
+                aria-pressed={on}
+                data-format={f.key}
+                disabled={f.pending}
+                title={f.pending ? "Coming with the next export update" : undefined}
+                onClick={() =>
+                  f.format &&
+                  onChange({ ...choice, format: f.format, orientation: followDevice ? choice.orientation : naturalOrientation(f.format) })
+                }
+              >
+                {f.label}
+              </button>
+            );
+          })}
+        </div>
+      ))}
       <div className={styles.row} role="group" aria-label="Orientation">
         <span className={styles.rowLabel}>Orientation</span>
         {(["portrait", "landscape"] as const).map((o) => (

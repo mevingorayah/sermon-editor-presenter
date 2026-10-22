@@ -23,16 +23,30 @@ export interface PageChoice {
 
 export const LIMITS = PAGE_LIMITS;
 
-/** Format buttons (UI UX): the Galaxy Tab appears as upright and sideways. */
-export const FORMAT_BUTTONS: Array<{ key: string; label: string; format: PageFormat; orientation?: PageOrientation }> = [
-  { key: "a4", label: "A4", format: "a4" },
-  { key: "letter", label: "Letter", format: "letter" },
-  { key: "half-letter", label: "½ Letter", format: "half-letter" },
-  { key: "tab-upright", label: "Galaxy Tab, upright", format: "tablet", orientation: "portrait" },
-  { key: "tab-sideways", label: "Galaxy Tab, sideways", format: "tablet", orientation: "landscape" },
-  { key: "16-9", label: "16:9", format: "16:9" },
-  { key: "16-10", label: "16:10", format: "16:10" },
+/**
+ * Page picker (UX spec, 22 Oct): "Fit this screen", then Print and Screen groups,
+ * each with a Portrait/Landscape toggle. No device presets.
+ * `pending` entries need Backend's page geometry (#29) first: A5, 4:3 and a
+ * measured "fit" page ({ kind: "fit", width, height } proposed).
+ */
+export interface FormatButton { key: string; label: string; format?: PageFormat; pending?: boolean }
+export const FIT_BUTTON: FormatButton = { key: "fit", label: "Fit this screen", pending: true };
+export const FORMAT_GROUPS: Array<{ label: string; items: FormatButton[] }> = [
+  { label: "Print", items: [
+    { key: "a4", label: "A4", format: "a4" },
+    { key: "a5", label: "A5", pending: true },
+    { key: "letter", label: "Letter", format: "letter" },
+    { key: "half-letter", label: "½ Letter", format: "half-letter" },
+  ] },
+  { label: "Screen", items: [
+    { key: "4-3", label: "4:3", pending: true },
+    { key: "16-10", label: "16:10", format: "16:10" },
+    { key: "16-9", label: "16:9", format: "16:9" },
+  ] },
 ];
+export const FORMAT_BUTTONS = FORMAT_GROUPS.flatMap((g) => g.items).filter(
+  (b): b is FormatButton & { format: PageFormat } => Boolean(b.format),
+);
 
 const NATURAL: Record<PageFormat, PageOrientation> = {
   a4: "portrait", letter: "portrait", "half-letter": "portrait", tablet: "landscape", "16:9": "landscape", "16:10": "landscape",
@@ -135,10 +149,6 @@ export function withPage(
   };
 }
 
-/** Device default: Galaxy Tab sideways on a tablet-sized touch screen. */
-export function deviceDefaultFormat(vw: number, vh: number, touch: boolean): PageFormat | null {
-  return touch && Math.min(vw, vh) >= 600 ? "tablet" : null;
-}
 
 export function deviceOrientation(vw: number, vh: number): PageOrientation {
   return vh > vw ? "portrait" : "landscape";

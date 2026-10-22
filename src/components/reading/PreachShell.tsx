@@ -22,7 +22,6 @@ import { PreachBar, type PreachViewMode } from "./PreachBar";
 import { PageView } from "./PageView";
 import { PageControls } from "./PageControls";
 import {
-  deviceDefaultFormat,
   deviceOrientation,
   fromSettings,
   toPatch,
@@ -204,9 +203,7 @@ export function PreachShell() {
     setDoc((prev) => {
       if (!prev) return prev;
       const cur = fromSettings(prev.presentationSettings);
-      const touch = window.matchMedia?.("(pointer: coarse)").matches ?? false;
-      const format = cur.format === "tablet" ? "tablet" : deviceDefaultFormat(viewport.w, viewport.h, touch) ?? cur.format;
-      const next = { ...cur, format, orientation: deviceOrientation(viewport.w, viewport.h) };
+      const next = { ...cur, orientation: deviceOrientation(viewport.w, viewport.h) };
       if (next.format === cur.format && next.orientation === cur.orientation) return prev;
       const patch = toPatch(next);
       return updatePresentationSettings(prev, patch);
