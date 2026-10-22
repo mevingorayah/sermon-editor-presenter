@@ -50,7 +50,7 @@ export function changeBlockType(editor: Editor, index: number, type: string, att
   const b = topBlocks(editor)[index];
   const nt = editor.schema.nodes[type];
   if (!b || !nt || !b.node.isTextblock || !nt.isTextblock) return;
-  const keep = { blockStyle: b.node.attrs.blockStyle ?? null, blockSpacing: b.node.attrs.blockSpacing ?? null, textAlign: b.node.attrs.textAlign };
+  const keep = { style: b.node.attrs.style ?? null, spacing: b.node.attrs.spacing ?? null, textAlign: b.node.attrs.textAlign };
   const next = nt.create({ ...keep, ...attrs }, b.node.content, b.node.marks);
   editor.view.dispatch(editor.state.tr.replaceWith(b.pos, b.pos + b.node.nodeSize, next));
 }

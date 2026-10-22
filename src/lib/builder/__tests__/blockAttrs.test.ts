@@ -55,7 +55,7 @@ describe("block builder attrs adapter", () => {
     const doc = structuredClone(OLD);
     doc.content![3].attrs = {
       ...doc.content![3].attrs,
-      [FIELD.style]: { font: "Georgia", size: 20, color: "#8F3A3A", borderLeft: "#376080" },
+      [FIELD.style]: { font: "lora", size: 20, color: "#8F3A3A", borderLeft: "#376080" },
       [FIELD.spacing]: { mt: 12, pl: 24 },
     };
     const out = saveBuilder(doc);
@@ -83,7 +83,7 @@ describe("block builder attrs adapter", () => {
     assert.equal(sanitizeStyle({}), null);
     assert.equal(sanitizeSpacing({}), null);
     assert.deepEqual(sanitizeSpacing({ mt: 99, mb: -4 }), { mt: 64, mb: 0 });
-    assert.equal(sanitizeStyle({ font: "Comic Sans", color: "red" }), null);
+    assert.equal(sanitizeStyle({ font: "Comic Sans" as never, color: "red" }), null);
     assert.equal(blockCss(null, null), "");
     assert.match(blockCss({ size: 18 }, { pt: 8 }), /font-size: 18pt; padding-top: 8px/);
   });
@@ -105,4 +105,16 @@ describe("local gate: backup sermons unchanged by open+save", () => {
       assert.equal(JSON.stringify(saveBuilder(s.content)), JSON.stringify(before));
     }
   });
+});
+
+it("builder output passes Backend validation (#30)", async () => {
+  const { findBlockLayoutIssues } = await import("../../sermon/blockStyle");
+  const doc = { type: "doc", content: [
+    { type: "paragraph", attrs: { style: sanitizeStyle({ font: "inter", size: 14, weight: 700, borderLeft: null }), spacing: sanitizeSpacing({ pl: 24, mt: 99 }) }, content: [{ type: "text", text: "Fixture" }] },
+    { type: "section", attrs: { columns: 2 }, content: [
+      { type: "column", content: [{ type: "paragraph" }] },
+      { type: "column", content: [{ type: "quote" }] },
+    ] },
+  ] };
+  assert.deepEqual(findBlockLayoutIssues(doc), []);
 });

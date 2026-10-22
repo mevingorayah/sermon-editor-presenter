@@ -4,7 +4,7 @@ import type { Editor } from "@tiptap/react";
 import { useState } from "react";
 import { changeBlockType, setBlockAttrs, topBlocks, TYPE_LABEL } from "./blockOps";
 import {
-  APPROVED_FONTS, FIELD, SPACING_MAX, SPACING_MIN, sanitizeSpacing, sanitizeStyle,
+  APPROVED_FONTS, FIELD, FONT_LABELS, SPACING_MAX, SPACING_MIN, sanitizeSpacing, sanitizeStyle,
   type BlockSpacing, type BlockStyle, type GlobalStyles,
 } from "@/lib/builder/blockAttrs";
 import styles from "./BlockBuilder.module.css";
@@ -46,7 +46,7 @@ export function StylePanel({ editor, index, globalStyles, onGlobalStylesChange }
   const type = block.node.type.name;
   const own: BlockStyle = (block.node.attrs[FIELD.style] as BlockStyle) ?? {};
   const sp: BlockSpacing = (block.node.attrs[FIELD.spacing] as BlockSpacing) ?? {};
-  const glob = globalStyles[type] ?? {};
+  const glob = globalStyles[type as keyof GlobalStyles] ?? {};
 
   const setStyle = (k: keyof BlockStyle, v: unknown) =>
     setBlockAttrs(editor, index, { [FIELD.style]: sanitizeStyle({ ...own, [k]: v === "" ? undefined : v } as BlockStyle) });
@@ -62,7 +62,7 @@ export function StylePanel({ editor, index, globalStyles, onGlobalStylesChange }
             aria-label={`${label} ${s.label}`} aria-pressed={own[k] === s.value}
             onClick={() => setStyle(k, s.value)} />
         ))}
-        <input className={styles.hex} aria-label={`${label} custom hex`} placeholder={glob.style?.[k] ?? "#RRGGBB"}
+        <input className={styles.hex} aria-label={`${label} custom hex`} placeholder={(glob.style?.[k] as string | undefined) ?? "#RRGGBB"}
           defaultValue={own[k] ?? ""} key={`${index}-${k}-${own[k] ?? ""}`}
           onBlur={(e) => setStyle(k, e.target.value.trim())} />
       </div>
@@ -123,14 +123,14 @@ export function StylePanel({ editor, index, globalStyles, onGlobalStylesChange }
           <label className={styles.field}>
             <span className={styles.fieldLabel}>Font</span>
             <select className={styles.input} aria-label="Font" value={own.font ?? ""} onChange={(e) => setStyle("font", e.target.value)}>
-              <option value="">{glob.style?.font ? `Global (${glob.style.font})` : "Global"}</option>
-              {APPROVED_FONTS.map((f) => <option key={f} value={f}>{f}</option>)}
+              <option value="">{glob.style?.font ? `Global (${FONT_LABELS[glob.style.font]})` : "Global"}</option>
+              {APPROVED_FONTS.map((f) => <option key={f} value={f}>{FONT_LABELS[f]}</option>)}
             </select>
             <Reset show={own.font !== undefined} label="font" onClick={() => setStyle("font", undefined)} />
           </label>
           <label className={styles.field}>
             <span className={styles.fieldLabel}>Size (pt)</span>
-            <input type="number" min={6} max={72} className={styles.input} aria-label="Size"
+            <input type="number" min={8} max={96} className={styles.input} aria-label="Size"
               placeholder={glob.style?.size ? String(glob.style.size) : "Global"}
               value={own.size ?? ""} onChange={(e) => setStyle("size", e.target.value ? Number(e.target.value) : undefined)} />
             <Reset show={own.size !== undefined} label="size" onClick={() => setStyle("size", undefined)} />
@@ -153,7 +153,7 @@ export function StylePanel({ editor, index, globalStyles, onGlobalStylesChange }
           {colourRow("highlight", "Highlight", HIGHLIGHTS)}
           {colourRow("background", "Background", HIGHLIGHTS)}
           {colourRow("borderLeft", "Left border")}
-          <button type="button" className={styles.panelBtn} aria-pressed={own.borderLeft === "none"} onClick={() => setStyle("borderLeft", "none")}>No left border</button>
+          <button type="button" className={styles.panelBtn} aria-pressed={own.borderLeft === null} onClick={() => setStyle("borderLeft", null)}>No left border</button>
           <div className={styles.field}>
             <span className={styles.fieldLabel}>Align</span>
             <div role="group" aria-label="Block align" className={styles.swatches}>
