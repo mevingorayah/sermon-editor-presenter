@@ -11,6 +11,7 @@ export type CalibrationTarget =
   | "screen-16-9"
   | "screen-16-10"
   | "tablet-portrait"
+  | "tablet-landscape"
   | "paper-letter"
   | "paper-a4"
   | "paper-half-letter";
@@ -29,9 +30,17 @@ export interface PresentationSettings {
   page?: SermonPageSettings;
 }
 
+export interface CustomPageSettings {
+  width: number;
+  height: number;
+  unit: "in" | "mm" | "cm" | "px";
+  dpi?: number;
+}
+
 /** The sermon's own page: Preach and every export use it. */
 export interface SermonPageSettings {
-  format?: "a4" | "letter" | "half-letter" | "tablet" | "16:9" | "16:10";
+  /** "tablet" = Galaxy Tab S10 Lite 4:3 (1600×1200 landscape default). "custom" uses `custom`. */
+  format?: "a4" | "letter" | "half-letter" | "tablet" | "16:9" | "16:10" | "custom";
   orientation?: "portrait" | "landscape";
   /** 24–72 pt, step 2, default 28. */
   textSizePt?: number;
@@ -39,6 +48,13 @@ export interface SermonPageSettings {
   lineSpacing?: number;
   /** 0–48 pt, step 2, default 20. */
   paragraphSpacingPt?: number;
+  /**
+   * Required when format is "custom": user width/height in `unit`
+   * ("in" | "mm" | "cm" | "px"; px needs `dpi`, 72–600, default 96).
+   * Each side 2–60 in after conversion; aspect at most 1:4. `orientation`
+   * swaps the sides (landscape = long side across).
+   */
+  custom?: CustomPageSettings;
   /** Each side 0.25–2 in (e.g. "0.8in" or "20mm"); default 0.8in. */
   margins?: CalibratedMargins;
 }
@@ -92,6 +108,8 @@ export interface CalibratedSnapshot {
   /** Optional page overrides (win over `target`). */
   pageFormat?: SermonPageSettings["format"];
   orientation?: SermonPageSettings["orientation"];
+  /** With pageFormat "custom": the user's size (same shape as page.custom). */
+  customPage?: CustomPageSettings;
   textSizePt?: number;
   paragraphSpacingPt?: number;
   flattenGradient: true;

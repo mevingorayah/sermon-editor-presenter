@@ -20,6 +20,8 @@ import { afmMeasurer, type MeasureStyle, type TextMeasurer } from "./textMeasure
 export {
   PAGE_FORMATS, PAGE_ORIENTATIONS, MIN_TEXT_PT, allPageSpecs, frameSizeInches, isPaperPage, pageSpecFromTarget,
   pngFrameSize, pngFrameWidthInches, pxPerInch, pxPerPt, resolvePage,
+  PRESET_PAGE_FORMATS, CUSTOM_UNITS, CUSTOM_PAGE_LIMITS, customPageError, customSizeToInches, pageGeometry,
+  type CustomPageSize, type CustomPageUnit, type ResolvedPage,
   type PageFormat, type PageInput, type PageOrientation, type PageSpec,
 } from "./frames";
 export { afmMeasurer, type MeasureStyle, type TextMeasurer } from "./textMeasure";
@@ -426,12 +428,13 @@ export function pngExportLabel(pages: number): string {
  * per-sermon `format` / `orientation` / `textSizePt` overrides.
  */
 export function pageSpecFromSnapshot(
-  snapshot: Pick<CalibratedSnapshot, "target"> & Partial<Pick<CalibratedSnapshot, "pageFormat" | "orientation" | "textSizePt">>,
+  snapshot: Pick<CalibratedSnapshot, "target"> & Partial<Pick<CalibratedSnapshot, "pageFormat" | "orientation" | "textSizePt" | "customPage">>,
 ): PageSpec {
   const base = resolvePage(String(snapshot.target));
   return resolvePage({
     format: snapshot.pageFormat ?? base.format,
     orientation: snapshot.orientation ?? base.orientation,
     textSizePt: snapshot.textSizePt ?? base.textSizePt,
+    ...(snapshot.customPage ? { custom: snapshot.customPage } : {}),
   });
 }

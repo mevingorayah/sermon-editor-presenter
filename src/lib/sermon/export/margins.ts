@@ -1,5 +1,8 @@
 import type { CalibratedMargins, CalibrationTarget } from "@/types/document";
-import { PAGE_LIMITS, clamp, isPaperPage, pngFrameWidthInches, type PageInput } from "./frames";
+import { PAGE_LIMITS, clamp, frameSizeInches, isPaperPage, pngFrameWidthInches, type PageInput } from "./frames";
+
+/** Smallest text box (inches, each way) margins may leave on a page. */
+export const MIN_CONTENT_IN = 1.5;
 
 export interface ResolvedMarginsInches {
   top: number;
@@ -48,7 +51,7 @@ export function resolveMargins(
   // Every side is 0.25–2 in on every format (PM limits); legacy % values are
   // converted against the page width, then clamped.
   const side = (raw: string) => clamp(parseLengthToInches(raw, width), PAGE_LIMITS.marginIn);
-  return {
+  const out = {
     top: side(margins.top),
     right: side(margins.right),
     bottom: side(margins.bottom),
@@ -57,6 +60,19 @@ export function resolveMargins(
       ? parseLengthToInches(margins.binderGutter, width)
       : 0,
   };
+  // Small custom pages: shrink margins (never under 0.25 in) so the text box
+  // keeps at least MIN_CONTENT_IN each way. Presets are never affected.
+  const fit = (a: number, b: number, extra: number, total: number): [number, number] => {
+    const room = total - MIN_CONTENT_IN - extra;
+    if (a + b <= room) return [a, b];
+    const lo = PAGE_LIMITS.marginIn.min;
+    const k = Math.max(0, room - 2 * lo) / Math.max(1e-9, a + b - 2 * lo);
+    return [lo + (a - lo) * k, lo + (b - lo) * k];
+  };
+  const height = frameSizeInches(target).height;
+  [out.left, out.right] = fit(out.left, out.right, out.binderGutter, width);
+  [out.top, out.bottom] = fit(out.top, out.bottom, 0, height);
+  return out;
 }
 
 export function isPaperTarget(target: PageInput): boolean {
