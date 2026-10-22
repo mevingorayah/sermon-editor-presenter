@@ -9,13 +9,15 @@ interface Props {
   choice: PageChoice;
   followDevice: boolean;
   onChange: (c: PageChoice) => void;
+  /** "Fit this screen": measure the usable viewport and apply. */
+  onFit: () => void;
   onFollowDeviceChange: (v: boolean) => void;
   fullscreen: boolean;
   onFullscreenToggle: () => void;
 }
 
 /** ⚙ "Page" section: the sermon's page settings (shared with Document setup and exports). */
-export function PageControls({ choice, followDevice, onChange, onFollowDeviceChange, fullscreen, onFullscreenToggle }: Props) {
+export function PageControls({ choice, followDevice, onChange, onFit, onFollowDeviceChange, fullscreen, onFullscreenToggle }: Props) {
   const T = LIMITS.textSizePt;
   const [eachSide, setEachSide] = useState(false);
   const setOrientation = (o: PageOrientation) => {
@@ -40,7 +42,9 @@ export function PageControls({ choice, followDevice, onChange, onFollowDeviceCha
                 disabled={f.pending}
                 title={f.pending ? "Coming with the next export update" : undefined}
                 onClick={() =>
-                  f.format &&
+                  f.key === "fit"
+                    ? onFit()
+                    : f.format &&
                   onChange({ ...choice, format: f.format, orientation: followDevice ? choice.orientation : naturalOrientation(f.format) })
                 }
               >

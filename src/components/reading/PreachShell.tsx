@@ -26,6 +26,7 @@ import {
   fromSettings,
   toPatch,
   type PageChoice,
+  fitChoice,
 } from "@/lib/reading/pageSettings";
 const FOLLOW_KEY = "sermon-editor-presenter:preach-follow-rotation:v1";
 import { keepScreenAwake } from "@/lib/reading/wakeLock";
@@ -196,6 +197,29 @@ export function PreachShell() {
     [patchSettings],
   );
 
+  /** Usable viewport for "Fit this screen" (the page area, not the window). */
+  const measureFit = useCallback((c: PageChoice) => {
+    const el = scrollRef.current;
+    const w = el?.clientWidth || window.innerWidth;
+    const h = el?.clientHeight || window.innerHeight;
+    return fitChoice(c, w, h);
+  }, []);
+  const onFit = useCallback(() => {
+    if (doc) applyPage(measureFit(fromSettings(doc.presentationSettings)));
+  }, [doc, applyPage, measureFit]);
+
+  // Fit this screen: re-measure on rotate/resize (confirm while the timer runs).
+  const fitKey = doc ? JSON.stringify(fromSettings(doc.presentationSettings).custom ?? null) : "";
+  useEffect(() => {
+    if (!doc || !viewport.w) return;
+    const cur = fromSettings(doc.presentationSettings);
+    if (cur.format !== "custom" || cur.custom?.unit !== "px") return;
+    const next = measureFit(cur);
+    if (JSON.stringify(next.custom) === fitKey && next.orientation === cur.orientation) return;
+    applyPage(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewport.w, viewport.h]);
+
   // Follow device rotation (default on); Tablet sideways is the tablet default.
   const docLoaded = Boolean(doc);
   useEffect(() => {
@@ -203,6 +227,7 @@ export function PreachShell() {
     setDoc((prev) => {
       if (!prev) return prev;
       const cur = fromSettings(prev.presentationSettings);
+      if (cur.format === "custom") return prev; // Fit re-measures instead
       const next = { ...cur, orientation: deviceOrientation(viewport.w, viewport.h) };
       if (next.format === cur.format && next.orientation === cur.orientation) return prev;
       const patch = toPatch(next);
@@ -274,6 +299,7 @@ export function PreachShell() {
           <PageControls
             choice={choice}
             followDevice={followDevice}
+            onFit={onFit}
             onChange={applyPage}
             onFollowDeviceChange={changeFollow}
             fullscreen={fullscreen}

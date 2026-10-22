@@ -5,7 +5,7 @@
  * { format, orientation, textSizePt, lineSpacing, paragraphSpacingPt, margins }.
  * The UI and page view only talk to this file; if field names change, edit here.
  */
-import type { CalibratedMargins, CalibratedSnapshot, PresentationSettings, SermonContent, SermonPageSettings } from "@/types/document";
+import type { CustomPageSettings, CalibratedMargins, CalibratedSnapshot, PresentationSettings, SermonContent, SermonPageSettings } from "@/types/document";
 import { buildCalibratedSnapshot } from "@/lib/calibration";
 import { PAGE_LIMITS, clamp, pageSpecFromTarget, type PageFormat, type PageOrientation } from "@/lib/sermon/export/frames";
 
@@ -19,6 +19,8 @@ export interface PageChoice {
   paragraphSpacingPt: number;
   /** Inches per side. */
   margins: { top: number; right: number; bottom: number; left: number };
+  /** "Fit this screen": the last measured usable viewport, CSS px at 96 dpi. */
+  custom?: CustomPageSettings;
 }
 
 export const LIMITS = PAGE_LIMITS;
@@ -26,11 +28,11 @@ export const LIMITS = PAGE_LIMITS;
 /**
  * Page picker (UX spec, 22 Oct): "Fit this screen", then Print and Screen groups,
  * each with a Portrait/Landscape toggle. No device presets.
- * `pending` entries need Backend's page geometry (#29) first: A5, 4:3 and a
- * measured "fit" page ({ kind: "fit", width, height } proposed).
+ * A5 is `pending` until #29 has an A5 preset. "Fit this screen" saves
+ * format "custom" with the measured viewport in CSS px at 96 dpi.
  */
 export interface FormatButton { key: string; label: string; format?: PageFormat; pending?: boolean }
-export const FIT_BUTTON: FormatButton = { key: "fit", label: "Fit this screen", pending: true };
+export const FIT_BUTTON: FormatButton = { key: "fit", label: "Fit this screen", format: "custom" };
 export const FORMAT_GROUPS: Array<{ label: string; items: FormatButton[] }> = [
   { label: "Print", items: [
     { key: "a4", label: "A4", format: "a4" },
@@ -39,17 +41,17 @@ export const FORMAT_GROUPS: Array<{ label: string; items: FormatButton[] }> = [
     { key: "half-letter", label: "½ Letter", format: "half-letter" },
   ] },
   { label: "Screen", items: [
-    { key: "4-3", label: "4:3", pending: true },
+    { key: "4-3", label: "4:3", format: "tablet" }, // #29's 4:3 page (1600×1200)
     { key: "16-10", label: "16:10", format: "16:10" },
     { key: "16-9", label: "16:9", format: "16:9" },
   ] },
 ];
-export const FORMAT_BUTTONS = FORMAT_GROUPS.flatMap((g) => g.items).filter(
+export const FORMAT_BUTTONS = [FIT_BUTTON, ...FORMAT_GROUPS.flatMap((g) => g.items)].filter(
   (b): b is FormatButton & { format: PageFormat } => Boolean(b.format),
 );
 
 const NATURAL: Record<PageFormat, PageOrientation> = {
-  a4: "portrait", letter: "portrait", "half-letter": "portrait", tablet: "landscape", "16:9": "landscape", "16:10": "landscape",
+  a4: "portrait", letter: "portrait", "half-letter": "portrait", tablet: "landscape", "16:9": "landscape", "16:10": "landscape", custom: "portrait",
 };
 export const naturalOrientation = (f: PageFormat) => NATURAL[f];
 
@@ -68,7 +70,8 @@ export function fromSettings(ps: Pick<PresentationSettings, "calibrationTarget">
   const legacy = pageSpecFromTarget(String(ps.calibrationTarget));
   const m = p.margins;
   return {
-    format: p.format ?? legacy.format,
+    format: p.format === "custom" && !p.custom ? legacy.format : (p.format ?? legacy.format),
+    custom: p.format === "custom" ? p.custom : undefined,
     orientation: p.orientation ?? legacy.orientation,
     textSizePt: clamp(p.textSizePt, PAGE_LIMITS.textSizePt),
     lineSpacing: clamp(p.lineSpacing, PAGE_LIMITS.lineSpacing),
@@ -96,6 +99,7 @@ export function toPatch(c: PageChoice): Partial<PresentationSettings> {
     lineSpacing: clamp(c.lineSpacing, PAGE_LIMITS.lineSpacing),
     paragraphSpacingPt: clamp(c.paragraphSpacingPt, PAGE_LIMITS.paragraphSpacingPt),
     margins: marginsCss(c.margins),
+    ...(c.format === "custom" && c.custom ? { custom: c.custom } : {}),
   };
   return { page };
 }
@@ -146,10 +150,39 @@ export function withPage(
     orientation: c.orientation,
     textSizePt: c.textSizePt,
     paragraphSpacingPt: c.paragraphSpacingPt,
+    ...(c.format === "custom" && c.custom ? { customPage: c.custom } : {}),
   };
 }
 
 
 export function deviceOrientation(vw: number, vh: number): PageOrientation {
   return vh > vw ? "portrait" : "landscape";
+}
+
+/** "Fit this screen": the usable viewport in CSS px (96 dpi), clamped to #29's custom limits. */
+export function fitChoice(c: PageChoice, vw: number, vh: number): PageChoice {
+  const min = 2 * 96;
+  let w = Math.max(min, Math.round(vw));
+  let h = Math.max(min, Math.round(vh));
+  if (Math.max(w, h) / Math.min(w, h) > 4) {
+    if (w > h) w = h * 4;
+    else h = w * 4;
+  }
+  return {
+    ...c,
+    format: "custom",
+    orientation: h > w ? "portrait" : "landscape",
+    custom: { width: Math.min(w, h), height: Math.max(w, h), unit: "px", dpi: 96 },
+  };
+}
+
+/** Export dialog label, e.g. "Fit this screen (1320×2112, 10:16)". */
+export function fitLabel(c: PageChoice): string | null {
+  if (c.format !== "custom" || !c.custom || c.custom.unit !== "px") return null;
+  const [a, b] = [c.custom.width, c.custom.height];
+  const [w, h] = c.orientation === "landscape" ? [Math.max(a, b), Math.min(a, b)] : [Math.min(a, b), Math.max(a, b)];
+  const g = (x: number, y: number): number => (y ? g(y, x % y) : x);
+  const r = g(w, h);
+  const ratio = w / r <= 32 && h / r <= 32 ? `${w / r}:${h / r}` : (w / h).toFixed(2);
+  return `Fit this screen (${w}×${h}, ${ratio})`;
 }
