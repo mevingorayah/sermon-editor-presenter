@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { resolveBuilderStyles } from "@/lib/builder/resolveStyles";
 import type { CSSProperties } from "react";
 import {
   resolveActiveDocument,
@@ -28,6 +29,12 @@ export function PreachShell() {
   // Deep link from Edit's "Export…": /preach?calibrate=1 opens Document setup.
   const [calibrationDeepLink, setCalibrationDeepLink] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Block builder: bake sermon.globalStyles into blocks so Preach, page view
+  // and exports match Edit (same object when there are no global styles).
+  const content = useMemo(
+    () => (doc ? resolveBuilderStyles(doc.content, doc.globalStyles) : null),
+    [doc],
+  );
   const calibrationToggleRef = useRef<HTMLButtonElement>(null);
   /** Element that opened Document setup; focus returns here on close. */
   const calibrationOpenerRef = useRef<Element | null>(null);
@@ -147,12 +154,12 @@ export function PreachShell() {
 
       <div className={styles.body}>
         <div className={styles.scroll} ref={scrollRef} onScroll={onScroll}>
-          <ReadingView content={doc.content} bionic={ps.bionic} theme={ps.theme} />
+          <ReadingView content={content ?? doc.content} bionic={ps.bionic} theme={ps.theme} />
         </div>
 
         {calibrationOpen ? (
           <CalibrationPanel
-            content={doc.content}
+            content={content ?? doc.content}
             title={doc.title}
             notes={doc.notes ?? ""}
             autoFocus={calibrationDeepLink}

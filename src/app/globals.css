@@ -70,4 +70,3 @@ a {
 .sermon-section[data-columns="2"] { grid-template-columns: 1fr 1fr; }
 .sermon-section[data-columns="3"] { grid-template-columns: 1fr 1fr 1fr; }
 .sermon-column { min-width: 0; outline: 1px dashed #d0d0d0; padding: 0.25rem; }
-[data-block-style*="highlight"] { background-image: linear-gradient(var(--block-highlight), var(--block-highlight)); }

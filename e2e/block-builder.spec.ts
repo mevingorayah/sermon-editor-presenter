@@ -98,3 +98,34 @@ test("block style change persists after reload", async ({ page }) => {
   // Other blocks untouched.
   await expect(pm(page).locator("p", { hasText: "Alpha block" })).not.toHaveAttribute("data-block-style", /.*/);
 });
+
+test("global style saves with the sermon; Preach renders block styles like Edit", async ({ page }) => {
+  await openFresh(page);
+  await seedBlocks(page);
+  await pm(page).locator("p", { hasText: "Bravo block" }).click();
+  const panel = page.getByRole("complementary", { name: "Block settings" });
+  await panel.getByRole("tab", { name: "Style" }).click();
+  await panel.getByLabel("Size").fill("20");
+  await panel.getByRole("button", { name: "Text colour Soft red" }).click();
+  // 24px checkbox: whole label row is the tap target, at least 44px tall.
+  const italicRow = panel.locator("label", { hasText: "Italic" });
+  const box = await italicRow.boundingBox();
+  expect(box!.height).toBeGreaterThanOrEqual(44);
+  await italicRow.click({ position: { x: box!.width - 8, y: box!.height / 2 } });
+  await expect(panel.getByRole("checkbox", { name: "Italic" })).toBeChecked();
+  await panel.getByRole("button", { name: /Save as global style for/ }).click();
+  await page.waitForTimeout(2500);
+  await page.reload({ waitUntil: "networkidle" });
+  const charlie = pm(page).locator("p", { hasText: "Charlie block" });
+  await expect(charlie).toBeVisible({ timeout: 20_000 });
+  await expect(charlie).toHaveCSS("font-style", "italic"); // from sermon.globalStyles
+  expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.includes("builder-global-styles")))).toEqual([]);
+
+  await page.goto("/preach", { waitUntil: "networkidle" });
+  const pBravo = page.locator("article p", { hasText: "Bravo block" });
+  await expect(pBravo).toBeVisible({ timeout: 20_000 });
+  await expect(pBravo).toHaveCSS("color", "rgb(143, 58, 58)");
+  await expect(pBravo).toHaveCSS("font-size", "32px"); // 20pt stored → 24pt Preach minimum
+  await expect(page.locator("article p", { hasText: "Charlie block" })).toHaveCSS("font-style", "italic");
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/05-preach-styles.png` });
+});

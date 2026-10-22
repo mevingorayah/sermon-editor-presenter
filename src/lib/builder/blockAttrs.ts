@@ -68,7 +68,7 @@ export function blockCss(style?: BlockStyle | null, spacing?: BlockSpacing | nul
   if (s.italic !== undefined) d.push(`font-style: ${s.italic ? "italic" : "normal"}`);
   if (s.color) d.push(`color: ${s.color}`);
   if (s.background) d.push(`background-color: ${s.background}`);
-  if (s.highlight) d.push(`--block-highlight: ${s.highlight}`);
+  if (s.highlight) d.push(`background-image: linear-gradient(${s.highlight}, ${s.highlight})`);
   if (s.borderLeft === null) d.push("border-left: none");
   else if (s.borderLeft) d.push(`border-left: 3px solid ${s.borderLeft}`);
   if (s.align) d.push(`text-align: ${s.align}`);

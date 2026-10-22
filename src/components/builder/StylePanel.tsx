@@ -143,12 +143,15 @@ export function StylePanel({ editor, index, globalStyles, onGlobalStylesChange }
             </select>
             <Reset show={own.weight !== undefined} label="weight" onClick={() => setStyle("weight", undefined)} />
           </label>
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>Italic</span>
-            <input type="checkbox" className={styles.check} aria-label="Italic" checked={!!own.italic}
-              onChange={(e) => setStyle("italic", e.target.checked)} />
+          <div className={styles.checkField}>
+            {/* Whole row is the tap target (min 44px); Reset sits outside the label. */}
+            <label className={styles.checkRow}>
+              <input type="checkbox" className={styles.check} checked={!!own.italic}
+                onChange={(e) => setStyle("italic", e.target.checked)} />
+              <span>Italic</span>
+            </label>
             <Reset show={own.italic !== undefined} label="italic" onClick={() => setStyle("italic", undefined)} />
-          </label>
+          </div>
           {colourRow("color", "Text colour")}
           {colourRow("highlight", "Highlight", HIGHLIGHTS)}
           {colourRow("background", "Background", HIGHLIGHTS)}

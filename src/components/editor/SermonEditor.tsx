@@ -6,11 +6,10 @@ import {
   type Editor,
   type JSONContent,
 } from "@tiptap/react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { BlockBuilder } from "../builder/BlockBuilder";
 import { stripDefaultBuilderAttrs, type GlobalStyles } from "@/lib/builder/blockAttrs";
 
-const GLOBAL_STYLES_KEY = "sermon-editor-presenter:builder-global-styles:v1";
 import { createSermonExtensions } from "@/extensions";
 import { FormatToolbar } from "./FormatToolbar";
 import styles from "./SermonEditor.module.css";
@@ -19,12 +18,18 @@ interface SermonEditorProps {
   content: JSONContent;
   onChange: (json: JSONContent) => void;
   onEditorReady?: (editor: Editor | null) => void;
+  /** sermon.globalStyles — saved with the sermon (server + .sermon file). */
+  globalStyles?: GlobalStyles;
+  onGlobalStylesChange?: (g: GlobalStyles) => void;
 }
+const NO_GLOBALS: GlobalStyles = {};
 
 export function SermonEditor({
   content,
   onChange,
   onEditorReady,
+  globalStyles = NO_GLOBALS,
+  onGlobalStylesChange,
 }: SermonEditorProps) {
   const editor = useEditor({
     immediatelyRender: false,
@@ -56,18 +61,7 @@ export function SermonEditor({
     return () => onEditorReady?.(null);
   }, [editor, onEditorReady]);
 
-  // sermon.globalStyles: kept client-side until Backend publishes the field.
-  const [globalStyles, setGlobalStyles] = useState<GlobalStyles>({});
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(GLOBAL_STYLES_KEY);
-      if (raw) setGlobalStyles(JSON.parse(raw) as GlobalStyles);
-    } catch { /* ignore */ }
-  }, []);
-  const saveGlobal = (g: GlobalStyles) => {
-    setGlobalStyles(g);
-    try { localStorage.setItem(GLOBAL_STYLES_KEY, JSON.stringify(g)); } catch { /* ignore */ }
-  };
+  const saveGlobal = (g: GlobalStyles) => onGlobalStylesChange?.(g);
 
   if (!editor) {
     return <div className={styles.loading}>Loading editor…</div>;

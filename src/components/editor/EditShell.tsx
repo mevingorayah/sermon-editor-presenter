@@ -28,6 +28,7 @@ import {
 } from "@/lib/autosave/autosaveController";
 import type { Sermon } from "@/lib/sermon/types";
 import type { SermonDocument } from "@/types/document";
+import type { GlobalStyles } from "@/lib/sermon/blockStyle";
 import { DEFAULT_PRESENTATION_SETTINGS } from "@/types/document";
 import { SermonEditor } from "./SermonEditor";
 import { OutlineNav } from "./OutlineNav";
@@ -199,7 +200,12 @@ export function EditShell() {
               content: d.content,
               title: extractTitleFromContent(d.content) ?? d.title,
             }),
-          notes: (d) => updateSermon(d.id, { notes: d.notes }),
+          // "notes" kind also carries sermon.globalStyles (same PATCH).
+          notes: (d) =>
+            updateSermon(d.id, {
+              notes: d.notes,
+              ...(d.globalStyles ? { globalStyles: d.globalStyles } : {}),
+            }),
         },
         create: (input) => createSermon(input),
         get: (id) => getSermon(id),
@@ -252,6 +258,25 @@ export function EditShell() {
         const next: SermonDocument = {
           ...prev,
           notes,
+          updatedAt: new Date().toISOString(),
+        };
+        saveDocument(next);
+        docRef.current = next;
+        autosave.request("notes");
+        setStatus((s) => (STICKY_STATUSES.has(s) ? s : "saved-local"));
+        return next;
+      });
+    },
+    [autosave],
+  );
+
+  const onGlobalStylesChange = useCallback(
+    (globalStyles: GlobalStyles) => {
+      setDoc((prev) => {
+        if (!prev) return prev;
+        const next: SermonDocument = {
+          ...prev,
+          globalStyles,
           updatedAt: new Date().toISOString(),
         };
         saveDocument(next);
@@ -447,6 +472,8 @@ export function EditShell() {
             content={doc.content}
             onChange={onContentChange}
             onEditorReady={setEditor}
+            globalStyles={doc.globalStyles}
+            onGlobalStylesChange={onGlobalStylesChange}
           />
         </main>
       </div>
