@@ -9,7 +9,7 @@ import {
 } from "./colors";
 import { citationCaps, type StyledBlock, type StyledRun } from "./contentWalk";
 import { layoutSnapshot, roleStyle, type PngPage, type SnapshotLayout } from "./pngLayout";
-import { afmMeasurer, metricCompatibleCss } from "./textMeasure";
+import { afmMeasurer, FALLBACK_FAMILY, metricCompatibleCss, splitByCoverage } from "./textMeasure";
 import { DARK_YELLOW_PRESET, ensureContrast } from "@/lib/reading/contrast";
 
 export interface PngBuildOptions {
@@ -47,6 +47,24 @@ export function trimRunsEnd(runs: StyledRun[]): StyledRun[] {
     out[i].text = out[i].text.replace(/\s+$/u, "");
     if (out[i].text) break;
     out.pop();
+  }
+  return out;
+}
+
+/** A line run, flagged when its text is drawn in the symbol fallback font. */
+export type GlyphRun = StyledRun & { glyphFallback?: boolean };
+
+/**
+ * Split runs where the run's export font lacks a glyph (e.g. "↑" in Lora):
+ * those pieces are drawn in the fallback font, exactly as the layout measured.
+ */
+export function splitRunsByGlyph(runs: readonly StyledRun[], role: { bold: boolean; italic: boolean }): GlyphRun[] {
+  const out: GlyphRun[] = [];
+  for (const r of runs) {
+    const style = { font: r.fontFamily ?? "sans", bold: role.bold || !!r.bold, italic: role.italic || !!r.italic };
+    for (const piece of splitByCoverage(r.text, style)) {
+      out.push(piece.fallback ? { ...r, text: piece.text, glyphFallback: true } : { ...r, text: piece.text });
+    }
   }
   return out;
 }
@@ -107,7 +125,7 @@ function pageSvg(layout: SnapshotLayout, page: PngPage, p: Palette): string {
       block.align === "center" ? f.left + f.contentWidth / 2
         : block.align === "right" ? f.left + f.contentWidth
           : f.left;
-    const runs = trimRunsEnd(sliceRuns(block.runs, line.start, line.end));
+    const runs = splitRunsByGlyph(trimRunsEnd(sliceRuns(block.runs, line.start, line.end)), role);
     const styleOf = (run: StyledRun) => ({ font: run.fontFamily, bold: role.bold || !!run.bold, italic: role.italic || !!run.italic });
     const widths = runs.map((run) => afmMeasurer(run.text, line.size, styleOf(run)));
     const total = widths.reduce((a, w) => a + w, 0);
@@ -124,7 +142,7 @@ function pageSvg(layout: SnapshotLayout, page: PngPage, p: Palette): string {
       .map((run) => {
         const fill = run.color || color;
         const deco = [run.underline ? "underline" : "", run.strike ? "line-through" : ""].filter(Boolean).join(" ");
-        return `<tspan fill="${escapeXml(fill)}" font-family="${escapeXml(metricCompatibleCss(run.fontFamily))}" font-weight="${role.bold || run.bold ? 700 : 400}" font-style="${role.italic || run.italic ? "italic" : "normal"}"${deco ? ` text-decoration="${deco}"` : ""}>${escapeXml(run.text)}</tspan>`;
+        return `<tspan fill="${escapeXml(fill)}" font-family="${escapeXml(run.glyphFallback ? `"${FALLBACK_FAMILY}", sans-serif` : metricCompatibleCss(run.fontFamily))}" font-weight="${role.bold || run.bold ? 700 : 400}" font-style="${!run.glyphFallback && (role.italic || run.italic) ? "italic" : "normal"}"${deco ? ` text-decoration="${deco}"` : ""}>${escapeXml(run.text)}</tspan>`;
       })
       .join("");
     parts.push(
