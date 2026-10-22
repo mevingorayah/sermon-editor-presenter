@@ -118,3 +118,21 @@ it("builder output passes Backend validation (#30)", async () => {
   ] };
   assert.deepEqual(findBlockLayoutIssues(doc), []);
 });
+
+it("legacy font ids convert (#30)", () => {
+  assert.equal(sanitizeStyle({ font: "sans" as never })?.font, "inter");
+  assert.equal(sanitizeStyle({ font: "serif" as never })?.font, "literata");
+  assert.equal(sanitizeStyle({ font: "mono" as never })?.font, "jetbrains-mono");
+});
+
+it("every #30 builder node is registered so builder sermons reopen", () => {
+  const schema = getSchema(createSchemaExtensions());
+  for (const t of ["quote", "illustration", "section", "column"]) assert.ok(schema.nodes[t], `missing node ${t}`);
+  const doc = { type: "doc", content: [
+    { type: "quote", content: [{ type: "text", text: "Fixture quote" }] },
+    { type: "illustration", content: [{ type: "text", text: "Fixture" }] },
+    { type: "section", attrs: { columns: 3 }, content: [1, 2, 3].map(() => ({ type: "column", content: [{ type: "paragraph" }] })) },
+  ] };
+  const node = schema.nodeFromJSON(doc);
+  node.check();
+});

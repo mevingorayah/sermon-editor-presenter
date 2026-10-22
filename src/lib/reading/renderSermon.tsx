@@ -1,5 +1,6 @@
 /** @jsxRuntime automatic */
 import { FIELD, blockCss, sanitizeSpacing, sanitizeStyle, type BlockSpacing, type BlockStyle } from "../builder/blockAttrs";
+import { effectiveBlockSizePt } from "../sermon/blockStyle";
 import { cssTextToReactStyle } from "../cssText";
 import { Fragment, type CSSProperties, type ReactNode } from "react";
 import type { JSONContent } from "@tiptap/react";
@@ -71,7 +72,11 @@ function builderStyle(node: JSONContent): CSSProperties | undefined {
   const st = node.attrs?.[FIELD.style] as BlockStyle | null | undefined;
   const sp = node.attrs?.[FIELD.spacing] as BlockSpacing | null | undefined;
   if (!st && !sp) return undefined;
-  return cssTextToReactStyle(blockCss(sanitizeStyle(st), sanitizeSpacing(sp)));
+  const style = sanitizeStyle(st);
+  // Preach/page view: rendered size is clamped to the 24 pt minimum (#30);
+  // the stored value is unchanged and still shown in the style panel.
+  const shown = style?.size !== undefined ? { ...style, size: effectiveBlockSizePt(style) } : style;
+  return cssTextToReactStyle(blockCss(shown, sanitizeSpacing(sp)));
 }
 
 function alignStyle(node: JSONContent): CSSProperties | undefined {

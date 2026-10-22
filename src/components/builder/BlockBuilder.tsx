@@ -221,7 +221,7 @@ export function BlockBuilder({ editor, globalStyles, onGlobalStylesChange, child
               className={styles.blockToolbar}
               role="toolbar"
               aria-label={`${TYPE_LABEL[typeName] ?? typeName} block tools`}
-              style={{ top: Math.max(0, selRect.top - 50) }}
+              style={{ top: Math.max(0, selRect.top) }}
               onKeyDown={(e) => {
                 if (e.key === "Escape") { setSelected(null); editor.commands.blur(); }
                 if (e.key === "ArrowRight" || e.key === "ArrowLeft") {

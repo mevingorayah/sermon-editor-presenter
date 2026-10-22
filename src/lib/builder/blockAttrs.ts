@@ -6,7 +6,7 @@
  */
 import type { JSONContent } from "@tiptap/core";
 import {
-  BLOCK_FONT_IDS, STYLABLE_NODE_TYPES, blockSpacingSchema, blockStyleSchema,
+  BLOCK_FONT_IDS, normalizeFontId, STYLABLE_NODE_TYPES, blockSpacingSchema, blockStyleSchema,
   SPACING_MIN_PX, SPACING_MAX_PX,
   type BlockFontId, type BlockSpacing, type BlockStyle, type GlobalStyles,
 } from "../sermon/blockStyle";
@@ -21,6 +21,7 @@ export const FONT_LABELS: Record<BlockFontId, string> = {
   lora: "Lora", merriweather: "Merriweather", "playfair-display": "Playfair Display",
   "source-serif-4": "Source Serif 4", literata: "Literata", inter: "Inter",
   "open-sans": "Open Sans", lato: "Lato", montserrat: "Montserrat", "nunito-sans": "Nunito Sans",
+  "jetbrains-mono": "JetBrains Mono",
 };
 export const APPROVED_FONTS = BLOCK_FONT_IDS;
 const SERIF = new Set(["lora", "merriweather", "playfair-display", "source-serif-4", "literata"]);
@@ -39,7 +40,7 @@ export function sanitizeStyle(s: Partial<BlockStyle> | null | undefined): BlockS
   if (!c) return null;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(c)) {
-    const r = blockStyleSchema.safeParse({ [k]: v });
+    const r = blockStyleSchema.safeParse({ [k]: k === "font" ? normalizeFontId(v) : v });
     if (r.success) Object.assign(out, r.data);
   }
   return Object.keys(out).length ? (out as BlockStyle) : null;
@@ -61,7 +62,7 @@ export function sanitizeSpacing(s: Partial<BlockSpacing> | null | undefined): Bl
 export function blockCss(style?: BlockStyle | null, spacing?: BlockSpacing | null): string {
   const d: string[] = [];
   const s = style ?? {};
-  if (s.font) d.push(`font-family: "${FONT_LABELS[s.font]}", ${SERIF.has(s.font) ? "serif" : "sans-serif"}`);
+  if (s.font) d.push(`font-family: "${FONT_LABELS[s.font]}", ${s.font === "jetbrains-mono" ? "monospace" : SERIF.has(s.font) ? "serif" : "sans-serif"}`);
   if (s.size) d.push(`font-size: ${s.size}pt`);
   if (s.weight) d.push(`font-weight: ${s.weight}`);
   if (s.italic !== undefined) d.push(`font-style: ${s.italic ? "italic" : "normal"}`);
