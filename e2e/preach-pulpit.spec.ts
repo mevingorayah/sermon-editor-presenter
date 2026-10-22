@@ -213,10 +213,10 @@ for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 800 }, { w
       });
       expect(clipped).toBe(0);
     }
-    // Extremes: 72 pt with 2in margins and 2.0 line spacing still never runs off the page.
+    // Extremes: half-Letter max (48 pt) with 2in margins and 2.0 line spacing still never runs off the page.
     await panel.locator('[data-format="half-letter"]').click();
     for (let i = 0; i < 24; i++) await panel.getByRole("button", { name: "Larger text" }).click({ force: true }).catch(() => {});
-    await expect(panel.locator("[data-text-pt]")).toHaveText("72 pt");
+    await expect(panel.locator("[data-text-pt]")).toHaveText("48 pt");
     for (const [name, v] of [["Margins", "2"], ["Line spacing", "2"]] as const) {
       await panel.getByRole("button", { name: new RegExp(`^${name}: .* tap to type`) }).click();
       const box = panel.getByRole("textbox", { name: new RegExp(name) });
@@ -255,18 +255,26 @@ test("half-Letter at max settings: no clipped lines, no mid-word breaks, heading
       ...Array.from({ length: 4 }, () => ({ type: "paragraph", content: [t(para + para)] })),
       { type: "heading", attrs: { level: 2 }, content: [t("Incompréhensiblement")] },
       { type: "paragraph", content: [t(para)] },
+      // Italic reference ending in a space (the space used to be drawn and overflow the column).
+      ...Array.from({ length: 6 }, () => ({ type: "paragraph", content: [t("Lik 6.1–11", CUE), t(" – Pòl Natan ", [{ type: "italic" }]), t(para)] })),
+      { type: "paragraph", content: [t("Li dir vin nouvo.\u00a0»] Alor bann pommes/poires/prunes ek suppléments/compléments. " + para)] },
     ],
   };
   await seed(page, {
     view: "page",
     content: longContent,
-    page: { format: "half-letter", orientation: "portrait", textSizePt: 72, lineSpacing: 2, paragraphSpacingPt: 48, margins: { top: "2in", right: "2in", bottom: "2in", left: "2in" } },
+    // 72 pt is saved but half-Letter's max is 48 pt (it clamps); 1.1in margins as QA.
+    page: { format: "half-letter", orientation: "portrait", textSizePt: 72, lineSpacing: 2, paragraphSpacingPt: 48, margins: { top: "1.1in", right: "1.1in", bottom: "1.1in", left: "1.1in" } },
   });
   await page.goto("/preach", { waitUntil: "networkidle" });
   const view = page.locator("[data-page-view]");
   await expect(view).toBeVisible({ timeout: 20_000 });
   const count = Number(await view.getAttribute("data-page-count"));
   expect(count).toBeGreaterThan(1);
+  await page.getByRole("button", { name: "Reading settings" }).click();
+  await expect(page.locator("[data-text-pt]")).toHaveText("48 pt");
+  await expect(page.getByRole("button", { name: "Larger text" })).toBeDisabled();
+  await page.keyboard.press("Escape");
   const seen: string[] = [];
   for (let i = 0; i < count; i++) {
     await expect(view).toHaveAttribute("data-page-index", String(i));
@@ -277,7 +285,7 @@ test("half-Letter at max settings: no clipped lines, no mid-word breaks, heading
         const b = l.getBoundingClientRect();
         return b.bottom > s.bottom + 1 || b.top < s.top - 1 || b.right > s.right + 1 || l.scrollWidth > l.clientWidth + 1;
       }).length;
-      return { clipped, lines: lines.map((l) => ({ bi: l.dataset.bi!, kind: l.dataset.kind!, text: l.textContent ?? "" })) };
+      return { clipped, lines: lines.map((l) => ({ bi: l.dataset.bi!, kind: l.dataset.kind!, text: (l.textContent ?? "") + (l.hasAttribute("data-soft-end") ? " " : "") })) };
     });
     expect(r.clipped, `page ${i + 1}`).toBe(0);
     seen.push(...r.lines.filter((l) => l.kind === "text").map((l) => `${l.bi}\u0000${l.text}`));
@@ -288,6 +296,11 @@ test("half-Letter at max settings: no clipped lines, no mid-word breaks, heading
     const [bi, text] = seen[i].split("\u0000");
     if (seen[i + 1].split("\u0000")[0] === bi) expect(text, `mid-word break after "${text}"`).toMatch(/\s$/);
   }
+  // Never a break before closing punctuation; slash words and NBSP stay whole.
+  const joined = seen.map((l) => l.split("\u0000")[1]);
+  expect(joined.some((l) => l.includes("nouvo.\u00a0»]")), "nouvo.\u00a0»] on one line").toBe(true);
+  expect(joined.some((l) => l.includes("pommes/poires/prunes")), "slash word whole").toBe(true);
+  expect(joined.every((l) => !/^[/»\]).,;:!?]/.test(l)), "no line starts with closing punctuation").toBe(true);
   // The hyphenated name stays whole in the heading.
   expect(seen.some((l) => l.startsWith("0\u0000") && l.includes("Jésus-Christ"))).toBe(true);
 });

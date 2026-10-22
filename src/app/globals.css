@@ -62,3 +62,21 @@ a {
   outline: 2px solid var(--edit-accent);
   outline-offset: 2px;
 }
+
+/* Edit tap targets (UX: every control >= 44px). Text boxes, selects and
+   checkbox/radio rows; the pop-up triggers (e.g. Text color) are 44 wide. */
+[data-edit-mode] :is(input:not([type="checkbox"], [type="radio"], [type="hidden"], [type="file"], [type="range"]), select) {
+  min-height: 44px;
+  box-sizing: border-box;
+}
+[data-edit-mode] textarea { min-height: 44px; box-sizing: border-box; }
+[data-edit-mode] label:has(> input:is([type="checkbox"], [type="radio"])) {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  cursor: pointer;
+}
+[data-edit-mode] button[aria-haspopup] { min-width: 44px; min-height: 44px; }
+[data-edit-mode] [role="menuitem"] { min-height: 44px; }
+[data-edit-mode] [role="listbox"] :is(button, [role="option"]) { min-width: 44px; min-height: 44px; box-sizing: border-box; }

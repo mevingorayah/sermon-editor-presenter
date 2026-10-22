@@ -55,6 +55,28 @@ test("typed hyphen range stays a hyphen in Edit and Preach; typed en dash kept",
   expect(all).not.toContain("3.16\u201318");
 });
 
+async function smallControls(page: Page, root: string) {
+  return page.evaluate((root) => {
+    const bad: string[] = [];
+    const sel = ["input", "select", "textarea", "button", "a[href]"].map((t) => `${root} ${t}`).join(", ");
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>(sel))) {
+      if (el.closest(".ProseMirror")) continue;
+      if (el instanceof HTMLInputElement && (el.type === "hidden" || el.type === "file")) continue;
+      const st = getComputedStyle(el);
+      if (st.display === "none" || st.visibility === "hidden" || el.closest("[hidden]") || el.classList.contains("visually-hidden")) continue;
+      let target: HTMLElement = el;
+      if (el instanceof HTMLInputElement && (el.type === "checkbox" || el.type === "radio")) target = el.closest("label") ?? el;
+      const r = target.getBoundingClientRect();
+      if (!r.width && !r.height) continue;
+      if (r.width < 43.5 || r.height < 43.5) {
+        const name = el.getAttribute("aria-label") || target.textContent?.trim().slice(0, 30) || el.outerHTML.slice(0, 60);
+        bad.push(`${name}: ${Math.round(r.width)}x${Math.round(r.height)}`);
+      }
+    }
+    return bad;
+  }, root);
+}
+
 test("tap targets are at least 44x44 on /edit and /preach", async ({ page }) => {
   await openEdit(page);
   await expectTap(page.getByRole("button", { name: "Document", exact: true }), "Document");
@@ -74,6 +96,14 @@ test("tap targets are at least 44x44 on /edit and /preach", async ({ page }) => 
   for (let i = 0; i < (await find.count()); i++) await expectTap(find.nth(i), `Find/replace button ${i}`);
   const blocks = page.getByRole("group", { name: "Block type" });
   for (const n of ["Title", "H1", "H2", "Body"]) await expectTap(blocks.getByRole("button", { name: n, exact: true }), n);
+  // Sweep: every visible input, select, textarea, checkbox/radio row and button in /edit.
+  expect(await smallControls(page, "[data-edit-mode]"), "/edit controls under 44x44").toEqual([]);
+  await page.getByRole("button", { name: "Document", exact: true }).click();
+  expect(await smallControls(page, "[data-edit-mode]"), "/edit Document panel controls under 44x44").toEqual([]);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Text color" }).click();
+  expect(await smallControls(page, "[data-edit-mode]"), "/edit Text color menu under 44x44").toEqual([]);
+  await page.keyboard.press("Escape");
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/after-tap-edit.png` });
 
   await page.goto("/preach");

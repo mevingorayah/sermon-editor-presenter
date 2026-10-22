@@ -154,6 +154,7 @@ function Line({
       data-kind={l.kind}
       data-block={l.blockType}
       data-bi={l.blockIndex}
+      data-soft-end={l.softEnd ? "" : undefined}
       style={{
         top: l.y,
         left: frame.left,

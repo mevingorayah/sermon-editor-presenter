@@ -9,7 +9,7 @@ import type { FitPageSpecSettings, CustomPageSettings, CalibratedMargins, Calibr
 import { buildCalibratedSnapshot } from "@/lib/calibration";
 import { maxMarginIn } from "@/lib/sermon/export/margins";
 import { pageSpecFromSnapshot } from "@/lib/sermon/export/pngLayout";
-import { PAGE_LIMITS, clamp, customPageError, fitScreenLabel, pageSnapshotFields, pageSpecFromTarget, type PageFormat, type PageOrientation } from "@/lib/sermon/export/frames";
+import { PAGE_LIMITS, clamp, maxTextSizePt, customPageError, fitScreenLabel, pageSnapshotFields, pageSpecFromTarget, type PageFormat, type PageOrientation } from "@/lib/sermon/export/frames";
 
 export type { PageFormat, PageOrientation };
 
@@ -28,6 +28,11 @@ export interface PageChoice {
 }
 
 export const LIMITS = PAGE_LIMITS;
+
+/** #29's per-format max (48 pt A5 / half-Letter, 72 pt elsewhere) as slider limits. */
+export function textSizeLimits(format: PageFormat) {
+  return { ...PAGE_LIMITS.textSizePt, max: maxTextSizePt(format) };
+}
 
 /**
  * Page picker (UX spec, 22 Oct): "Fit this screen", then Print and Screen groups,
@@ -88,7 +93,7 @@ export function fromSettings(ps: Pick<PresentationSettings, "calibrationTarget">
   const clampMargin = (n: number) => Math.min(max, clamp(n, PAGE_LIMITS.marginIn));
   return {
     ...fmt,
-    textSizePt: clamp(p.textSizePt, PAGE_LIMITS.textSizePt),
+    textSizePt: clamp(p.textSizePt, textSizeLimits(fmt.format)),
     lineSpacing: clamp(p.lineSpacing, PAGE_LIMITS.lineSpacing),
     paragraphSpacingPt: clamp(p.paragraphSpacingPt, PAGE_LIMITS.paragraphSpacingPt),
     margins: {
@@ -136,7 +141,7 @@ export function toPatch(c: PageChoice): Partial<PresentationSettings> {
   const page: SermonPageSettings = {
     format: c.format,
     orientation: c.orientation,
-    textSizePt: clamp(c.textSizePt, PAGE_LIMITS.textSizePt),
+    textSizePt: clamp(c.textSizePt, textSizeLimits(c.format)),
     lineSpacing: clamp(c.lineSpacing, PAGE_LIMITS.lineSpacing),
     paragraphSpacingPt: clamp(c.paragraphSpacingPt, PAGE_LIMITS.paragraphSpacingPt),
     margins: marginsCss(c.margins),
@@ -159,8 +164,8 @@ export function resetSpacing(c: PageChoice): PageChoice {
 }
 
 export function stepTextSize(c: PageChoice, dir: 1 | -1): PageChoice {
-  const L = PAGE_LIMITS.textSizePt;
-  return { ...c, textSizePt: clamp(c.textSizePt + dir * L.step, L) };
+  const L = textSizeLimits(c.format);
+  return { ...c, textSizePt: clamp(Math.min(c.textSizePt, L.max) + dir * L.step, L) };
 }
 
 /** Snapshot for page view: the same one Export lays out. */

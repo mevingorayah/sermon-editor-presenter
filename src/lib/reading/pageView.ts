@@ -25,6 +25,24 @@ export interface PageViewLine {
   /** Role style (headings bold, Scripture italic), as every export draws it. */
   role: { bold: boolean; italic: boolean };
   tokens: Array<{ run: StyledRun; text: string }>;
+  /** The line ended at a breaking space, which is not drawn (it would add width). */
+  softEnd: boolean;
+}
+
+/** Breaking spaces only: NBSP (U+00A0), figure space and narrow NBSP (U+202F) never break. */
+const TRAIL = /[ \t\n\r\f\v\u1680\u2000-\u2006\u2008-\u200a\u2028\u2029\u205f\u3000]+$/;
+function trimTrailing(tokens: Array<{ run: StyledRun; text: string }>): { tokens: typeof tokens; softEnd: boolean } {
+  const out = tokens.slice();
+  let softEnd = false;
+  while (out.length) {
+    const last = out[out.length - 1];
+    const t = last.text.replace(TRAIL, "");
+    if (t === last.text) break;
+    softEnd = true;
+    if (t) { out[out.length - 1] = { ...last, text: t }; break; }
+    out.pop();
+  }
+  return { tokens: out, softEnd };
 }
 
 export interface PageViewModel {
@@ -45,10 +63,11 @@ export function buildPageView(opts: { content: JSONContent; settings: Presentati
       pg.lines.map((l, li) => {
         const block = styled[l.blockIndex];
         const cite = citationCaps(block.citation ?? "");
-        const tokens =
+        const raw =
           l.kind === "citation"
             ? [{ run: { text: cite, fontFamily: "serif" } as StyledRun, text: cite }]
             : sliceRuns(block, l.start, l.end);
+        const { tokens, softEnd } = trimTrailing(raw);
         return {
           key: `${pi}-${li}`,
           kind: l.kind,
@@ -61,6 +80,7 @@ export function buildPageView(opts: { content: JSONContent; settings: Presentati
           lineHeight: l.lineHeight,
           role: l.kind === "citation" ? { bold: false, italic: false } : roleStyle(block.type),
           tokens,
+          softEnd,
         };
       }),
     ),

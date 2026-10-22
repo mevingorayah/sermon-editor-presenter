@@ -2,7 +2,7 @@
 
 import type { PageChoice, PageOrientation } from "@/lib/reading/pageSettings";
 import { useState } from "react";
-import { FIT_BUTTON, FORMAT_GROUPS, customError, extraButton, LIMITS, marginMax, naturalOrientation, resetSpacing, stepTextSize } from "@/lib/reading/pageSettings";
+import { FIT_BUTTON, FORMAT_GROUPS, customError, extraButton, LIMITS, marginMax, naturalOrientation, resetSpacing, stepTextSize, textSizeLimits } from "@/lib/reading/pageSettings";
 import styles from "./PreachBar.module.css";
 
 interface Props {
@@ -18,7 +18,7 @@ interface Props {
 
 /** ⚙ "Page" section: the sermon's page settings (shared with Document setup and exports). */
 export function PageControls({ choice, followDevice, onChange, onFit, onFollowDeviceChange, fullscreen, onFullscreenToggle }: Props) {
-  const T = LIMITS.textSizePt;
+  const T = textSizeLimits(choice.format);
   const [eachSide, setEachSide] = useState(false);
   const mMax = marginMax(choice);
   const setOrientation = (o: PageOrientation) => {
@@ -47,7 +47,7 @@ export function PageControls({ choice, followDevice, onChange, onFit, onFollowDe
                   f.key === "fit"
                     ? onFit()
                     : f.format &&
-                  onChange({ ...choice, format: f.format, orientation: followDevice ? choice.orientation : naturalOrientation(f.format) })
+                  onChange({ ...choice, format: f.format, textSizePt: Math.min(choice.textSizePt, textSizeLimits(f.format).max), orientation: followDevice ? choice.orientation : naturalOrientation(f.format) })
                 }
               >
                 {f.label}
@@ -98,6 +98,7 @@ export function PageControls({ choice, followDevice, onChange, onFit, onFollowDe
           className={styles.btn}
           aria-label="Larger text"
           disabled={choice.textSizePt >= T.max}
+          data-text-max={T.max}
           onClick={() => onChange(stepTextSize(choice, 1))}
         >
           +
