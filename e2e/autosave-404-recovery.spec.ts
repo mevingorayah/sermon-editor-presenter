@@ -3,7 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 /**
  * Issue #9 — autosave PATCH 404 (sermon gone on the server, e.g. a fresh
  * Cloud Run revision with an empty disk store) must re-create the sermon,
- * end at "Saved to server", never claim "Offline", and keep the content.
+ * end at "Saved <time>", never claim "Offline", and keep the content.
  */
 
 const ACTIVE_ID_KEY = "sermon-editor-presenter:active-id:v1";
@@ -22,18 +22,19 @@ async function openFreshEdit(page: Page) {
       sessionStorage.setItem("__e2e_seeded", "1");
       localStorage.clear();
     }
-    // Record every label the save indicator ever shows.
+    // Record every state (data-status) the save indicator ever shows.
     const history: string[] = [];
     window.__saveStatusHistory = history;
     const record = () => {
       const el = document.querySelector('[data-testid="save-status"]');
-      const text = el?.textContent?.trim();
+      const text = el?.getAttribute("data-status") ?? undefined;
       if (text && history[history.length - 1] !== text) history.push(text);
     };
     new MutationObserver(record).observe(document, {
       subtree: true,
       childList: true,
       characterData: true,
+      attributes: true,
     });
   });
   await page.goto("/edit", { waitUntil: "networkidle" });
@@ -61,7 +62,7 @@ async function history(page: Page): Promise<string[]> {
 
 async function saveOnce(page: Page, text: string) {
   await typeAtEnd(page, text);
-  await expect(status(page)).toHaveText("Saved to server", { timeout: 15_000 });
+  await expect(status(page)).toHaveText(/^Saved \d/, { timeout: 15_000 });
   const id = await activeId(page);
   expect(id).toMatch(UUID_RE);
   return id;
@@ -86,7 +87,7 @@ test("sermon deleted on the server → re-created on next autosave, never Offlin
 
   const marker = ` Restored-${Date.now()}`;
   await typeAtEnd(page, marker);
-  await expect(status(page)).toHaveText("Saved to server", { timeout: 20_000 });
+  await expect(status(page)).toHaveText(/^Saved \d/, { timeout: 20_000 });
 
   expect(posts).toHaveLength(1);
   // Restore is attempted under the same id with the full local copy.
@@ -94,8 +95,8 @@ test("sermon deleted on the server → re-created on next autosave, never Offlin
   expect(JSON.stringify(posts[0].content)).toContain(marker.trim());
 
   const labels = await history(page);
-  expect(labels).toContain("Restoring on server…");
-  expect(labels.some((l) => /offline/i.test(l))).toBe(false);
+  expect(labels).toContain("restoring");
+  expect(labels.some((l) => /offline|failed|retrying/.test(l))).toBe(false);
 
   // The backend honours the client id (same-id restore): nothing re-keyed.
   // (A server without the contract would re-key; covered by unit tests.)
@@ -158,15 +159,15 @@ test("PATCH 404 once with the same-id POST contract (mocked) → no re-key, Save
 
   const marker = ` Replayed-${Date.now()}`;
   await typeAtEnd(page, marker);
-  await expect(status(page)).toHaveText("Saved to server", { timeout: 20_000 });
+  await expect(status(page)).toHaveText(/^Saved \d/, { timeout: 20_000 });
 
   expect(failed).toBe(true);
   expect(postBodies).toHaveLength(1);
   expect(postBodies[0].id).toBe(id);
   expect(await activeId(page)).toBe(id);
   const labels = await history(page);
-  expect(labels).toContain("Restoring on server…");
-  expect(labels.some((l) => /offline/i.test(l))).toBe(false);
+  expect(labels).toContain("restoring");
+  expect(labels.some((l) => /offline|failed|retrying/.test(l))).toBe(false);
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await page.reload({ waitUntil: "networkidle" });

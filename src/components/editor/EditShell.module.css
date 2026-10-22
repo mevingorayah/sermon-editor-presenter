@@ -68,6 +68,11 @@
   color: var(--edit-fg-muted);
 }
 
+.saved[data-tone="error"] {
+  color: #b42318;
+  font-weight: 600;
+}
+
 .preachBtn {
   display: inline-flex;
   align-items: center;

@@ -32,6 +32,7 @@ import { DEFAULT_PRESENTATION_SETTINGS } from "@/types/document";
 import { SermonEditor } from "./SermonEditor";
 import { OutlineNav } from "./OutlineNav";
 import { FindBar } from "./FindBar";
+import { saveStatusView } from "@/lib/autosave/saveStatusView";
 import { NotesPanel } from "./NotesPanel";
 import { SermonList } from "./SermonList";
 import styles from "./EditShell.module.css";
@@ -101,6 +102,7 @@ export function EditShell() {
   const [editor, setEditor] = useState<Editor | null>(null);
   const [status, setStatus] = useState<SaveStatus>("saving");
   const [busy, setBusy] = useState(false);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
   /**
    * Remounts the editor only on real doc switches — not when autosave re-keys
    * the same doc to a new server id (local-* promotion / 404 recovery), so the
@@ -215,6 +217,13 @@ export function EditShell() {
   // cancel (not dispose) so a StrictMode effect re-run keeps the controller usable.
   useEffect(() => () => autosave.cancel(), [autosave]);
 
+  // Stamp the time shown as "Saved 14:05" whenever a save completes.
+  useEffect(() => {
+    if (status === "saved-server" || status === "saved-local") {
+      setSavedAt(new Date());
+    }
+  }, [status]);
+
   // Coming back online: retry anything still queued (or a failed save).
   useEffect(() => {
     const onOnline = () => {
@@ -238,7 +247,7 @@ export function EditShell() {
         saveDocument(next);
         docRef.current = next;
         autosave.request("content");
-        setStatus((s) => (STICKY_STATUSES.has(s) ? s : "saved-local"));
+        setStatus((s) => (STICKY_STATUSES.has(s) ? s : "saving"));
         return next;
       });
     },
@@ -257,7 +266,7 @@ export function EditShell() {
         saveDocument(next);
         docRef.current = next;
         autosave.request("notes");
-        setStatus((s) => (STICKY_STATUSES.has(s) ? s : "saved-local"));
+        setStatus((s) => (STICKY_STATUSES.has(s) ? s : "saving"));
         return next;
       });
     },
@@ -377,7 +386,11 @@ export function EditShell() {
     [doc?.content],
   );
 
-  const statusLabel = STATUS_LABELS[status];
+  const statusView = saveStatusView(status, {
+    pending: autosave.hasPending,
+    savedAt,
+  });
+  const statusLabel = statusView.label;
   const canRetry = status === "failed-network" || status === "failed-server";
 
   if (!doc) {
@@ -401,6 +414,8 @@ export function EditShell() {
             aria-live="polite"
             data-testid="save-status"
             data-status={status}
+            data-tone={statusView.tone}
+            title={STATUS_LABELS[status]}
           >
             {statusLabel}
           </span>
