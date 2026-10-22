@@ -8,6 +8,7 @@ import {
   toHexRgb,
 } from "./colors";
 import { citationCaps, type StyledBlock, type StyledRun } from "./contentWalk";
+import { lookAlign, lookRole } from "./blockLook";
 import { layoutSnapshot, roleStyle, type PngPage, type SnapshotLayout } from "./pngLayout";
 import { afmMeasurer, metricCompatibleCss } from "./textMeasure";
 import { DARK_YELLOW_PRESET, ensureContrast } from "@/lib/reading/contrast";
@@ -91,27 +92,39 @@ function pageSvg(layout: SnapshotLayout, page: PngPage, p: Palette): string {
   const parts: string[] = [
     `<rect x="0" y="0" width="8" height="${f.height}" fill="${escapeXml(p.accent)}" />`,
   ];
+  for (const b of page.boxes ?? []) {
+    if (b.fill) parts.push(`<rect x="${b.x.toFixed(2)}" y="${b.y.toFixed(2)}" width="${b.w.toFixed(2)}" height="${b.h.toFixed(2)}" fill="${escapeXml(b.fill)}" />`);
+    if (b.border) parts.push(`<rect x="${b.x.toFixed(2)}" y="${b.y.toFixed(2)}" width="${b.borderWidth.toFixed(2)}" height="${b.h.toFixed(2)}" fill="${escapeXml(b.border)}" />`);
+  }
   for (const line of page.lines) {
     const block = styled[line.blockIndex];
+    const lx = line.x ?? f.left;
+    const lw = line.width ?? f.contentWidth;
     const baseline = (line.y + line.size).toFixed(2);
     if (line.kind === "citation") {
       parts.push(
-        `<text x="${f.left + f.contentWidth}" y="${baseline}" text-anchor="end" fill="${escapeXml(p.muted)}" font-size="${line.size}" font-family="${escapeXml(metricCompatibleCss("serif"))}">${escapeXml(citationCaps(block.citation ?? ""))}</text>`,
+        `<text x="${lx + lw}" y="${baseline}" text-anchor="end" fill="${escapeXml(p.muted)}" font-size="${line.size}" font-family="${escapeXml(metricCompatibleCss("serif"))}">${escapeXml(citationCaps(block.citation ?? ""))}</text>`,
       );
       continue;
     }
-    const role = roleStyle(block.type);
-    const color = blockColor(block.type, p);
-    const anchor = block.align === "center" ? "middle" : block.align === "right" ? "end" : "start";
+    const role = lookRole(roleStyle(block.type), block.look);
+    const color = block.look?.color ?? blockColor(block.type, p);
+    const align = lookAlign(block.look, block.align);
+    const anchor = align === "center" ? "middle" : align === "right" ? "end" : "start";
     const x =
-      block.align === "center" ? f.left + f.contentWidth / 2
-        : block.align === "right" ? f.left + f.contentWidth
-          : f.left;
+      align === "center" ? lx + lw / 2
+        : align === "right" ? lx + lw
+          : lx;
     const runs = trimRunsEnd(sliceRuns(block.runs, line.start, line.end));
     const styleOf = (run: StyledRun) => ({ font: run.fontFamily, bold: role.bold || !!run.bold, italic: role.italic || !!run.italic });
     const widths = runs.map((run) => afmMeasurer(run.text, line.size, styleOf(run)));
     const total = widths.reduce((a, w) => a + w, 0);
     let hx = anchor === "middle" ? x - total / 2 : anchor === "end" ? x - total : x;
+    if (block.look?.highlight && total > 0) {
+      parts.push(
+        `<rect x="${hx.toFixed(2)}" y="${(line.y + line.size * 0.15).toFixed(2)}" width="${total.toFixed(2)}" height="${(line.size * 1.05).toFixed(2)}" fill="${escapeXml(block.look.highlight)}" />`,
+      );
+    }
     runs.forEach((run, i) => {
       if (run.highlight) {
         parts.push(

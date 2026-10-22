@@ -4,6 +4,7 @@ import { citationCaps, titleTextFromSnapshot, type StyledRun } from "./contentWa
 import { blockColor, paletteFor, sliceRuns, trimRunsEnd } from "./png";
 import { frameSizeInches, pxPerInch, pxPerPt, type PageInput } from "./frames";
 import { layoutSnapshot, roleStyle } from "./pngLayout";
+import { lookAlign, lookRole } from "./blockLook";
 import { metricCompatibleOffice } from "./textMeasure";
 
 export interface PptxBuildOptions {
@@ -71,10 +72,24 @@ export async function buildPptx(
       x: 0, y: 0, w: inch(8), h: size.height,
       fill: { color: hex(p.accent) }, line: { color: hex(p.accent), width: 0 },
     });
+    for (const b of page.boxes ?? []) {
+      if (b.fill) {
+        slide.addShape(pptx.ShapeType.rect, {
+          x: inch(b.x), y: inch(b.y), w: inch(b.w), h: inch(b.h),
+          fill: { color: hex(b.fill) }, line: { color: hex(b.fill), width: 0 },
+        });
+      }
+      if (b.border) {
+        slide.addShape(pptx.ShapeType.rect, {
+          x: inch(b.x), y: inch(b.y), w: inch(b.borderWidth), h: inch(b.h),
+          fill: { color: hex(b.border) }, line: { color: hex(b.border), width: 0 },
+        });
+      }
+    }
     for (const line of page.lines) {
       const block = styled[line.blockIndex];
       const box = {
-        x: inch(f.left), y: inch(line.y), w: inch(f.contentWidth), h: inch(line.lineHeight),
+        x: inch(line.x ?? f.left), y: inch(line.y), w: inch(line.width ?? f.contentWidth), h: inch(line.lineHeight),
         margin: 0, valign: "top" as const, wrap: false, fit: "none" as const,
       };
       if (line.kind === "citation") {
@@ -84,12 +99,14 @@ export async function buildPptx(
         });
         continue;
       }
-      const role = roleStyle(block.type);
-      const runs = trimRunsEnd(sliceRuns(block.runs, line.start, line.end));
+      const role = lookRole(roleStyle(block.type), block.look);
+      const hl = block.look?.highlight;
+      let runs = trimRunsEnd(sliceRuns(block.runs, line.start, line.end));
       if (!runs.length) continue;
+      if (hl) runs = runs.map((r) => ({ ...r, highlight: true }));
       slide.addText(
-        runsToPptxText(runs, { fontSize: pt(line.size), defaultColor: blockColor(block.type, p), highlight: p.highlight, ...role }),
-        { ...box, align: block.align },
+        runsToPptxText(runs, { fontSize: pt(line.size), defaultColor: block.look?.color ?? blockColor(block.type, p), highlight: hl ?? p.highlight, ...role }),
+        { ...box, align: lookAlign(block.look, block.align) },
       );
     }
   }

@@ -99,6 +99,8 @@ export interface CalibratedSnapshot {
   orientation?: SermonPageSettings["orientation"];
   textSizePt?: number;
   paragraphSpacingPt?: number;
+  /** Block builder defaults per block type (sermon.globalStyles); missing = app defaults. */
+  globalStyles?: import("@/lib/sermon/blockStyle").GlobalStyles;
   flattenGradient: true;
   bionic: false; // never in export
   semanticBlocks: SemanticBlock[];

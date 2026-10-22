@@ -38,6 +38,7 @@ function registerExportFonts(doc: PDFKit.PDFDocument): (id: FontFamilyId, st: { 
 }
 import { frameSizeInches, pxPerPt, type PageInput } from "./frames";
 import { layoutSnapshot, roleStyle } from "./pngLayout";
+import { lookAlign, lookRole } from "./blockLook";
 import { blockColor, paletteFor, sliceRuns, trimRunsEnd } from "./png";
 
 export interface PdfBuildOptions {
@@ -256,35 +257,44 @@ export async function buildPdf(
     for (const page of layout.pages) {
       doc.addPage();
       paint();
+      for (const b of page.boxes ?? []) {
+        if (b.fill) doc.save().rect(P(b.x), P(b.y), P(b.w), P(b.h)).fill(b.fill).restore();
+        if (b.border) doc.save().rect(P(b.x), P(b.y), P(b.borderWidth), P(b.h)).fill(b.border).restore();
+      }
       for (const line of page.lines) {
         const block = styled[line.blockIndex];
+        const lx = line.x ?? f.left;
+        const lw = line.width ?? f.contentWidth;
         const baseline = P(line.y + line.size);
         const fs = P(line.size);
         if (line.kind === "citation") {
           const text = citationCaps(block.citation ?? "");
           doc.font(fontFor("serif", {})).fontSize(fs).fillColor(pal.muted);
           const w = doc.widthOfString(text, { features: NO_LIGA });
-          doc.text(safeGlyphs(doc, text), Math.max(P(f.left), P(f.left + f.contentWidth) - w), baseline, { lineBreak: false, baseline: "alphabetic", features: NO_LIGA });
+          doc.text(safeGlyphs(doc, text), Math.max(P(lx), P(lx + lw) - w), baseline, { lineBreak: false, baseline: "alphabetic", features: NO_LIGA });
           continue;
         }
-        const role = roleStyle(block.type);
+        const role = lookRole(roleStyle(block.type), block.look);
+        const bc = block.look?.color ?? color(block.type);
+        const align = lookAlign(block.look, block.align);
         const runs = trimRunsEnd(sliceRuns(block.runs, line.start, line.end));
         const fontOf = (r: StyledRun) =>
           fontFor(r.fontFamily, { bold: role.bold || !!r.bold, italic: role.italic || !!r.italic });
         const total = runs.reduce((w, r) => w + doc.font(fontOf(r)).fontSize(fs).widthOfString(r.text, { features: NO_LIGA }), 0);
-        const free = P(f.contentWidth) - total;
-        let x = P(f.left) + (block.align === "center" ? free / 2 : block.align === "right" ? free : 0);
+        const free = P(lw) - total;
+        let x = P(lx) + (align === "center" ? free / 2 : align === "right" ? free : 0);
+        if (block.look?.highlight && total > 0) doc.save().rect(x, baseline - fs * 0.8, total, fs * 1.05).fill(block.look.highlight).restore();
         for (const r of runs) {
-          doc.font(fontOf(r)).fontSize(fs).fillColor(r.color || color(block.type));
+          doc.font(fontOf(r)).fontSize(fs).fillColor(r.color || bc);
           const w = doc.widthOfString(r.text, { features: NO_LIGA });
           if (r.highlight) {
             doc.save().rect(x, baseline - fs * 0.8, w, fs * 1.05).fill(pal.highlight).restore();
-            doc.fillColor(r.color || color(block.type));
+            doc.fillColor(r.color || bc);
           }
           doc.text(safeGlyphs(doc, r.text), x, baseline, { lineBreak: false, baseline: "alphabetic", features: NO_LIGA });
           // Underline/strike drawn by hand (pdfkit's need a wrapped width).
           const rule = (dy: number) =>
-            doc.save().rect(x, baseline + dy, w, Math.max(0.5, fs / 18)).fill(r.color || color(block.type)).restore();
+            doc.save().rect(x, baseline + dy, w, Math.max(0.5, fs / 18)).fill(r.color || bc).restore();
           if (r.underline) rule(fs * 0.1);
           if (r.strike) rule(-fs * 0.3);
           x += w;

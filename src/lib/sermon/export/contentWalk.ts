@@ -2,6 +2,8 @@ import type { JSONContent } from "@tiptap/react";
 import type { CalibratedSnapshot, SemanticBlock } from "@/types/document";
 import { mapFontFamily, type FontFamilyId } from "./fonts";
 import { toHexRgb } from "./colors";
+import type { BlockType, GlobalStyles } from "../blockStyle";
+import { lookRole, resolveBlockLook, type BlockLook } from "./blockLook";
 
 export type TextAlign = "left" | "center" | "right";
 
@@ -23,6 +25,19 @@ export interface StyledBlock {
   align: TextAlign;
   runs: StyledRun[];
   citation?: string;
+  /** Block-builder look (globalStyles + attrs); absent on unstyled blocks. */
+  look?: BlockLook;
+  /** Set when the block sits in a section column. */
+  column?: BlockColumn;
+}
+
+export interface BlockColumn {
+  /** Index of the section in the document (groups its columns). */
+  section: number;
+  index: number;
+  count: number;
+  /** The section's own look (box / outer spacing). */
+  sectionLook?: BlockLook;
 }
 
 function alignOf(node: JSONContent): TextAlign {
@@ -104,43 +119,66 @@ function plainText(node: JSONContent | undefined): string {
   return node.content.map(plainText).join("");
 }
 
-function blockFromTipTap(node: JSONContent): StyledBlock | null {
+/** Apply a look to runs: its font (unless the text picked one), forced bold/italic. */
+function lookRuns(runs: StyledRun[], role: { bold: boolean; italic: boolean }, look?: BlockLook): StyledRun[] {
+  const r = lookRole(role, look);
+  return runs.map((run) => {
+    const out = { ...run };
+    if (r.bold) out.bold = true;
+    if (r.italic) out.italic = true;
+    if (look?.font && !run.fontExplicit) {
+      out.fontFamily = look.font;
+      out.fontExplicit = true;
+    }
+    return out;
+  });
+}
+
+function withLook(b: StyledBlock, look?: BlockLook): StyledBlock {
+  return look ? { ...b, look } : b;
+}
+
+function blockFromTipTap(node: JSONContent, globals?: GlobalStyles): StyledBlock | null {
+  const look = (t: BlockType) => resolveBlockLook(t, node.attrs, globals);
   switch (node.type) {
-    case "title":
-      return {
-        type: "Title",
-        align: alignOf(node),
-        runs: runsFromNode(node).map((r) => ({ ...r, bold: true })),
-      };
+    case "title": {
+      const l = look("title");
+      return withLook({ type: "Title", align: alignOf(node), runs: lookRuns(runsFromNode(node), { bold: true, italic: false }, l) }, l);
+    }
     case "heading": {
       const level = node.attrs?.level === 2 ? "H2" : "H1";
-      return {
-        type: level,
-        align: alignOf(node),
-        runs: runsFromNode(node).map((r) => ({ ...r, bold: true })),
-      };
+      const l = look("heading");
+      return withLook({ type: level, align: alignOf(node), runs: lookRuns(runsFromNode(node), { bold: true, italic: false }, l) }, l);
     }
-    case "paragraph":
-      return {
-        type: "Body",
-        align: alignOf(node),
-        runs: runsFromNode(node),
-      };
+    case "paragraph": {
+      const l = look("paragraph");
+      return withLook({ type: "Body", align: alignOf(node), runs: l ? lookRuns(runsFromNode(node), { bold: false, italic: false }, l) : runsFromNode(node) }, l);
+    }
+    case "quote":
+    case "illustration": {
+      const l = look(node.type);
+      return withLook({ type: "Body", align: alignOf(node), runs: lookRuns(runsFromNode(node), { bold: false, italic: false }, l) }, l);
+    }
     case "scripture": {
       const citation =
         typeof node.attrs?.citation === "string"
           ? node.attrs.citation
           : undefined;
-      return {
+      const l = look("scripture");
+      return withLook({
         type: "Scripture",
         align: alignOf(node),
-        runs: runsFromNode(node).map((r) => ({ ...r, italic: true })),
+        runs: lookRuns(runsFromNode(node), { bold: false, italic: true }, l),
         citation,
-      };
+      }, l);
     }
     default:
       return null;
   }
+}
+
+function keep(b: StyledBlock | null): b is StyledBlock {
+  return !!b && (b.runs.length > 0 || b.type === "Body");
 }
 
 /** Prefer TipTap `content` (marks); fall back to flat semanticBlocks. */
@@ -149,11 +187,23 @@ export function styledBlocksFromSnapshot(
 ): StyledBlock[] {
   const doc = snapshot.content as JSONContent | undefined;
   if (doc?.content && Array.isArray(doc.content) && doc.content.length > 0) {
+    const globals = snapshot.globalStyles;
     const out: StyledBlock[] = [];
-    for (const node of doc.content) {
-      const b = blockFromTipTap(node);
-      if (b && (b.runs.length > 0 || b.type === "Body")) out.push(b);
-    }
+    doc.content.forEach((node, ni) => {
+      if (node.type === "section") {
+        const cols = (node.content ?? []).filter((c) => c.type === "column");
+        const sectionLook = resolveBlockLook("section", node.attrs, globals);
+        cols.forEach((col, index) => {
+          for (const child of col.content ?? []) {
+            const b = blockFromTipTap(child, globals);
+            if (keep(b)) out.push({ ...b, column: { section: ni, index, count: cols.length, ...(sectionLook ? { sectionLook } : {}) } });
+          }
+        });
+        return;
+      }
+      const b = blockFromTipTap(node, globals);
+      if (keep(b)) out.push(b);
+    });
     if (out.length > 0) return out;
   }
 

@@ -255,6 +255,7 @@ const calibratedSnapshotFields = {
   orientation: orientationSchema.optional(),
   textSizePt: textSizePtSchema.optional(),
   paragraphSpacingPt: paragraphSpacingPtSchema.optional(),
+  globalStyles: globalStylesSchema.optional(),
   flattenGradient: z.literal(true),
   bionic: z.literal(false),
   semanticBlocks: z.array(semanticBlockSchema).max(2000),
