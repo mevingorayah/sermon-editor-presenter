@@ -167,6 +167,27 @@ export function measureRange(
 }
 
 /**
+ * Break opportunities: lines break only at breaking spaces. NBSP (U+00A0),
+ * figure space (U+2007) and narrow NBSP (U+202F) never break, and a run that
+ * starts with closing punctuation (/ » ] ) . , ; : ! ? …) stays on the previous
+ * word's line even after a normal space ("esklav. »]" never breaks before »).
+ * Returns [start, end) of each unbreakable word, trailing spaces excluded.
+ */
+const BREAK_SPACE = "[ \\t\\n\\r\\f\\v\\u1680\\u2000-\\u2006\\u2008-\\u200a\\u2028\\u2029\\u205f\\u3000]";
+const WORD_RE = new RegExp(`(?:(?!${BREAK_SPACE})[\\s\\S])+`, "g");
+const CLOSING = /^[»\]\)\}.,;:!?…›”’/]/;
+export function breakWords(text: string): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  for (const m of text.matchAll(WORD_RE)) {
+    const a = m.index ?? 0;
+    const z = a + m[0].length;
+    if (out.length && CLOSING.test(m[0])) out[out.length - 1][1] = z;
+    else out.push([a, z]);
+  }
+  return out;
+}
+
+/**
  * Wrap text into [start, end) line ranges by measured width. Trailing spaces
  * never count against the width; a single word wider than the line (long
  * French compounds on half-Letter) is split between characters so nothing
@@ -183,15 +204,10 @@ export function wrapLineRanges(
 ): Array<[number, number]> {
   const segs = segments ?? [{ start: 0, end: text.length, style: { font: "sans" as const } }];
   const width = (a: number, b: number) => measureRange(text, a, b, size, segs, measure);
-  const re = /\S+\s*|\s+/g;
   const out: Array<[number, number]> = [];
   let lineStart = 0;
   let open = false;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) {
-    const tokStart = m.index;
-    const wordEnd = tokStart + m[0].trimEnd().length;
-    if (wordEnd === tokStart) continue; // pure whitespace: rides on the line
+  for (const [tokStart, wordEnd] of breakWords(text)) {
     if (open && width(lineStart, wordEnd) > maxWidth) {
       out.push([lineStart, tokStart]);
       lineStart = tokStart;
@@ -207,12 +223,13 @@ export function wrapLineRanges(
       }
       if (cut >= wordEnd) break;
       // Only reached when the word is wider than the column even at 24 pt.
-      // Break after "/", "…", "–" or "—" (the mark stays at the end of the
-      // first line, e.g. "suppléments/" | "compléments") rather than cut
+      // Break after "/", "…", "–", "—" or closing punctuation (the mark stays
+      // at the end of the first line, e.g. "suppléments/" | "compléments",
+      // "l’ensemble :" | "Mo", from a missing space after a no-break one) rather than cut
       // inside a word. A hyphen is never a break ("Jésus-Christ" stays whole).
       let soft = -1;
       for (let k = cut - 1; k > lineStart && soft < 0; k--) {
-        if ("/…–—".includes(text[k])) soft = k;
+        if ("/…–—:;,.?!»)]".includes(text[k])) soft = k;
       }
       if (soft > lineStart) cut = soft + 1;
       out.push([lineStart, cut]);
@@ -280,9 +297,8 @@ export function layoutPngPages(
       // UX heading rule: break only between words (Jésus-Christ stays whole);
       // a word wider than the column shrinks this heading only (min 24 pt).
       let widest = 0;
-      for (const m of b.text.matchAll(/\S+/g)) {
-        const a = m.index ?? 0;
-        widest = Math.max(widest, measureRange(b.text, a, a + m[0].length, r.size, segs, measure));
+      for (const [a, z] of breakWords(b.text)) {
+        widest = Math.max(widest, measureRange(b.text, a, z, r.size, segs, measure));
       }
       if (widest > f.contentWidth) r.size = Math.max(minPx, r.size * (f.contentWidth / widest) * 0.999);
     }
