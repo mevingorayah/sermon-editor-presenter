@@ -1,10 +1,15 @@
 import { z } from "zod";
 import type { SermonContent } from "@/types/document";
+import { customPageError } from "@/lib/sermon/export/frames";
 
 const calibrationTargetSchema = z.enum([
   "screen-16-9",
   "screen-16-10",
   "tablet-portrait",
+  "tablet-landscape",
+  "screen-4-3",
+  "paper-a5",
+  "paper-legal",
   "paper-letter",
   "paper-a4",
   "paper-half-letter",
@@ -24,7 +29,7 @@ const typeScaleStepSchema = z.union([
   z.literal(2),
 ]);
 
-const presentationSettingsSchema = z.object({
+export const presentationSettingsSchema = z.object({
   theme: z.enum(["light", "dark"]),
   typeScaleStep: typeScaleStepSchema,
   lineHeight: lineHeightSchema,
@@ -59,21 +64,57 @@ const calibratedMarginsSchema = z.object({
   binderGutter: z.string().min(1).max(32).optional(),
 });
 
-const pageFormatSchema = z.enum(["a4", "letter", "half-letter", "tablet", "16:9", "16:10"]);
+/** Old saves with "tablet" migrate to 4:3 (orientation forced to landscape in frames.resolvePage / below). */
+const pageFormatSchema = z.preprocess(
+  (v) => (v === "tablet" ? "4:3" : v),
+  z.enum(["a4", "a5", "letter", "half-letter", "legal", "4:3", "16:10", "16:9", "custom", "fit-screen"]),
+);
+/** Frontend fit-to-screen contract: CSS px; out-of-range sizes are clamped, not rejected. */
+const fitPageSpecSchema = z.object({
+  kind: z.literal("fit"),
+  width: z.number().positive().finite(),
+  height: z.number().positive().finite(),
+  orientation: z.enum(["portrait", "landscape"]).optional(),
+  dpr: z.number().positive().finite().optional(),
+});
+const migrateTabletPage = (v: unknown) =>
+  v && typeof v === "object" && (v as { format?: unknown }).format === "tablet"
+    ? { ...(v as object), format: "4:3", orientation: "landscape" }
+    : v;
+/** Custom page size: each side 2–60 in after unit conversion, aspect ≤ 1:4 (frames.ts). */
+const customPageSchema = z
+  .object({
+    width: z.number().positive().finite(),
+    height: z.number().positive().finite(),
+    unit: z.enum(["in", "mm", "cm", "px"]),
+    dpi: z.number().min(72).max(600).optional(),
+  })
+  .superRefine((c, ctx) => {
+    const err = customPageError(c);
+    if (err) ctx.addIssue({ code: z.ZodIssueCode.custom, message: err });
+  });
 const orientationSchema = z.enum(["portrait", "landscape"]);
 const textSizePtSchema = z.number().min(24).max(72);
 const lineSpacingSchema = z.number().min(1.2).max(2.0);
 const paragraphSpacingPtSchema = z.number().min(0).max(48);
 
 /** Per-sermon page settings: all optional, so older sermons still load. */
-const sermonPageSettingsSchema = z.object({
+const sermonPageSettingsSchema = z.preprocess(migrateTabletPage, z.object({
   format: pageFormatSchema.optional(),
   orientation: orientationSchema.optional(),
   textSizePt: textSizePtSchema.optional(),
   lineSpacing: lineSpacingSchema.optional(),
   paragraphSpacingPt: paragraphSpacingPtSchema.optional(),
+  custom: customPageSchema.optional(),
+  pageSpec: fitPageSpecSchema.optional(),
   margins: calibratedMarginsSchema.optional(),
-});
+}).refine((p) => p.format !== "custom" || !!p.custom, {
+  message: 'format "custom" needs custom { width, height, unit }',
+  path: ["custom"],
+}).refine((p) => p.format !== "fit-screen" || !!p.pageSpec, {
+  message: 'format "fit-screen" needs pageSpec { kind: "fit", width, height }',
+  path: ["pageSpec"],
+}));
 
 /** Sermon ids are UUID-only (matches store `assertSafeId`). */
 export const SERMON_ID_RE =
@@ -235,6 +276,8 @@ const calibratedSnapshotFields = {
   theme: z.enum(["light", "dark"]),
   pageFormat: pageFormatSchema.optional(),
   orientation: orientationSchema.optional(),
+  customPage: customPageSchema.optional(),
+  pageSpec: fitPageSpecSchema.optional(),
   textSizePt: textSizePtSchema.optional(),
   paragraphSpacingPt: paragraphSpacingPtSchema.optional(),
   flattenGradient: z.literal(true),

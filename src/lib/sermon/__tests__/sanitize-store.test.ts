@@ -99,6 +99,18 @@ describe("store CRUD", () => {
     assert.equal(still?.meta.title, "Restored");
   });
 
+  it("new sermons default to an A4 portrait page; a chosen page is kept", async () => {
+    const plain = await store.createSermon({ title: "Default page" });
+    assert.deepEqual(plain.presentation?.page, { format: "a4", orientation: "portrait" });
+    const got = await store.getSermon(plain.id);
+    assert.deepEqual(got?.presentation?.page, { format: "a4", orientation: "portrait" });
+    const chosen = await store.createSermon({
+      title: "Chosen",
+      presentation: { theme: "light", typeScaleStep: 0, lineHeight: 1.7, bionic: false, calibrationTarget: "screen-16-9", page: { format: "letter", orientation: "landscape" } },
+    });
+    assert.deepEqual(chosen.presentation?.page, { format: "letter", orientation: "landscape" });
+  });
+
   it("rejects a non-UUID client id with 400", async () => {
     await assert.rejects(
       store.createSermon({ id: "seed-philippians-4:0" }),

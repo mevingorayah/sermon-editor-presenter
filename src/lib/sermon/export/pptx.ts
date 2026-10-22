@@ -33,9 +33,23 @@ function runsToPptxText(
   }));
 }
 
-/** Slide size in inches for a target: the shared frame (frames.ts). */
+/** PowerPoint's largest slide side (inches). */
+export const PPTX_MAX_SIDE_IN = 56;
+
+/**
+ * Uniform scale for a frame on a PPTX slide: 1, except custom pages with a side
+ * over 56 in, which shrink as a whole (line breaks unchanged).
+ */
+export function pptxScale(target: PageInput): number {
+  const { width, height } = frameSizeInches(target);
+  return Math.min(1, PPTX_MAX_SIDE_IN / Math.max(width, height));
+}
+
+/** Slide size in inches for a target: the shared frame (frames.ts), custom size included. */
 export function pptxSlideSize(target: PageInput): { width: number; height: number } {
-  return frameSizeInches(target);
+  const { width, height } = frameSizeInches(target);
+  const k = pptxScale(target);
+  return { width: +(width * k).toFixed(4), height: +(height * k).toFixed(4) };
 }
 
 /**
@@ -51,8 +65,9 @@ export async function buildPptx(
   const layout = layoutSnapshot(snapshot);
   const { frame: f, styled, target } = layout;
   const p = paletteFor(options.exportTheme ?? snapshot.theme, options.resolvedColors?.accent);
-  const ppi = pxPerInch(target);
-  const ppt = pxPerPt(target);
+  const k = pptxScale(target);
+  const ppi = pxPerInch(target) / k;
+  const ppt = pxPerPt(target) / k;
   const inch = (px: number) => +(px / ppi).toFixed(4);
   const pt = (px: number) => +(px / ppt).toFixed(2);
 

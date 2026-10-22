@@ -10,7 +10,11 @@ export type TypeScaleStep = -2 | -1 | 0 | 1 | 2;
 export type CalibrationTarget =
   | "screen-16-9"
   | "screen-16-10"
-  | "tablet-portrait"
+  | "tablet-portrait" // legacy → 4:3 landscape
+  | "tablet-landscape" // legacy → 4:3 landscape
+  | "screen-4-3"
+  | "paper-a5"
+  | "paper-legal"
   | "paper-letter"
   | "paper-a4"
   | "paper-half-letter";
@@ -29,9 +33,33 @@ export interface PresentationSettings {
   page?: SermonPageSettings;
 }
 
+export type PageFormatName =
+  | "a4" | "a5" | "letter" | "half-letter" | "legal" | "4:3" | "16:10" | "16:9" | "custom" | "fit-screen";
+
+/** Fit-to-screen page (Frontend contract): last measured CSS px; 96 dpi; dpr ignored. */
+export interface FitPageSpecSettings {
+  kind: "fit";
+  width: number;
+  height: number;
+  orientation?: "portrait" | "landscape";
+  dpr?: number;
+}
+
+export interface CustomPageSettings {
+  width: number;
+  height: number;
+  unit: "in" | "mm" | "cm" | "px";
+  dpi?: number;
+}
+
 /** The sermon's own page: Preach and every export use it. */
 export interface SermonPageSettings {
-  format?: "a4" | "letter" | "half-letter" | "tablet" | "16:9" | "16:10";
+  /**
+   * Print: a4, a5, letter, half-letter, legal. Screen shapes: 4:3, 16:10, 16:9.
+   * "custom" uses `custom`; "fit-screen" uses `pageSpec`. Old saves with
+   * "tablet" (or tablet-* targets) load as 4:3 landscape.
+   */
+  format?: PageFormatName;
   orientation?: "portrait" | "landscape";
   /** 24–72 pt, step 2, default 28. */
   textSizePt?: number;
@@ -39,6 +67,15 @@ export interface SermonPageSettings {
   lineSpacing?: number;
   /** 0–48 pt, step 2, default 20. */
   paragraphSpacingPt?: number;
+  /**
+   * Required when format is "custom": user width/height in `unit`
+   * ("in" | "mm" | "cm" | "px"; px needs `dpi`, 72–600, default 96).
+   * Each side 2–60 in after conversion; aspect at most 1:4. `orientation`
+   * swaps the sides (landscape = long side across).
+   */
+  custom?: CustomPageSettings;
+  /** Fit-to-screen: when present it is the page (wins over format/custom). */
+  pageSpec?: FitPageSpecSettings;
   /** Each side 0.25–2 in (e.g. "0.8in" or "20mm"); default 0.8in. */
   margins?: CalibratedMargins;
 }
@@ -92,6 +129,10 @@ export interface CalibratedSnapshot {
   /** Optional page overrides (win over `target`). */
   pageFormat?: SermonPageSettings["format"];
   orientation?: SermonPageSettings["orientation"];
+  /** With pageFormat "custom": the user's size (same shape as page.custom). */
+  customPage?: CustomPageSettings;
+  /** Fit-to-screen page (wins over pageFormat/customPage). */
+  pageSpec?: FitPageSpecSettings;
   textSizePt?: number;
   paragraphSpacingPt?: number;
   flattenGradient: true;
@@ -106,6 +147,8 @@ export const DEFAULT_PRESENTATION_SETTINGS: PresentationSettings = {
   lineHeight: 1.7,
   bionic: false,
   calibrationTarget: "screen-16-9",
+  /** New sermons: A4 portrait (frames.DEFAULT_PAGE). */
+  page: { format: "a4", orientation: "portrait" },
 };
 
 export const STORAGE_KEY = "sermon-editor-presenter:document:v1";
