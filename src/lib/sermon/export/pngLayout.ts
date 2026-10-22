@@ -178,6 +178,8 @@ export function wrapLineRanges(
   maxWidth: number,
   segments?: readonly StyleSegment[],
   measure: TextMeasurer = afmMeasurer,
+  /** false: never break inside a word; an oversized word gets its own line. */
+  splitWords = true,
 ): Array<[number, number]> {
   const segs = segments ?? [{ start: 0, end: text.length, style: { font: "sans" as const } }];
   const width = (a: number, b: number) => measureRange(text, a, b, size, segs, measure);
@@ -196,7 +198,7 @@ export function wrapLineRanges(
     }
     open = true;
     // Oversized word: break between characters (code points).
-    while (width(lineStart, wordEnd) > maxWidth) {
+    while (splitWords && width(lineStart, wordEnd) > maxWidth) {
       let cut = lineStart;
       for (const ch of text.slice(lineStart, wordEnd)) {
         const next = cut + ch.length;
@@ -204,6 +206,12 @@ export function wrapLineRanges(
         cut = next;
       }
       if (cut >= wordEnd) break;
+      // Last resort only: prefer a soft break after "/", "…", "–" or "—"
+      // (joined words like "suppléments/compléments") over a mid-word cut.
+      // A hyphen is never a break ("Jésus-Christ" stays whole).
+      const piece = text.slice(lineStart, cut);
+      const soft = Math.max(...["/", "…", "–", "—"].map((c) => piece.lastIndexOf(c)));
+      if (soft > 0) cut = lineStart + soft + 1;
       out.push([lineStart, cut]);
       lineStart = cut;
     }
@@ -262,18 +270,52 @@ export function layoutPngPages(
     };
     const segs = blockSegments(b);
     const measure = opts.measure ?? afmMeasurer;
-    // Fit: one line never taller than the content box, and the longest word
-    // fits the column, so large headings shrink instead of overflowing or
-    // splitting mid-word (never below 24 pt; only then can a word split).
+    // Fit: one line never taller than the content box.
     r.size = Math.max(minPx, Math.min(r.size, avail / lineHeight));
-    let widest = 0;
-    for (const m of b.text.matchAll(/\S+/g)) {
-      const a = m.index ?? 0;
-      widest = Math.max(widest, measureRange(b.text, a, a + m[0].length, r.size, segs, measure));
+    const heading = HEADINGS.has(b.type);
+    if (heading) {
+      // UX heading rule: break only between words (Jésus-Christ stays whole);
+      // a word wider than the column shrinks this heading only (min 24 pt).
+      let widest = 0;
+      for (const m of b.text.matchAll(/\S+/g)) {
+        const a = m.index ?? 0;
+        widest = Math.max(widest, measureRange(b.text, a, a + m[0].length, r.size, segs, measure));
+      }
+      if (widest > f.contentWidth) r.size = Math.max(minPx, r.size * (f.contentWidth / widest) * 0.999);
     }
-    if (widest > f.contentWidth) r.size = Math.max(minPx, r.size * (f.contentWidth / widest) * 0.999);
     const lh = r.size * lineHeight;
-    const ranges = wrapLineRanges(b.text, r.size, f.contentWidth, segs, opts.measure);
+    // Body breaks only between words; a lone word wider than the column
+    // shrinks just its own line to fit. Headings split a word only if it is
+    // still wider than the column at 24 pt.
+    let ranges = wrapLineRanges(b.text, r.size, f.contentWidth, segs, opts.measure, heading);
+    const lineW = ([a, z]: [number, number], size: number) =>
+      measureRange(b.text, a, a + b.text.slice(a, z).trimEnd().length, size, segs, measure);
+    let sizes = ranges.map((rg) => {
+      const w = lineW(rg, r.size);
+      return w > f.contentWidth ? Math.max(minPx, r.size * (f.contentWidth / w) * 0.999) : r.size;
+    });
+    if (ranges.some((rg, i) => lineW(rg, sizes[i]) > f.contentWidth + 0.5)) {
+      // A lone word wider than the column even at 24 pt: split only that
+      // line, at 24 pt (soft breaks after / … – — first). Re-wrapping the
+      // whole block with splitting split every line mid-word at large sizes.
+      const nr: Array<[number, number]> = [];
+      const ns: number[] = [];
+      ranges.forEach((rg, i) => {
+        if (lineW(rg, sizes[i]) <= f.contentWidth + 0.5) {
+          nr.push(rg);
+          ns.push(sizes[i]);
+          return;
+        }
+        const sub = rg[0];
+        for (const [a, z] of wrapLineRanges(b.text.slice(sub, rg[1]), minPx, f.contentWidth,
+          segs.map((g) => ({ ...g, start: g.start - sub, end: g.end - sub })), opts.measure, true)) {
+          nr.push([a + sub, z + sub]);
+          ns.push(minPx);
+        }
+      });
+      ranges = nr;
+      sizes = ns;
+    }
     // Citation: shrink to fit the column (min 24 pt).
     let cSize = citeSize;
     let cLh = citeLh;
@@ -286,8 +328,65 @@ export function layoutPngPages(
       }
     }
     const cite = b.citation ? cLh : 0;
-    return { b, r, lh, ranges, cite, cSize, cLh, height: ranges.length * lh + cite };
+    return { b, r, lh, ranges, sizes, cite, cSize, cLh, height: ranges.length * lh + cite };
   });
+
+  /**
+   * Keep-with-next needs: a heading, the headings after it, and the first
+   * two lines of the block that follows (one, if two never fit on a page)
+   * on one page. Real headings are long and wrap; at large sizes they plus
+   * two lines (or even alone) can be taller than the page, which left them
+   * at the page bottom or split across pages. Shrink such a heading (floor
+   * 24 pt) until the group fits; last block first so chains see final sizes.
+   */
+  const oneLine = new Set<number>(); // blocks whose headings + 2 lines never fit
+  const followLines = (i: number): number => {
+    const n = prepared[i];
+    if (!n) return 0;
+    if (oneLine.has(i)) return n.lh;
+    const two = Math.min(2, n.ranges.length) * n.lh;
+    return two <= avail ? two : n.lh;
+  };
+  const measure = opts.measure ?? afmMeasurer;
+  /** One 5% step down (floor 24 pt) for heading `p`; false at the floor. */
+  const shrinkHeading = (p: (typeof prepared)[number]): boolean => {
+    if (p.r.size <= minPx) return false;
+    const segs = blockSegments(p.b);
+    p.r.size = Math.max(minPx, p.r.size * 0.95);
+    p.lh = p.r.size * lineHeight;
+    // Same rule as above: words stay whole unless one is wider than the
+    // column even at 24 pt (the heading already fits its widest word).
+    p.ranges = wrapLineRanges(p.b.text, p.r.size, f.contentWidth, segs, opts.measure, true);
+    p.sizes = p.ranges.map(([a, z]) => {
+      const w = measureRange(p.b.text, a, a + p.b.text.slice(a, z).trimEnd().length, p.r.size, segs, measure);
+      return w > f.contentWidth ? Math.max(minPx, p.r.size * (f.contentWidth / w) * 0.999) : p.r.size;
+    });
+    p.height = p.ranges.length * p.lh;
+    return true;
+  };
+  for (let i = prepared.length - 1; i >= 0; i--) {
+    const p = prepared[i];
+    if (!HEADINGS.has(p.b.type)) continue;
+    let j = i + 1;
+    while (j < prepared.length && HEADINGS.has(prepared[j].b.type)) j++;
+    const rest = () => {
+      let r = followLines(j);
+      for (let k = i + 1; k < j; k++) r += prepared[k].height + prepared[k].r.gap;
+      return r;
+    };
+    const fits = () => p.ranges.length * p.lh + p.r.gap + rest() <= avail;
+    // This heading first, then the headings chained under it.
+    while (!fits() && shrinkHeading(p));
+    for (let k = i + 1; k < j && !fits(); k++) while (!fits() && shrinkHeading(prepared[k]));
+    // Still too tall at the floor (huge type on small pages): keep one line
+    // with the headings, then tighten the spaces under them rather than
+    // strand them.
+    if (!fits()) oneLine.add(j);
+    for (let k = j - 1; k >= i && !fits(); k--) {
+      const over = p.ranges.length * p.lh + p.r.gap + rest() - avail;
+      prepared[k].r.gap = Math.max(0, prepared[k].r.gap - over);
+    }
+  }
 
   const startsScripturePage = prepared.map((p, i) => {
     if (i > 0 && HEADINGS.has(prepared[i - 1].b.type)) return false; // chain started earlier
@@ -300,10 +399,11 @@ export function layoutPngPages(
   const leadOf = (i: number): number => {
     const n = prepared[i];
     if (!n) return 0;
-    if (n.b.type === "Scripture" && n.height <= avail) return n.height;
     if (HEADINGS.has(n.b.type)) return n.ranges.length * n.lh + n.r.gap + leadOf(i + 1);
-    // Keep-with-next: the first two lines of what follows (or all, if shorter).
-    return Math.min(2, n.ranges.length) * n.lh;
+    // Keep-with-next: the first two lines of what follows (or all, if shorter;
+    // one if two lines never fit on a page). Scripture is placed whole when
+    // it fits under its headings, else it flows from right under them.
+    return followLines(i);
   };
 
   /**
@@ -346,7 +446,12 @@ export function layoutPngPages(
       // Rule 3: the heading moves with the start of what follows (bounded by a page).
       ensure(Math.min(textH + p.r.gap + leadOf(bi + 1), avail));
     } else if (p.b.type === "Scripture" && p.height <= avail) {
-      ensure(p.height); // Rule 2: whole block + citation together.
+      // Rule 2: whole block + citation together, unless the headings it
+      // follows already start this page and the whole block cannot join them:
+      // then it flows under them (keep-with-next wins over keeping it whole).
+      const underHeadings = bi > 0 && HEADINGS.has(prepared[bi - 1].b.type) && page().lines.length > 0
+        && page().lines.every((l) => HEADINGS.has(prepared[l.blockIndex].b.type));
+      if (!underHeadings) ensure(p.height);
     }
 
     p.ranges.forEach(([s, e], li) => {
@@ -355,7 +460,7 @@ export function layoutPngPages(
       const before = pages.length;
       ensure(last && p.cite ? p.lh + p.cite : p.lh);
       if (li === 0 && pages.length > before && !HEADINGS.has(p.b.type)) carryHeadings(bi);
-      push("text", li, s, e, p.r.size, p.lh);
+      push("text", li, s, e, p.sizes[li], p.lh);
     });
     if (p.b.citation) {
       ensure(p.cite);

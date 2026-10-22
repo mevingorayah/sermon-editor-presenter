@@ -43,6 +43,16 @@ export function pageWidthInchesFor(target: PageInput): number {
 /** Default margins: 0.8 in on every side, every format (no percentages). */
 export const DEFAULT_MARGINS: CalibratedMargins = { top: "0.8in", right: "0.8in", bottom: "0.8in", left: "0.8in" };
 
+/**
+ * UX ruling: a margin is at most min(2 in, 20 % of the page's shorter side),
+ * in 0.05 in steps (half-Letter: 1.1 in). Preach clamps saved margins to it (pageSettings.fromSettings).
+ */
+export function marginMaxIn(target: PageInput): number {
+  const { width, height } = frameSizeInches(target);
+  const cap = Math.floor((0.2 * Math.min(width, height) + 1e-9) * 20) / 20;
+  return Math.max(PAGE_LIMITS.marginIn.min, Math.min(PAGE_LIMITS.marginIn.max, cap));
+}
+
 export function resolveMargins(
   margins: CalibratedMargins,
   target: PageInput,
@@ -50,7 +60,10 @@ export function resolveMargins(
   const width = pageWidthInchesFor(target);
   // Every side is 0.25–2 in on every format (PM limits); legacy % values are
   // converted against the page width, then clamped.
-  const side = (raw: string) => clamp(parseLengthToInches(raw, width), PAGE_LIMITS.marginIn);
+  // Stored margins above marginMaxIn(page) (min(2 in, 20% of the shorter
+  // side)) are clamped at export, never rejected.
+  const lim = { ...PAGE_LIMITS.marginIn, max: marginMaxIn(target) };
+  const side = (raw: string) => clamp(parseLengthToInches(raw, width), lim);
   const out = {
     top: side(margins.top),
     right: side(margins.right),
@@ -80,3 +93,6 @@ export function isPaperTarget(target: PageInput): boolean {
 }
 
 export type { CalibrationTarget };
+
+/** Alias of `marginMaxIn` under the UI UX ruling's name (Frontend slider max). */
+export const maxMarginIn = marginMaxIn;

@@ -27,6 +27,7 @@ import {
   type TextMeasurer,
 } from "../export/pngLayout";
 import { buildPngPages } from "../export/png";
+import { marginMaxIn } from "../export/margins";
 import { buildPptx, pptxSlideSize } from "../export/pptx";
 import { buildPdf, pdfPageSize } from "../export/pdf";
 import { buildDocx, docxPageSize } from "../export/docx";
@@ -247,8 +248,10 @@ for (const spec of SPECS) {
   });
 
   test(`${name}: margins equal the set value in PNG, PDF and DOCX`, async () => {
-    for (const inch of [0.25, 0.8, 1.5]) {
-      const v = `${inch}in`;
+    for (const set of [0.25, 0.8, 1.5]) {
+      const v = `${set}in`;
+      // UI UX: at most min(2 in, 20% of the shorter side), clamped not rejected.
+      const inch = Math.min(set, marginMaxIn(spec));
       const s = snap(spec, { margins: { top: v, right: v, bottom: v, left: v } });
       const f = pngFrame(spec, s.margins);
       const ppi = pxPerInch(spec);
@@ -323,7 +326,7 @@ test("legacy target strings still resolve (no page fields)", () => {
   assert.equal(frameSizeInches("paper-letter").width, 8.5);
 });
 
-test("limits clamp: text 24–72 pt, line spacing 1.2–2.0, margins 0.25–2 in", () => {
+test("limits clamp: text 24–72 pt, line spacing 1.2–2.0, margins 0.25 in – min(2 in, 20% of the shorter side)", () => {
   assert.equal(resolvePage({ format: "a4", orientation: "portrait", textSizePt: 10 }).textSizePt, 24);
   assert.equal(resolvePage({ format: "a4", orientation: "portrait", textSizePt: 200 }).textSizePt, 72);
   const spec: PageSpec = { format: "16:9", orientation: "landscape" };
@@ -332,7 +335,8 @@ test("limits clamp: text 24–72 pt, line spacing 1.2–2.0, margins 0.25–2 in
   assert.ok(Math.abs(lh(9).lineHeight / lh(9).size - 2.0) < 1e-9);
   const ppi = pxPerInch(spec);
   assert.ok(Math.abs(pngFrame(spec, { top: "0.1in", right: "0.1in", bottom: "0.1in", left: "0.1in" }).left / ppi - 0.25) < 1e-9);
-  assert.ok(Math.abs(pngFrame(spec, { top: "5in", right: "5in", bottom: "5in", left: "5in" }).left / ppi - 2) < 1e-9);
+  assert.ok(Math.abs(pngFrame(spec, { top: "5in", right: "5in", bottom: "5in", left: "5in" }).left / ppi - marginMaxIn(spec)) < 1e-9);
+  assert.equal(marginMaxIn(spec), Math.min(2, Math.floor(0.2 * Math.min(frameSizeInches(spec).width, frameSizeInches(spec).height) * 20) / 20));
   assert.ok(Math.abs(pngFrame(spec, { top: "20mm", right: "20mm", bottom: "20mm", left: "20mm" }).left / ppi - 20 / 25.4) < 1e-9);
 });
 
@@ -399,7 +403,7 @@ for (const [label, inch, ls] of [
     const xml = await docx.file("word/document.xml")!.async("string");
     const mar = xml.match(/<w:pgMar [^>]*>/)![0];
     for (const side of ["top", "right", "bottom", "left"]) {
-      assert.equal(Number(mar.match(new RegExp(`w:${side}="(\\d+)"`))![1]), Math.round(inch * 1440));
+      assert.equal(Number(mar.match(new RegExp(`w:${side}="(\\d+)"`))![1]), Math.round(Math.min(inch, marginMaxIn(A4)) * 1440));
     }
     const styles = await docx.file("word/styles.xml")!.async("string");
     assert.match(styles, new RegExp(`w:line="${Math.round(240 * ls)}"`));

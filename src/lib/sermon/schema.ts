@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { SermonContent } from "@/types/document";
-import { customPageError } from "@/lib/sermon/export/frames";
+import { DEFAULT_PAGE, customPageError, frameSizeInches, type PageInput, type PageSpec } from "@/lib/sermon/export/frames";
+import { marginMaxIn, parseLengthToInches } from "@/lib/sermon/export/margins";
 
 const calibrationTargetSchema = z.enum([
   "screen-16-9",
@@ -114,7 +115,33 @@ const sermonPageSettingsSchema = z.preprocess(migrateTabletPage, z.object({
 }).refine((p) => p.format !== "fit-screen" || !!p.pageSpec, {
   message: 'format "fit-screen" needs pageSpec { kind: "fit", width, height }',
   path: ["pageSpec"],
-}));
+}).transform(clampPageMargins));
+
+/**
+ * UI UX: a margin is at most min(2 in, 20% of the page's shorter side)
+ * (`marginMaxIn`). Larger stored margins are clamped (never rejected).
+ */
+function clampPageMargins<T extends { format?: string; orientation?: string; custom?: unknown; pageSpec?: unknown; margins?: Record<string, string | undefined> }>(p: T): T {
+  if (!p.margins) return p;
+  let page: PageInput;
+  let max: number;
+  let width: number;
+  try {
+    page = (p.pageSpec as { kind?: string } | undefined)?.kind === "fit"
+      ? (p.pageSpec as PageInput)
+      : ({ format: p.format ?? DEFAULT_PAGE.format, orientation: p.orientation ?? DEFAULT_PAGE.orientation, ...(p.custom ? { custom: p.custom } : {}) } as PageSpec);
+    max = marginMaxIn(page);
+    width = frameSizeInches(page).width;
+  } catch {
+    return p;
+  }
+  const margins = { ...p.margins };
+  for (const k of ["top", "right", "bottom", "left"] as const) {
+    const raw = margins[k];
+    if (raw !== undefined && parseLengthToInches(raw, width) > max) margins[k] = `${max}in`;
+  }
+  return { ...p, margins };
+}
 
 /** Sermon ids are UUID-only (matches store `assertSafeId`). */
 export const SERMON_ID_RE =
