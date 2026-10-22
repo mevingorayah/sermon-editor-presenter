@@ -55,6 +55,9 @@ test("Edit Export (PDF, PNG, PowerPoint) → export window → DOCX + PNG downlo
   await expect(page).toHaveURL(/\/edit$/);
   const panel = page.getByRole("complementary", { name: /Document setup/ });
   await expect(panel).toBeVisible({ timeout: 20_000 });
+  await expect(panel.getByRole("status")).toHaveText(
+    "DOCX prints in light ink. PDF, PNG and PowerPoint follow the page size and the light or dark choice above, one page per image or slide.",
+  );
   // Deep link moves focus into the panel.
   await expect(panel.getByRole("heading", { name: /Document setup/ })).toBeFocused();
 
@@ -82,9 +85,11 @@ test("Edit Export (PDF, PNG, PowerPoint) → export window → DOCX + PNG downlo
   expect(docxBytes.subarray(0, 2).toString("latin1")).toBe("PK");
   await expect(panel.getByRole("status")).toHaveText(`Downloaded ${STEM}.docx`);
 
+  // The PowerPoint font note appears exactly once (Backend's PPTX_FONT_NOTICE).
   await expect(panel.getByTestId("pptx-font-note")).toHaveText(
-    "PowerPoint uses standard fonts, so line breaks may differ slightly.",
+    "PowerPoint uses standard fonts, so line breaks may differ slightly",
   );
+  await expect(panel.getByText(/PowerPoint uses standard fonts/)).toHaveCount(1);
 
   // Light or dark: defaults to Light; Dark applies to PNG/PDF/PPTX.
   const themeSel = panel.getByLabel("Light or dark (PDF, PNG, PowerPoint)");

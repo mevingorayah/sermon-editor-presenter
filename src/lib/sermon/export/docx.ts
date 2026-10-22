@@ -1,3 +1,5 @@
+import { LineRuleType } from "docx";
+import { snapshotLineSpacing } from "./frames";
 import {
   AlignmentType,
   Document,
@@ -243,6 +245,14 @@ export async function buildDocx(
     creator: "sermon-editor-presenter",
     title,
     description: `Calibrated export target=${snapshot.target}`,
+    // Page line spacing (1.2–2.0) as Word "multiple" spacing (240 = single).
+    styles: {
+      default: {
+        document: {
+          paragraph: { spacing: { line: Math.round(240 * snapshotLineSpacing(snapshot)), lineRule: LineRuleType.AUTO } },
+        },
+      },
+    },
     sections: [
       {
         properties: {

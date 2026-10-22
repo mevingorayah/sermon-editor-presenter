@@ -355,3 +355,211 @@ test("measurer is injectable: a wider measurer gives more lines", () => {
   const b = layoutPngPages(blocks, spec, 1.55, undefined, { measure: wide }).flatMap((p) => p.lines).length;
   assert.ok(b > a, `${b} > ${a}`);
 });
+
+// ---- UI UX review of #29: page margins + line spacing, fonts ----
+import { pageSnapshotFields, snapshotLineSpacing } from "../export/frames";
+import { APPROVED_FONT_IDS, exportFontId, mapFontFamily } from "../export/fonts";
+import { PPTX_FONT_NOTICE, exportFontName } from "../export/textMeasure";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
+const A4: PageSpec = resolvePage({ format: "a4", orientation: "portrait" } as never);
+
+for (const [label, inch, ls] of [
+  ["min", 0.25, 1.2],
+  ["default", 0.8, 1.55],
+  ["max", 2, 2.0],
+] as const) {
+  test(`page margins ${inch}in + lineSpacing ${ls} (${label}) flow to every export`, async () => {
+    const v = `${inch}in`;
+    const fields = pageSnapshotFields({ margins: { top: v, right: v, bottom: v, left: v }, lineSpacing: ls });
+    assert.deepEqual(fields.margins, { top: v, right: v, bottom: v, left: v });
+    assert.equal(fields.lineSpacing, ls);
+    const s = snap(A4, { margins: fields.margins, lineSpacing: fields.lineSpacing, lineHeight: 1.55 });
+    assert.equal(snapshotLineSpacing(s), ls);
+    const L = layoutSnapshot(s);
+    const first = L.pages[0].lines;
+    // line pitch follows lineSpacing (two body lines in a row)
+    const pair = first.findIndex((l, i) => i > 0 && l.kind === first[i - 1].kind && l.blockIndex === first[i - 1].blockIndex);
+    assert.ok(pair > 0);
+    assert.ok(Math.abs(first[pair].lineHeight / first[pair].size - ls) < 1e-9);
+    const expected = layoutLines(s);
+    const pdf = pdfPages(await buildPdf(s, { compress: false }));
+    assert.deepEqual(pdf.map((p) => p.lines), expected);
+    assert.equal((await buildPngPages(s)).length, expected.length);
+    assert.deepEqual((await pptxLines(await buildPptx(s))).slides, expected);
+    const docx = await JSZip.loadAsync(await buildDocx(s));
+    const xml = await docx.file("word/document.xml")!.async("string");
+    const mar = xml.match(/<w:pgMar [^>]*>/)![0];
+    for (const side of ["top", "right", "bottom", "left"]) {
+      assert.equal(Number(mar.match(new RegExp(`w:${side}="(\\d+)"`))![1]), Math.round(inch * 1440));
+    }
+    const styles = await docx.file("word/styles.xml")!.async("string");
+    assert.match(styles, new RegExp(`w:line="${Math.round(240 * ls)}"`));
+  });
+}
+
+test("page fields: defaults 0.8in / 1.55; out-of-range values clamp; lineSpacing on a 0.05 grid", () => {
+  const d = pageSnapshotFields();
+  assert.deepEqual(d.margins, { top: "0.8in", right: "0.8in", bottom: "0.8in", left: "0.8in" });
+  assert.equal(d.lineSpacing, 1.55);
+  const x = pageSnapshotFields({ margins: { top: "0.1in", right: "3in", bottom: "1in", left: "1in" }, lineSpacing: 2.6 });
+  assert.equal(x.margins.top, "0.25in");
+  assert.equal(x.margins.right, "2in");
+  assert.equal(x.lineSpacing, 2);
+  assert.equal(snapshotLineSpacing({ lineSpacing: 1.33 }), 1.35);
+  assert.equal(snapshotLineSpacing({ lineHeight: 1.7 }), 1.7);
+});
+
+test("fonts: all 10 approved fonts + JetBrains Mono have bundled export files", () => {
+  assert.equal(APPROVED_FONT_IDS.length, 11);
+  for (const id of APPROVED_FONT_IDS) {
+    for (const st of [{}, { bold: true }, { italic: true }, { bold: true, italic: true }]) {
+      assert.ok(existsSync(join("assets/fonts/export", `${exportFontName(id, st)}.ttf`)), `${id} ${JSON.stringify(st)}`);
+    }
+  }
+});
+
+test("fonts: legacy sans/serif/mono map to inter/literata/jetbrains-mono; unknown lays out in Literata", () => {
+  assert.equal(exportFontId("serif"), "literata");
+  assert.equal(exportFontId("sans"), "inter");
+  assert.equal(exportFontId("mono"), "jetbrains-mono");
+  assert.equal(exportFontId("comic-sans"), "literata");
+  assert.equal(mapFontFamily("Lora"), "lora");
+  assert.equal(mapFontFamily('"Source Serif 4", serif'), "source-serif-4");
+  assert.equal(mapFontFamily("var(--font-playfair-display)"), "playfair-display");
+  assert.equal(mapFontFamily("Georgia, serif"), "serif");
+  assert.equal(mapFontFamily(""), "sans");
+});
+
+test("PPTX font notice text", () => {
+  assert.equal(PPTX_FONT_NOTICE, "PowerPoint uses standard fonts, so line breaks may differ slightly");
+});
+
+function fontSnap(id: string): CalibratedSnapshot {
+  const base = snap(A4);
+  const text = (t: string, marks?: { type: string }[]) => ({
+    type: "text",
+    text: t,
+    marks: [{ type: "textStyle", attrs: { fontFamily: id } }, ...(marks ?? [])],
+  });
+  return {
+    ...base,
+    content: {
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [text(FR.repeat(2))] },
+        { type: "paragraph", content: [text(FR, [{ type: "bold" }])] },
+        { type: "paragraph", content: [text(FR, [{ type: "italic" }])] },
+        { type: "paragraph", content: [text(FR, [{ type: "bold" }, { type: "italic" }])] },
+      ],
+    },
+  } as CalibratedSnapshot;
+}
+
+for (const id of APPROVED_FONT_IDS) {
+  test(`font ${id}: PDF and PNG line breaks match the shared layout (regular/bold/italic)`, async () => {
+    const s = fontSnap(id);
+    const L = layoutSnapshot(s);
+    assert.ok(L.blocks.some((b) => b.runs?.some((r) => r.fontFamily === id)), "font id reaches layout");
+    const expected = layoutLines(s);
+    const pdf = pdfPages(await buildPdf(s, { compress: false }));
+    assert.deepEqual(pdf.map((p) => p.lines), expected);
+    assert.equal((await buildPngPages(s)).length, expected.length);
+  });
+}
+
+// ---- QA #29 fixes (F1–F4); made-up text only ----
+import { exportRequestSchema } from "../schema";
+
+test("F1: U+202F before French ?/! never draws a missing glyph in the PDF", async () => {
+  const t = "Est-ce vrai\u202F? Oui\u202F! Voyez\u00A0: «\u202Fbien\u202F».";
+  for (const id of APPROVED_FONT_IDS) {
+    const s = {
+      ...snap(A4),
+      content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: t, marks: [{ type: "textStyle", attrs: { fontFamily: id } }] }] }] },
+    } as CalibratedSnapshot;
+    const buf = await buildPdf(s, { compress: false });
+    const raw = buf.toString("latin1");
+    // No .notdef (glyph id 0000) in any shown hex string.
+    for (const tj of raw.matchAll(/\[([^\]]*)\]\s*TJ/g)) {
+      for (const m of tj[1].matchAll(/<([0-9a-fA-F]+)>/g)) {
+        for (let i = 0; i + 4 <= m[1].length; i += 4) assert.notEqual(m[1].slice(i, i + 4), "0000", `${id}: .notdef`);
+      }
+    }
+    const lines = pdfPages(buf).flatMap((p) => p.lines).join(" ");
+    assert.match(lines, /vrai[\u202F\u2009\u00A0 ]\?/, id);
+  }
+});
+
+test("F2: Galaxy Tab frame is 10:16 (1200×1920 upright, 1920×1200 sideways)", () => {
+  assert.deepEqual(pngFrameSize(resolvePage({ format: "tablet", orientation: "portrait" } as never)), { width: 1200, height: 1920 });
+  assert.deepEqual(pngFrameSize(resolvePage({ format: "tablet", orientation: "landscape" } as never)), { width: 1920, height: 1200 });
+  const i = frameSizeInches(resolvePage({ format: "tablet", orientation: "portrait" } as never));
+  assert.ok(Math.abs(i.height / i.width - 1.6) < 0.001);
+});
+
+const LONG =
+  "Considérablement inébranlables, les bienheureux contemporains reconnaissent la suffisance " +
+  "extraordinaire de la grâce. ";
+function maxSnap(page: PageSpec): CalibratedSnapshot {
+  const blocks: CalibratedSnapshot["semanticBlocks"] = [];
+  for (let i = 0; i < 6; i++) {
+    blocks.push({ type: "Title", text: "La suffisance incompréhensible de la grâce abondante" });
+    blocks.push({ type: "Body", text: LONG.repeat(3 + i) });
+    blocks.push({ type: "H1", text: "Deuxième considération fondamentale" });
+    blocks.push({ type: "H2", text: "Une remarque" });
+    blocks.push({ type: "Body", text: LONG.repeat(2) });
+    blocks.push({ type: "Scripture", text: LONG, citation: "Éphésiens 1.3–7" });
+  }
+  const v = "2in";
+  return {
+    ...snap(page),
+    textSizePt: 72,
+    paragraphSpacingPt: 48,
+    lineSpacing: 2,
+    margins: { top: v, right: v, bottom: v, left: v },
+    semanticBlocks: blocks,
+    content: { type: "doc", content: blocks.map((b) => ({ type: "paragraph", content: [{ type: "text", text: b.text }] })) },
+  } as CalibratedSnapshot;
+}
+
+for (const [fmt, orientation] of [["a4", "portrait"], ["tablet", "portrait"], ["16:9", "landscape"]] as const) {
+  test(`F3 max settings ${fmt} ${orientation}: no overflow, no mid-word split, citation fits, no lone heading`, async () => {
+    const spec = resolvePage({ format: fmt, orientation } as never);
+    const s = maxSnap(spec);
+    const L = layoutSnapshot(s);
+    const f = pngFrame(spec, s.margins);
+    const heads = new Set(["Title", "H1", "H2", "H3"]);
+    for (const [pi, p] of L.pages.entries()) {
+      for (const l of p.lines) {
+        assert.ok(l.y >= f.top - 1e-6 && l.y + l.lineHeight <= f.bottom + 1e-6, `page ${pi} overflow`);
+        assert.ok(l.size >= 24 * pxPerPt(spec) - 1e-6);
+        const b = L.blocks[l.blockIndex];
+        if (l.kind === "citation") {
+          const w = afmMeasurer(citationCaps(b.citation ?? ""), l.size, { font: "serif" });
+          assert.ok(w <= f.contentWidth + 1e-6, `citation ${w} > ${f.contentWidth}`);
+          continue;
+        }
+        if (l.end < b.text.length) assert.match(b.text.slice(l.end - 1, l.end + 1), /\s/, `split: ${b.text.slice(l.start, l.end + 3)}`);
+      }
+      const last = p.lines[p.lines.length - 1];
+      if (pi < L.pages.length - 1 && heads.has(L.blocks[last.blockIndex].type)) {
+        assert.ok(p.lines.every((l) => heads.has(L.blocks[l.blockIndex].type)), `heading alone at bottom of page ${pi}`);
+      }
+    }
+    const expected = layoutLines(s);
+    assert.deepEqual(pdfPages(await buildPdf(s, { compress: false })).map((p) => p.lines), expected);
+    assert.deepEqual((await pptxLines(await buildPptx(s))).slides, expected);
+  });
+}
+
+test("F4: export request takes margins as numbers or strings, and lineHeight/lineSpacing as aliases", () => {
+  const base = { ...snap(A4) } as Record<string, unknown>;
+  delete base.lineHeight;
+  const a = exportRequestSchema.parse({ ...base, lineSpacing: 1.8, margins: { top: 0.8, right: "1in", bottom: 2, left: 0.25 } }) as Record<string, unknown>;
+  assert.deepEqual(a.margins, { top: "0.8in", right: "1in", bottom: "2in", left: "0.25in" });
+  assert.equal(a.lineHeight, 1.8);
+  const b = exportRequestSchema.parse({ ...base, lineHeight: 1.6 }) as Record<string, unknown>;
+  assert.equal(snapshotLineSpacing(b as never), 1.6);
+});

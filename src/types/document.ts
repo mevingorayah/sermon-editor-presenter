@@ -86,6 +86,8 @@ export interface CalibratedSnapshot {
   typeScaleStep: number; // -2..2
   /** Legacy presets 1.55/1.7/1.85, or any 1.2–2.0 line spacing. */
   lineHeight: LineHeightOption | number;
+  /** Page line spacing 1.2–2.0 (step 0.05, default 1.55); wins over `lineHeight`. */
+  lineSpacing?: number;
   theme: ReadingTheme; // print default light
   /** Optional page overrides (win over `target`). */
   pageFormat?: SermonPageSettings["format"];

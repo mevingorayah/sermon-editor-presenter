@@ -79,10 +79,10 @@ test("frame widths: 16:9 13.333in, 16:10 10in, tablet 9.25in (Tab S10 Lite)", ()
   assert.equal(pngFrameWidthInches("screen-16-9"), 13.333);
   assert.equal(pngFrameWidthInches("screen-16-10"), 10);
   assert.equal(pngFrameWidthInches("tablet-portrait"), 9.25);
-  // Tablet: 900px / (9.25in x 72) = 1.351 px/pt → body 28pt (default) = 37.84px.
-  assert.ok(Math.abs(pxPerPt("tablet-portrait") - 900 / 666) < 1e-9);
+  // Tablet (10:16, 1200x1920): 1200px / (9.25in x 72) = 1.802 px/pt → body 28pt = 50.45px.
+  assert.ok(Math.abs(pxPerPt("tablet-portrait") - 1200 / 666) < 1e-9);
   const body = layoutPngPages([{ type: "Body", text: "x" }], "tablet-portrait", LH)[0].lines[0].size;
-  assert.ok(Math.abs(body - 37.838) < 0.01, String(body));
+  assert.ok(Math.abs(body - 28 * 1200 / 666) < 0.01, String(body));
 });
 
 test("rule 1: lines never straddle a page, and every char is placed exactly once", () => {

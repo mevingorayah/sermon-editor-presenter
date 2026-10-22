@@ -1,5 +1,5 @@
 import { APP_METRIC_CHARS as METRIC_CHARS, APP_WIDTHS } from "./appFontMetrics";
-import type { FontFamilyId } from "./fonts";
+import { exportFontId, fontCategory, type ApprovedFontId, type FontFamilyId } from "./fonts";
 
 /** Style that affects glyph widths. */
 export interface MeasureStyle {
@@ -48,10 +48,28 @@ function charWidth(ch: string, widths: readonly number[], memo: Map<string, numb
  * by family name via fontconfig, and the measurer below uses their widths.
  */
 export function exportFontName(id: FontFamilyId, style: { bold?: boolean; italic?: boolean } = {}): string {
-  const fam = id === "mono" ? "JetBrainsMonoExport" : id === "sans" ? "InterExport" : "LiterataExport";
   const st = style.bold && style.italic ? "BoldItalic" : style.bold ? "Bold" : style.italic ? "Italic" : "Regular";
-  return `${fam}-${st}`;
+  return `${exportFontId(id)}-${st}`;
 }
+
+/**
+ * Family names inside the export files. Lora, Merriweather and Playfair
+ * Display have an OFL Reserved Font Name, so their instanced (modified)
+ * files use a neutral name; Lato ships unmodified.
+ */
+export const EXPORT_FAMILY: Record<ApprovedFontId, string> = {
+  literata: "Literata Export",
+  lora: "Sermon Export Serif A",
+  merriweather: "Sermon Export Serif B",
+  "playfair-display": "Sermon Export Serif C",
+  "source-serif-4": "Source Serif 4 Export",
+  inter: "Inter Export",
+  "open-sans": "Open Sans Export",
+  lato: "Lato",
+  montserrat: "Montserrat Export",
+  "nunito-sans": "Nunito Sans Export",
+  "jetbrains-mono": "JetBrains Mono Export",
+};
 
 /** Default measurer: the export fonts' real advance widths (pure table). */
 export const afmMeasurer: TextMeasurer = (text, sizePx, style) => {
@@ -70,11 +88,12 @@ export const appFontMeasurer = afmMeasurer;
  * with fontconfig from assets/fonts in both Dockerfiles), same widths as above.
  */
 export function metricCompatibleCss(id: FontFamilyId): string {
-  switch (id) {
-    case "mono": return '"JetBrains Mono Export", "JetBrains Mono", "Liberation Mono", monospace';
-    case "serif": return '"Literata Export", Literata, "Liberation Serif", serif';
+  const fam = `"${EXPORT_FAMILY[exportFontId(id)]}"`;
+  switch (fontCategory(id)) {
+    case "mono": return `${fam}, "Liberation Mono", monospace`;
+    case "serif": return `${fam}, "Liberation Serif", serif`;
     case "sans":
-    default: return '"Inter Export", Inter, "Liberation Sans", sans-serif';
+    default: return `${fam}, "Liberation Sans", sans-serif`;
   }
 }
 
@@ -84,10 +103,13 @@ export function metricCompatibleCss(id: FontFamilyId): string {
  * never overflow; they just sit slightly narrower.
  */
 export function metricCompatibleOffice(id: FontFamilyId): string {
-  switch (id) {
+  switch (fontCategory(id)) {
     case "mono": return "Courier New";
     case "serif": return "Times New Roman";
     case "sans":
     default: return "Calibri"; // Arial is about as wide as Inter; Calibri is safely narrower
   }
 }
+
+/** Shown next to the PowerPoint export option. */
+export const PPTX_FONT_NOTICE = "PowerPoint uses standard fonts, so line breaks may differ slightly";

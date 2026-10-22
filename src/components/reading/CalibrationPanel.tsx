@@ -36,12 +36,8 @@ import type {
   ReadingTheme,
   TypeScaleStep,
 } from "@/types/document";
-import {
-  countPngPages,
-  pngExportLabel,
-  pngFrame,
-  pngFrameSize,
-} from "@/lib/sermon/export/pngLayout";
+import { PPTX_FONT_NOTICE } from "@/lib/sermon/export/textMeasure";
+import { countPngPages, pngExportLabel, pngFrame, pngFrameSize } from "@/lib/sermon/export/pngLayout";
 import { ReadingView } from "./ReadingView";
 import styles from "./CalibrationPanel.module.css";
 
@@ -406,8 +402,7 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
                 id={`${ids}-pptx-note`}
                 data-testid="pptx-font-note"
               >
-                PowerPoint uses standard fonts, so line breaks may differ
-                slightly.
+                {PPTX_FONT_NOTICE}
               </span>
             ) : null}
           </span>
@@ -416,7 +411,7 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
       {/* Single persistent live region: hint until an export runs, then status. */}
       <p className={exportStatus ? styles.status : styles.hint} role="status">
         {exportStatus ??
-          "DOCX prints in light ink. PDF, PNG (one image per frame; several frames download as a .zip) and PowerPoint (a slide per H1) follow the page size and Light/dark choice above."}
+          "DOCX prints in light ink. PDF, PNG and PowerPoint follow the page size and the light or dark choice above, one page per image or slide."}
       </p>
     </aside>
   );
