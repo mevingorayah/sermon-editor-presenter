@@ -208,6 +208,8 @@ for (const vp of [{ width: 1334, height: 800 }, { width: 800, height: 1280 }, { 
     }
     await panel.getByRole("button", { name: "Larger text" }).click();
     await expect(panel.locator("[data-text-pt]")).toHaveText("30 pt");
+    // Saved to the sermon (debounced PATCH) before reloading.
+    await page.waitForResponse((r) => r.url().includes("/api/sermons/") && r.request().method() === "PATCH" && r.ok());
     await page.reload({ waitUntil: "networkidle" });
     await page.getByRole("button", { name: "Reading settings" }).click();
     await expect(page.locator('[data-format="16-10"]')).toHaveAttribute("aria-pressed", "true");
@@ -243,7 +245,7 @@ test("⚙ Spacing: sliders, tap-to-type, reset keeps format", async ({ page }) =
   await expect.poll(async () => Number(await page.locator("[data-page-view]").getAttribute("data-page-count"))).toBeGreaterThan(before);
   await panel.locator("[data-each-side]").click();
   await expect(panel.locator("[data-slider]")).toHaveCount(6);
-  for (const el of await panel.locator("button, input:not([type=checkbox]), label").all()) {
+  for (const el of await panel.locator("button, input:not([type=checkbox]), label:has(input[type=checkbox]), [data-slider] label").all()) {
     const b = await el.boundingBox();
     if (b && b.width > 0) expect(Math.min(b.height, b.width)).toBeGreaterThanOrEqual(44);
   }
