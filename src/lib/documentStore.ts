@@ -128,6 +128,17 @@ export function purgeLegacySeedIdsFromStorage(): void {
   }
 }
 
+/**
+ * Only fill the active id when there is no valid explicit choice. A fresh
+ * browser has no cached doc but may already hold the chosen sermon's id; the
+ * seed must never overwrite it (QA blocker: Preach opened the newest sermon).
+ */
+function keepOrSetActive(id: string): void {
+  const active = getActiveSermonId();
+  if (active && (isServerSermonId(active) || isLocalDraftId(active))) return;
+  setActiveSermonId(id);
+}
+
 export function loadDocument(): SermonDocument {
   if (typeof window === "undefined") {
     return createSeedDocument();
@@ -138,14 +149,14 @@ export function loadDocument(): SermonDocument {
     if (!raw) {
       const seed = createSeedDocument();
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
-      setActiveSermonId(seed.id);
+      keepOrSetActive(seed.id);
       return seed;
     }
     const parsed = JSON.parse(raw) as SermonDocument;
     if (!parsed?.content || !parsed.presentationSettings) {
       const seed = createSeedDocument();
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
-      setActiveSermonId(seed.id);
+      keepOrSetActive(seed.id);
       return seed;
     }
     const migrated = migrateClientDocumentIds(parsed);
@@ -247,15 +258,23 @@ async function createFromLocal(
  * - else POST seed/local content → use returned UUID
  * - local-* drafts always POST+remap when online (never GET/PATCH local-/seed-*)
  */
-export async function resolveActiveDocument(): Promise<{
+export async function resolveActiveDocument(options?: {
+  /** Explicit sermon to open (e.g. /preach?id=<uuid>); wins over storage. */
+  requestedId?: string | null;
+}): Promise<{
   doc: SermonDocument;
   source: DocumentSource;
   sermons: Sermon[];
 }> {
   // Sync purge first — never let a stale seed-* active-id survive into async work.
   purgeLegacySeedIdsFromStorage();
+  const requested =
+    options?.requestedId && isServerSermonId(options.requestedId)
+      ? options.requestedId
+      : null;
+  if (requested) setActiveSermonId(requested);
   const local = loadDocument();
-  const activeId = getActiveSermonId() ?? local.id;
+  const activeId = requested ?? getActiveSermonId() ?? local.id;
   // Belt: refuse to even consider get-by-id unless UUID (seed/local stay local).
   const openId = isServerSermonId(activeId) ? activeId : null;
 

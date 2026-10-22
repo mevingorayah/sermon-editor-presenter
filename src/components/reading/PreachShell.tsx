@@ -73,7 +73,10 @@ export function PreachShell() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const resolved = await resolveActiveDocument();
+      // Open exactly the sermon chosen in Edit (?id=<uuid>), else the last
+      // explicitly chosen one — never "newest updated".
+      const requestedId = new URLSearchParams(window.location.search).get("id");
+      const resolved = await resolveActiveDocument({ requestedId });
       if (cancelled) return;
       setDoc(resolved.doc);
     })();
