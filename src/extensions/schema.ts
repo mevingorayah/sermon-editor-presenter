@@ -4,6 +4,8 @@ import TextAlign from "@tiptap/extension-text-align";
 import { TextStyle, Color, FontFamily } from "@tiptap/extension-text-style";
 import { Title } from "./Title";
 import { Scripture } from "./Scripture";
+import { BUILDER_NODES } from "./builder/BuilderNodes";
+import { BlockStyleAttrs } from "./builder/BlockStyleAttrs";
 
 /** Node types that carry TextAlign. Shared by Edit and Preach. */
 export const ALIGNED_TYPES = ["heading", "paragraph", "title", "scripture"];
@@ -36,5 +38,8 @@ export function createSchemaExtensions() {
       alignments: ["left", "center", "right"],
       defaultAlignment: "left",
     }),
+    // Block builder (slice 1): extra block types + per-block style attrs.
+    ...BUILDER_NODES,
+    BlockStyleAttrs,
   ];
 }
