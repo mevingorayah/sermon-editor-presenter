@@ -108,3 +108,17 @@
     transition: none;
   }
 }
+
+/* Sermon title: small, single line, ellipsis. Part of the bar, so it hides
+   with the other controls. */
+.title {
+  flex: 1 1 8rem;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--rm-fg-muted, var(--rm-fg));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -128,6 +128,17 @@ export function purgeLegacySeedIdsFromStorage(): void {
   }
 }
 
+/**
+ * Only fill the active id when there is no valid explicit choice. A fresh
+ * browser has no cached doc but may already hold the chosen sermon's id; the
+ * seed must never overwrite it (QA blocker: Preach opened the newest sermon).
+ */
+function keepOrSetActive(id: string): void {
+  const active = getActiveSermonId();
+  if (active && (isServerSermonId(active) || isLocalDraftId(active))) return;
+  setActiveSermonId(id);
+}
+
 export function loadDocument(): SermonDocument {
   if (typeof window === "undefined") {
     return createSeedDocument();
@@ -138,14 +149,14 @@ export function loadDocument(): SermonDocument {
     if (!raw) {
       const seed = createSeedDocument();
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
-      setActiveSermonId(seed.id);
+      keepOrSetActive(seed.id);
       return seed;
     }
     const parsed = JSON.parse(raw) as SermonDocument;
     if (!parsed?.content || !parsed.presentationSettings) {
       const seed = createSeedDocument();
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
-      setActiveSermonId(seed.id);
+      keepOrSetActive(seed.id);
       return seed;
     }
     const migrated = migrateClientDocumentIds(parsed);
@@ -200,17 +211,29 @@ export function updatePresentationSettings(
 
 export type DocumentSource = "server" | "local";
 
+/** Cache a doc as-is: no updatedAt re-stamp, no active-id change (read-only open). */
+function cacheDocumentReadOnly(doc: SermonDocument): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
+  } catch {
+    /* ignore quota */
+  }
+}
+
 async function persistServerDoc(
   sermon: Sermon,
   local: SermonDocument | null,
   sermons: Sermon[],
+  readOnly = false,
 ): Promise<{
   doc: SermonDocument;
   source: DocumentSource;
   sermons: Sermon[];
 }> {
   const doc = sermonToDocument(sermon, local);
-  saveDocument(doc);
+  if (readOnly) cacheDocumentReadOnly(doc);
+  else saveDocument(doc);
   return { doc, source: "server", sermons };
 }
 
@@ -247,20 +270,46 @@ async function createFromLocal(
  * - else POST seed/local content → use returned UUID
  * - local-* drafts always POST+remap when online (never GET/PATCH local-/seed-*)
  */
-export async function resolveActiveDocument(): Promise<{
+export async function resolveActiveDocument(options?: {
+  /** Explicit sermon to open (e.g. /preach?id=<uuid>); wins over storage. */
+  requestedId?: string | null;
+  /**
+   * Preach: open without writing — never re-stamp updatedAt and never change
+   * the active id except to an explicitly requested id verified on the server.
+   */
+  readOnly?: boolean;
+}): Promise<{
   doc: SermonDocument;
   source: DocumentSource;
   sermons: Sermon[];
 }> {
   // Sync purge first — never let a stale seed-* active-id survive into async work.
   purgeLegacySeedIdsFromStorage();
+  const requested =
+    options?.requestedId && isServerSermonId(options.requestedId)
+      ? options.requestedId
+      : null;
+  const readOnly = options?.readOnly === true;
+  // Never set the active id for a requested id until it is verified to exist.
+  const storedActive = getActiveSermonId();
   const local = loadDocument();
-  const activeId = getActiveSermonId() ?? local.id;
+  const activeId = storedActive ?? getActiveSermonId() ?? local.id;
   // Belt: refuse to even consider get-by-id unless UUID (seed/local stay local).
   const openId = isServerSermonId(activeId) ? activeId : null;
 
   try {
     const sermons = await listSermons();
+
+    if (requested) {
+      const hit = sermons.find((s) => s.id === requested);
+      if (hit) {
+        setActiveSermonId(requested);
+        const full = await getSermon(hit.id);
+        return persistServerDoc(full, local, sermons, readOnly);
+      }
+      // Unknown/stale ?id= — ignore it; fall back to the stored active id,
+      // which is left untouched.
+    }
 
     // Prefer last-active UUID only when it appears in the list response.
     // Never speculative GET-by-id for a UUID absent from the list (orphans /
@@ -269,10 +318,10 @@ export async function resolveActiveDocument(): Promise<{
       const match = sermons.find((s) => s.id === openId);
       if (match) {
         const full = await getSermon(match.id);
-        return persistServerDoc(full, local, sermons);
+        return persistServerDoc(full, local, sermons, readOnly);
       }
       // Stale active UUID (not on server) — clear and migrate from local content.
-      clearActiveSermonId();
+      if (!readOnly) clearActiveSermonId();
     }
 
     // Real offline drafts (local-<timestamp>) — POST to obtain a UUID and remap.
@@ -294,7 +343,7 @@ export async function resolveActiveDocument(): Promise<{
 
     if (sermons.length > 0) {
       const full = await getSermon(sermons[0].id);
-      return persistServerDoc(full, local, sermons);
+      return persistServerDoc(full, local, sermons, readOnly);
     }
 
     // Empty server store — seed from local cache (seed content) so first visit
@@ -306,7 +355,7 @@ export async function resolveActiveDocument(): Promise<{
       isServerSermonId(local.id) || isLocalDraftId(local.id)
         ? local
         : migrateClientDocumentIds(local);
-    saveDocument(offlineDoc);
+    if (!readOnly) saveDocument(offlineDoc);
     return { doc: offlineDoc, source: "local", sermons: [] };
   }
 }

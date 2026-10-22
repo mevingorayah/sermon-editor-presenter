@@ -420,7 +420,10 @@ export function EditShell() {
           >
             Export…
           </Link>
-          <Link href="/preach" className={styles.preachBtn}>
+          <Link
+            href={`/preach?id=${encodeURIComponent(doc.id)}`}
+            className={styles.preachBtn}
+          >
             Enter Preaching
           </Link>
         </div>

@@ -10,6 +10,8 @@ import type {
 import styles from "./ReadingToolbar.module.css";
 
 interface ReadingToolbarProps {
+  /** Sermon title (from the sermon's title field), shown small in the bar. */
+  title?: string;
   theme: ReadingTheme;
   typeScaleStep: TypeScaleStep;
   lineHeight: LineHeightOption;
@@ -29,6 +31,7 @@ const LHS: LineHeightOption[] = [1.55, 1.7, 1.85];
 
 export function ReadingToolbar(props: ReadingToolbarProps) {
   const {
+    title,
     theme,
     typeScaleStep,
     lineHeight,
@@ -47,6 +50,12 @@ export function ReadingToolbar(props: ReadingToolbarProps) {
       <Link href="/edit" className={styles.back}>
         ← Back to Edit
       </Link>
+
+      {title ? (
+        <p className={styles.title} data-testid="preach-title" title={title}>
+          {title}
+        </p>
+      ) : null}
 
       <div className={styles.controls} role="toolbar" aria-label="Reading settings">
         <div className={styles.group} role="group" aria-label="Theme">
