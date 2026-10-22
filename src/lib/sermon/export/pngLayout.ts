@@ -223,12 +223,13 @@ export function wrapLineRanges(
       }
       if (cut >= wordEnd) break;
       // Only reached when the word is wider than the column even at 24 pt.
-      // Break after "/", "…", "–" or "—" (the mark stays at the end of the
-      // first line, e.g. "suppléments/" | "compléments") rather than cut
+      // Break after "/", "…", "–", "—" or closing punctuation (the mark stays
+      // at the end of the first line, e.g. "suppléments/" | "compléments",
+      // "l’ensemble :" | "Mo", from a missing space after a no-break one) rather than cut
       // inside a word. A hyphen is never a break ("Jésus-Christ" stays whole).
       let soft = -1;
       for (let k = cut - 1; k > lineStart && soft < 0; k--) {
-        if ("/…–—".includes(text[k])) soft = k;
+        if ("/…–—:;,.?!»)]".includes(text[k])) soft = k;
       }
       if (soft > lineStart) cut = soft + 1;
       out.push([lineStart, cut]);

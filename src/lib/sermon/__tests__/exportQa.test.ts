@@ -10,7 +10,7 @@ import path from "node:path";
 import * as fontkit from "fontkit";
 import type { CalibratedSnapshot } from "@/types/document";
 import { APPROVED_FONT_IDS } from "../export/fonts";
-import { allPageSpecs, layoutSnapshot, type FitPageSpec, type PageSpec } from "../export/pngLayout";
+import { allPageSpecs, layoutSnapshot, wrapLineRanges, type FitPageSpec, type PageSpec } from "../export/pngLayout";
 import { marginMaxIn, maxMarginIn } from "../export/margins";
 import { maxTextSizePt } from "../export/frames";
 import { presentationSettingsSchema } from "../schema";
@@ -98,7 +98,7 @@ test("glyph fallback: PDF embeds the fallback font for '↑' in Lora and keeps t
 const heads = new Set(["Title", "H1", "H2", "H3"]);
 /** A line ending inside a word (not at a space or after / … – —). */
 const letter = (c: string | undefined) => /\p{L}/u.test(c ?? "");
-const midWord = (t: string, end: number) => end < t.length && /\S/.test(t[end])
+const midWord = (t: string, end: number) => end < t.length && (/[\u00a0\u202f]/.test(t[end - 1]) || /\S/.test(t[end]))
   && !(/[\s…–—]/.test(t[end - 1]) || (t[end - 1] === "/" && !(letter(t[end - 2]) && letter(t[end]))));
 const resolveFit = (width: number, height: number): FitPageSpec => ({ kind: "fit", width, height } as FitPageSpec);
 const SENT = "La lumière douce se lève sur les collines et chacun avance avec confiance. ";
@@ -345,6 +345,46 @@ test("words: a joined word too wide even at 24 pt breaks after its '/', never in
     for (const l of lines.slice(0, -1)) {
       const c = t[l.end - 1];
       assert.ok(/\s/.test(c) || c === "/", `${format}: "${t.slice(l.start, l.end)}" ends inside a word`);
+    }
+  }
+});
+
+test("breaks: no-break spaces never break, and no line starts with / » ) ] ? ! : ;", () => {
+  const nb = "\u00a0", nn = "\u202f";
+  const text = `« Il était esklav.${nn}»] Puis il dit${nn}: viens${nn}! Le pain / le vin (et l’eau) sont là${nn}; `
+    + `tu entends${nn}? C’est le «${nb}don${nb}» [voir plus haut] : oui ; non ! peut-être ? enfin / encore.`;
+  let widths = 0;
+  for (let w = 120; w <= 900; w += 7) {
+    const ranges = wrapLineRanges(text, 24, w, undefined, undefined, false);
+    assert.equal(ranges.map(([a, z]) => text.slice(a, z)).join(""), text, "text kept exactly as written");
+    for (const [i, [a, z]] of ranges.entries()) {
+      const line = text.slice(a, z);
+      if (i > 0) assert.ok(!/^[/»)\]?!:;]/.test(line), `w=${w}: line starts with a closing mark: ${JSON.stringify(line)}`);
+      if (z < text.length) assert.ok(!/[\u00a0\u202f]$/.test(line), `w=${w}: broke at a no-break space: ${JSON.stringify(line)}`);
+    }
+    const holder = ranges.find(([a, z]) => a <= text.indexOf("esklav") && z > text.indexOf("esklav"))!;
+    assert.ok(text.slice(...holder).includes(`esklav.${nn}»]`), `w=${w}: "esklav. »]" on one line`);
+    widths++;
+  }
+  assert.ok(widths > 100);
+});
+
+test("breaks: glued punctuation holds in full layouts at default and max", () => {
+  const nn = "\u202f";
+  const body = `Il dit${nn}: « Je suis esklav.${nn}»] Le pain / le vin (et l’eau) ; encore${nn}! Vraiment${nn}? `;
+  const blocks: CalibratedSnapshot["semanticBlocks"] = [{ type: "H1", text: "Le pain / le vin" }, { type: "Body", text: body.repeat(6) }];
+  const fits = [resolveFit(1024, 600), resolveFit(600, 1024)];
+  for (const spec of [...allPageSpecs(), ...fits]) {
+    for (const max of [false, true]) {
+      const L = layoutSnapshot(docSnap(spec, blocks, (max
+        ? { textSizePt: 72, paragraphSpacingPt: 48, lineSpacing: 2, margins: { top: "2in", right: "2in", bottom: "2in", left: "2in" } }
+        : {}) as Partial<CalibratedSnapshot>));
+      for (const l of L.pages.flatMap((p) => p.lines)) {
+        if (l.kind !== "text") continue;
+        const t = L.blocks[l.blockIndex].text;
+        if (l.start > 0) assert.ok(!/^[/»)\]?!:;]/.test(t.slice(l.start)), `${JSON.stringify(spec)} ${max}: ${JSON.stringify(t.slice(l.start, l.end))}`);
+        assert.ok(!midWord(t, l.end), `${JSON.stringify(spec)} ${max}: "${t.slice(l.start, l.end)}" breaks inside a word`);
+      }
     }
   }
 });
