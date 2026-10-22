@@ -17,12 +17,13 @@ function splitLeadingTrailingPunct(token: string): {
   trail: string;
 } {
   const leadMatch = token.match(/^[\p{P}\p{S}]+/u);
-  const trailMatch = token.match(/[\p{P}\p{S}]+$/u);
   const lead = leadMatch?.[0] ?? "";
+  // Match trailing punctuation only in what is left after the lead, so a
+  // token made entirely of punctuation ("—", "...") is emitted once, not twice.
+  const rest = token.slice(lead.length);
+  const trailMatch = rest.match(/[\p{P}\p{S}]+$/u);
   const trail = trailMatch?.[0] ?? "";
-  let core = token;
-  if (lead) core = core.slice(lead.length);
-  if (trail && core.endsWith(trail)) core = core.slice(0, -trail.length);
+  const core = trail ? rest.slice(0, -trail.length) : rest;
   return { lead, core, trail };
 }
 
