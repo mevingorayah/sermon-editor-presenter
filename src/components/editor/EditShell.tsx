@@ -32,6 +32,7 @@ import { DEFAULT_PRESENTATION_SETTINGS } from "@/types/document";
 import { SermonEditor } from "./SermonEditor";
 import { OutlineNav } from "./OutlineNav";
 import { FindBar } from "./FindBar";
+import { saveStatusView } from "@/lib/autosave/saveStatusView";
 import { NotesPanel } from "./NotesPanel";
 import { SermonList } from "./SermonList";
 import styles from "./EditShell.module.css";
@@ -101,6 +102,7 @@ export function EditShell() {
   const [editor, setEditor] = useState<Editor | null>(null);
   const [status, setStatus] = useState<SaveStatus>("saving");
   const [busy, setBusy] = useState(false);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
   /**
    * Remounts the editor only on real doc switches — not when autosave re-keys
    * the same doc to a new server id (local-* promotion / 404 recovery), so the
@@ -215,6 +217,23 @@ export function EditShell() {
   // cancel (not dispose) so a StrictMode effect re-run keeps the controller usable.
   useEffect(() => () => autosave.cancel(), [autosave]);
 
+  // Stamp "Saved 14:05" only after a real save (a save started since open).
+  const saveStartedRef = useRef(false);
+  useEffect(() => {
+    saveStartedRef.current = false;
+    setSavedAt(null);
+  }, [editorKey]);
+  useEffect(() => {
+    if (status === "saving" || status === "retrying") {
+      saveStartedRef.current = true;
+    } else if (
+      (status === "saved-server" || status === "saved-local") &&
+      saveStartedRef.current
+    ) {
+      setSavedAt(new Date());
+    }
+  }, [status]);
+
   // Coming back online: retry anything still queued (or a failed save).
   useEffect(() => {
     const onOnline = () => {
@@ -238,7 +257,7 @@ export function EditShell() {
         saveDocument(next);
         docRef.current = next;
         autosave.request("content");
-        setStatus((s) => (STICKY_STATUSES.has(s) ? s : "saved-local"));
+        setStatus((s) => (STICKY_STATUSES.has(s) ? s : "saving"));
         return next;
       });
     },
@@ -257,7 +276,7 @@ export function EditShell() {
         saveDocument(next);
         docRef.current = next;
         autosave.request("notes");
-        setStatus((s) => (STICKY_STATUSES.has(s) ? s : "saved-local"));
+        setStatus((s) => (STICKY_STATUSES.has(s) ? s : "saving"));
         return next;
       });
     },
@@ -377,7 +396,11 @@ export function EditShell() {
     [doc?.content],
   );
 
-  const statusLabel = STATUS_LABELS[status];
+  const statusView = saveStatusView(status, {
+    pending: autosave.hasPending,
+    savedAt,
+  });
+  const statusLabel = statusView.label;
   const canRetry = status === "failed-network" || status === "failed-server";
 
   if (!doc) {
@@ -394,16 +417,22 @@ export function EditShell() {
         <div className={styles.brand}>
           <span className={styles.modeBadge}>Editing</span>
           <h1 className={styles.docTitle}>{doc.title || "Untitled sermon"}</h1>
-        </div>
-        <div className={styles.actions}>
           <span
             className={styles.saved}
+            role="status"
             aria-live="polite"
+            aria-label={statusLabel || undefined}
             data-testid="save-status"
             data-status={status}
+            data-tone={statusView.tone}
+            data-empty={statusLabel ? undefined : ""}
+            title={STATUS_LABELS[status]}
           >
-            {statusLabel}
+            <span className={styles.savedText}>{statusLabel}</span>
           </span>
+        </div>
+        <div className={styles.actions}>
+
           {canRetry ? (
             <button
               type="button"
