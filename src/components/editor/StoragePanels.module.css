@@ -25,3 +25,7 @@
 /* Destructive action: white on #b3261e is 6.5:1 (WCAG AA). */
 .row .danger { border: 0; background: #b3261e; color: #fff; font-weight: 600; }
 .row .danger:hover, .row .danger:focus-visible { background: #8c1d18; }
+
+/* 44px minimum tap targets (QA #32) */
+.dialog button, .conflict button, .banner button, .row button, .primary, .link { min-height: 44px; min-width: 44px; }
+.link { padding: 0 0.5rem; }
