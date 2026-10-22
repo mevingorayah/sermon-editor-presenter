@@ -130,3 +130,79 @@
 .quote :global(u) {
   text-decoration-line: underline;
 }
+
+/* ---- Title block: Scripture line under the title ---- */
+.titleSub {
+  margin: calc(var(--rm-gap-title-body) * -0.6) 0 var(--rm-gap-title-body);
+  font-size: calc(var(--rm-size-body) * 0.8 * var(--rm-scale));
+  line-height: var(--rm-lh-tight);
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.06em;
+  color: var(--rm-fg-muted);
+}
+
+/* ---- Stage cues ([Pause.] …): inline, smaller, grey italic, a little air ---- */
+.cue {
+  font-size: 0.86em;
+  font-style: italic;
+  margin-inline: 0.18em;
+}
+.cue,
+.cue * {
+  /* Beats the run's inline textStyle colour: cues are always the muted grey. */
+  color: var(--rm-fg-muted) !important;
+}
+
+/* ---- Pulpit stage (Preach only) ---- */
+[data-pulpit] .column {
+  font-size: calc(var(--rm-size-body) * var(--rm-scale));
+  hyphens: none;
+  -webkit-hyphens: none;
+}
+
+[data-pulpit] .body,
+[data-pulpit] .quote,
+[data-pulpit] .list {
+  hyphens: none;
+  overflow-wrap: break-word;
+}
+
+[data-pulpit] .body + .body {
+  margin-top: 0.35em;
+}
+
+[data-pulpit] .title {
+  text-align: center !important;
+  font-size: calc(var(--rm-size-title) * var(--rm-scale));
+  margin-bottom: var(--rm-gap-title-body);
+}
+
+[data-pulpit] .titleSub {
+  text-align: center !important;
+}
+
+/* H2 headings: section markers with an Accent rule above and room before. */
+[data-pulpit] .h1,
+[data-pulpit] .h2 {
+  margin-top: 1.6em;
+  padding-top: 0.55em;
+  border-top: 2px solid var(--rm-accent);
+  font-weight: 700;
+}
+
+[data-pulpit] .h1 {
+  font-size: calc(var(--rm-size-h1) * var(--rm-scale));
+}
+
+[data-pulpit] .h2 {
+  font-size: calc(var(--rm-size-h2) * var(--rm-scale));
+}
+
+/* Scripture: soft panel with an Accent rule on the left. */
+[data-pulpit] .scripture {
+  margin: 0.4em 0;
+  padding: 0.7em 0.9em 0.7em 1em;
+  border-left: 4px solid var(--rm-accent);
+  background: color-mix(in srgb, var(--rm-accent) 8%, var(--rm-bg-elevated));
+  border-radius: 0 12px 12px 0;
+}

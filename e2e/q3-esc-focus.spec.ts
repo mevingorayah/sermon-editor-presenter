@@ -21,21 +21,23 @@ test("Esc closes Document setup and returns focus to the Calibrate trigger", asy
   await page.waitForURL(/\/preach\?calibrate=1$/);
   const panel = page.getByRole("complementary", { name: /Document setup/ });
   await expect(panel).toBeVisible({ timeout: 20_000 });
-  const calibrate = page.getByRole("button", { name: "Calibrate" });
+  // Calibrate lives in the ⚙ popover now; focus falls back to ⚙.
+  const gear = page.getByRole("button", { name: "Reading settings" });
 
   // Deep-link open: Esc closes, focus falls back to the in-page trigger.
   await page.keyboard.press("Escape");
   await expect(panel).toBeHidden();
-  await expect(calibrate).toBeFocused();
+  await expect(gear).toBeFocused();
 
   // In-page open, Esc from inside the panel.
-  await calibrate.click();
+  await gear.click();
+  await page.getByRole("button", { name: "Calibrate…" }).click();
   await expect(panel).toBeVisible();
   await panel.getByLabel("Filename").focus();
   await page.keyboard.press("Escape");
   await expect(panel).toBeHidden();
-  await expect(calibrate).toBeFocused();
-  await expect(calibrate).toHaveAttribute("aria-pressed", "false");
+  await expect(gear).toBeFocused();
+  await expect(gear).toHaveAttribute("aria-expanded", "false");
   expect(errors).toEqual([]);
 });
 

@@ -15,7 +15,7 @@
   --rm-size-h2: 1.369rem;
   --rm-size-body: 1.25rem;
   --rm-size-caption: 0.8125rem;
-  --rm-lh-body: 1.7;
+  --rm-lh-body: 1.55;
   --rm-lh-tight: 1.35;
   --rm-measure: 66ch;
   --rm-tracking-caps: 0.04em;
@@ -44,9 +44,9 @@
 
 /* Dark (stage default for Preaching) */
 [data-reading-mode][data-theme="dark"] {
-  --rm-bg: #12110f;
-  --rm-bg-elevated: #1a1814;
-  --rm-fg: #ede8df;
+  --rm-bg: #141210;
+  --rm-bg-elevated: #1d1a16;
+  --rm-fg: #ece6da;
   --rm-fg-muted: #a39e94;
   --rm-border: #2a2824;
   --rm-accent: #c4a574;
@@ -85,4 +85,23 @@
     --rm-settle: 0px;
     --rm-dur: 0ms;
   }
+}
+
+/*
+ * Pulpit stage (Preach only, not the Calibrate preview): type scales with the
+ * screen so lines stay ~38–45 characters by growing the text, not by
+ * narrowing the column. min(vw, vh) keeps a landscape tablet near 28–32 px
+ * while a laptop goes larger; phones floor at 22 px.
+ */
+[data-reading-mode] [data-pulpit] {
+  --rm-size-body: clamp(22px, min(3.5vw, 4.4vh), 64px);
+  --rm-size-title: calc(var(--rm-size-body) * 1.75);
+  --rm-size-h1: calc(var(--rm-size-body) * 1.4);
+  --rm-size-h2: calc(var(--rm-size-body) * 1.25);
+  --rm-size-caption: calc(var(--rm-size-body) * 0.6);
+  --rm-measure: 44ch;
+  --rm-pad-inline: clamp(1rem, 4vw, 4rem);
+  --rm-pad-block: clamp(1.25rem, 4vh, 3rem);
+  --rm-gap-block: 0.9em;
+  --rm-indent-h2: 0;
 }

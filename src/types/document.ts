@@ -101,7 +101,7 @@ export interface CalibratedSnapshot {
 export const DEFAULT_PRESENTATION_SETTINGS: PresentationSettings = {
   theme: "dark",
   typeScaleStep: 0,
-  lineHeight: 1.7,
+  lineHeight: 1.55,
   bionic: false,
   calibrationTarget: "screen-16-9",
 };

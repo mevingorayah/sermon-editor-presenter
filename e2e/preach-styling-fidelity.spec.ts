@@ -92,6 +92,7 @@ async function seed(page: Page, theme: "light" | "dark", bionic: boolean) {
     ([k, id]) => {
       localStorage.clear();
       localStorage.setItem(k, id);
+      localStorage.setItem("sermon-editor-presenter:preach-view:v1", "flow");
     },
     [ACTIVE_ID_KEY, sermon.id] as const,
   );
@@ -211,5 +212,9 @@ test("Edit and Preach agree on fonts, colours and proportions (light)", async ({
   const col = page.locator("article");
   await expect(col.getByText("Fidelity Sermon")).toBeVisible({ timeout: 20_000 });
   const preach = await read(col, "h1", "h2", "h3");
-  expect(preach).toEqual(edit);
+  // Preach headings are deliberately larger (pulpit layout); everything else matches.
+  const { ratios: pr, ...pRest } = preach;
+  const { ratios: er, ...eRest } = edit;
+  expect(pRest).toEqual(eRest);
+  pr.forEach((r, i) => expect(r).toBeGreaterThanOrEqual(er[i]));
 });

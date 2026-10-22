@@ -1,0 +1,246 @@
+.bar {
+  --tap: 44px;
+  position: sticky;
+  top: var(--rm-progress-h);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: calc(var(--tap) + 8px);
+  padding: 4px var(--rm-pad-inline, 1rem);
+  padding-inline: clamp(0.5rem, 3vw, 2rem);
+  background: color-mix(in srgb, var(--rm-bg) 88%, transparent);
+  border-bottom: 1px solid var(--rm-border);
+  font-family: var(--rm-font-ui);
+  transition: opacity 400ms var(--rm-ease);
+}
+
+.bar[data-faded="true"] {
+  opacity: 0;
+}
+
+.back,
+.timerBtn,
+.iconBtn,
+.btn,
+.active,
+.select,
+.check {
+  min-height: var(--tap);
+  min-width: var(--tap);
+  box-sizing: border-box;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.75rem;
+  color: var(--rm-accent);
+  text-decoration: none;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: 8px;
+}
+
+.right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.timerBtn,
+.iconBtn,
+.btn,
+.active {
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--rm-border);
+  background: transparent;
+  color: var(--rm-fg);
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.iconBtn {
+  padding: 0;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.time {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding-inline: 0.35rem;
+  color: var(--rm-fg-muted);
+}
+
+.time[data-tone="warn"] {
+  color: #e8861a;
+}
+
+.time[data-tone="over"] {
+  color: #e5322d;
+  font-weight: 800;
+}
+
+.timerBtn {
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.timerBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.active {
+  background: var(--rm-accent);
+  color: var(--rm-bg);
+  border-color: var(--rm-accent);
+}
+
+.back:focus-visible,
+.timerBtn:focus-visible,
+.iconBtn:focus-visible,
+.btn:focus-visible,
+.active:focus-visible,
+.select:focus-visible,
+.check input:focus-visible {
+  outline: 3px solid var(--rm-accent);
+  outline-offset: 2px;
+}
+
+/* Side sheet: slides in from the right; the page stays visible beside it. */
+.panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100dvh;
+  overflow-y: auto;
+  z-index: 40;
+  width: min(23rem, 88vw);
+  animation: sheetIn 180ms ease-out;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.9rem;
+  border-left: 1px solid var(--rm-border);
+  background: var(--rm-bg-elevated);
+  color: var(--rm-fg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+}
+
+.rowLabel {
+  min-width: 5rem;
+  color: var(--rm-fg-muted);
+}
+
+.select {
+  flex: 1;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--rm-fg);
+  background: var(--rm-bg);
+  border: 1px solid var(--rm-border);
+  border-radius: 8px;
+  padding: 0 0.6rem;
+}
+
+.check {
+  cursor: pointer;
+}
+
+.check input {
+  width: 24px;
+  height: 24px;
+  margin: 10px;
+  accent-color: var(--rm-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    transition: none;
+  }
+}
+
+.bar[data-overlay="true"] {
+  position: fixed;
+  left: 0;
+  right: 0;
+}
+
+@keyframes sheetIn {
+  from { transform: translateX(100%); }
+  to { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel { animation: none; }
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid var(--rm-border);
+}
+.sectionTitle {
+  margin: 0;
+  font: 600 0.8rem/1.2 var(--rm-font-ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--rm-fg-muted);
+}
+.formatGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+.check {
+  width: 24px;
+  height: 24px;
+  margin: 10px;
+}
+.ptValue {
+  min-width: 4ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+  color: var(--rm-fg-muted);
+  flex: 1 1 auto;
+  text-align: center;
+}
