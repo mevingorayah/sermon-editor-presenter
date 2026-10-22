@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import PDFDocument from "pdfkit";
 import type { CalibratedSnapshot } from "@/types/document";
 import { HIGHLIGHT_AMBER } from "./colors";
@@ -10,6 +12,29 @@ import {
   citationCaps,
 } from "./contentWalk";
 import { pdfkitFont, type FontFamilyId } from "./fonts";
+import { exportFontName } from "./textMeasure";
+
+/** Folder with the static export fonts (assets/fonts/export, /app in Docker). */
+export function exportFontDir(): string | null {
+  const c = [process.env.EXPORT_FONT_DIR && path.join(process.env.EXPORT_FONT_DIR, "export"),
+    "/app/assets/fonts/export", path.join(process.cwd(), "assets/fonts/export")].filter(Boolean) as string[];
+  return c.find((d) => fs.existsSync(path.join(d, "LiterataExport-Regular.ttf"))) ?? null;
+}
+
+/** Register the export fonts; returns a font-name resolver for this doc. */
+function registerExportFonts(doc: PDFKit.PDFDocument): (id: FontFamilyId, st: { bold?: boolean; italic?: boolean }) => string {
+  const dir = exportFontDir();
+  if (!dir) {
+    console.warn("[export/pdf] assets/fonts/export missing; falling back to built-in fonts (breaks may differ)");
+    return pdfkitFont;
+  }
+  const seen = new Set<string>();
+  return (id, st) => {
+    const name = exportFontName(id, st);
+    if (!seen.has(name)) { doc.registerFont(name, path.join(dir, `${name}.ttf`)); seen.add(name); }
+    return name;
+  };
+}
 import { frameSizeInches, pxPerPt, type PageInput } from "./frames";
 import { layoutSnapshot, roleStyle } from "./pngLayout";
 import { blockColor, paletteFor, sliceRuns, trimRunsEnd } from "./png";
@@ -214,6 +239,7 @@ export async function buildPdf(
       autoFirstPage: false,
       compress: options.compress !== false,
     });
+    const fontFor = registerExportFonts(doc);
 
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
@@ -235,7 +261,7 @@ export async function buildPdf(
         const fs = P(line.size);
         if (line.kind === "citation") {
           const text = citationCaps(block.citation ?? "");
-          doc.font(pdfkitFont("serif", {})).fontSize(fs).fillColor(pal.muted);
+          doc.font(fontFor("serif", {})).fontSize(fs).fillColor(pal.muted);
           const w = doc.widthOfString(text);
           doc.text(text, P(f.left + f.contentWidth) - w, baseline, { lineBreak: false, baseline: "alphabetic" });
           continue;
@@ -243,7 +269,7 @@ export async function buildPdf(
         const role = roleStyle(block.type);
         const runs = trimRunsEnd(sliceRuns(block.runs, line.start, line.end));
         const fontOf = (r: StyledRun) =>
-          pdfkitFont(r.fontFamily, { bold: role.bold || !!r.bold, italic: role.italic || !!r.italic });
+          fontFor(r.fontFamily, { bold: role.bold || !!r.bold, italic: role.italic || !!r.italic });
         const total = runs.reduce((w, r) => w + doc.font(fontOf(r)).fontSize(fs).widthOfString(r.text), 0);
         const free = P(f.contentWidth) - total;
         let x = P(f.left) + (block.align === "center" ? free / 2 : block.align === "right" ? free : 0);
@@ -251,15 +277,15 @@ export async function buildPdf(
           doc.font(fontOf(r)).fontSize(fs).fillColor(r.color || color(block.type));
           const w = doc.widthOfString(r.text);
           if (r.highlight) {
-            doc.save().rect(x, baseline - fs * 0.8, w, fs * 1.05).fill(HIGHLIGHT_AMBER).restore();
+            doc.save().rect(x, baseline - fs * 0.8, w, fs * 1.05).fill(pal.highlight).restore();
             doc.fillColor(r.color || color(block.type));
           }
-          doc.text(r.text, x, baseline, {
-            lineBreak: false,
-            baseline: "alphabetic",
-            underline: !!r.underline,
-            strike: !!r.strike,
-          });
+          doc.text(r.text, x, baseline, { lineBreak: false, baseline: "alphabetic" });
+          // Underline/strike drawn by hand (pdfkit's need a wrapped width).
+          const rule = (dy: number) =>
+            doc.save().rect(x, baseline + dy, w, Math.max(0.5, fs / 18)).fill(r.color || color(block.type)).restore();
+          if (r.underline) rule(fs * 0.1);
+          if (r.strike) rule(-fs * 0.3);
           x += w;
         }
       }

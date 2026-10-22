@@ -1,6 +1,5 @@
 import PptxGenJS from "pptxgenjs";
 import type { CalibratedSnapshot } from "@/types/document";
-import { HIGHLIGHT_AMBER } from "./colors";
 import { citationCaps, titleTextFromSnapshot, type StyledRun } from "./contentWalk";
 import { blockColor, paletteFor, sliceRuns, trimRunsEnd } from "./png";
 import { frameSizeInches, pxPerInch, pxPerPt, type PageInput } from "./frames";
@@ -17,7 +16,7 @@ const hex = (c: string) => c.replace(/^#/, "");
 
 function runsToPptxText(
   runs: StyledRun[],
-  opts: { fontSize: number; defaultColor: string; bold: boolean; italic: boolean },
+  opts: { fontSize: number; defaultColor: string; bold: boolean; italic: boolean; highlight: string },
 ): PptxGenJS.TextProps[] {
   return runs.map((run) => ({
     text: run.text,
@@ -29,7 +28,7 @@ function runsToPptxText(
       underline: run.underline ? { style: "sng" } : undefined,
       strike: run.strike ? "sngStrike" : undefined,
       color: hex(run.color || opts.defaultColor),
-      highlight: run.highlight ? hex(HIGHLIGHT_AMBER) : undefined,
+      highlight: run.highlight ? hex(opts.highlight) : undefined,
     },
   }));
 }
@@ -89,7 +88,7 @@ export async function buildPptx(
       const runs = trimRunsEnd(sliceRuns(block.runs, line.start, line.end));
       if (!runs.length) continue;
       slide.addText(
-        runsToPptxText(runs, { fontSize: pt(line.size), defaultColor: blockColor(block.type, p), ...role }),
+        runsToPptxText(runs, { fontSize: pt(line.size), defaultColor: blockColor(block.type, p), highlight: p.highlight, ...role }),
         { ...box, align: block.align },
       );
     }

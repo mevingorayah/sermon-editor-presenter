@@ -109,17 +109,57 @@ const winAnsi = (hex: string) =>
     })
     .join("");
 
+const hexToStr = (h: string) =>
+  String.fromCodePoint(...(h.match(/..../g) ?? []).map((x) => parseInt(x, 16)));
+
+/** ToUnicode CMap (pdfkit's bfrange/bfchar forms) → glyph-id → text. */
+function parseCmap(cmap: string): Map<number, string> {
+  const m = new Map<number, string>();
+  for (const sec of cmap.matchAll(/beginbfrange([\s\S]*?)endbfrange/g)) {
+    for (const r of sec[1].matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>\s*(\[[^\]]*\]|<[0-9a-fA-F]+>)/g)) {
+      const lo = parseInt(r[1], 16), hi = parseInt(r[2], 16);
+      if (r[3].startsWith("[")) {
+        [...r[3].matchAll(/<([0-9a-fA-F]+)>/g)].forEach((d, i) => m.set(lo + i, hexToStr(d[1])));
+      } else {
+        const base = parseInt(r[3].slice(1, -1), 16);
+        for (let g = lo; g <= hi; g++) m.set(g, String.fromCodePoint(base + g - lo));
+      }
+    }
+  }
+  for (const sec of cmap.matchAll(/beginbfchar([\s\S]*?)endbfchar/g)) {
+    for (const r of sec[1].matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/g)) m.set(parseInt(r[1], 16), hexToStr(r[2]));
+  }
+  return m;
+}
+
 /** Uncompressed PDF → per page: media box and text lines grouped by baseline. */
 function pdfPages(buf: Buffer): { w: number; h: number; lines: string[] }[] {
   const s = buf.toString("latin1");
-  const boxes = [...s.matchAll(/\/Type \/Page\n\/Parent[\s\S]*?\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\][\s\S]*?\/Contents (\d+) 0 R/g)];
+  const obj = (n: string) => s.match(new RegExp(`\\n${n} 0 obj\\n([\\s\\S]*?)\\nendobj`))![1];
+  const streamOf = (n: string) => obj(n).match(/stream\n([\s\S]*?)\nendstream/)![1];
+  const cmaps = new Map<string, Map<number, string> | null>();
+  const decoderFor = (fontRef: string) => {
+    if (!cmaps.has(fontRef)) {
+      const tu = obj(fontRef).match(/\/ToUnicode (\d+) 0 R/);
+      cmaps.set(fontRef, tu ? parseCmap(Buffer.from(streamOf(tu[1]), "latin1").toString("utf8")) : null);
+    }
+    const cm = cmaps.get(fontRef);
+    return (hex: string) =>
+      cm ? (hex.match(/..../g) ?? []).map((g) => cm.get(parseInt(g, 16)) ?? "?").join("") : winAnsi(hex);
+  };
+  const boxes = [...s.matchAll(/\/Type \/Page\n\/Parent[\s\S]*?\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\][\s\S]*?\/Contents (\d+) 0 R[\s\S]*?\/Resources (\d+) 0 R/g)];
   return boxes.map((b) => {
-    const objRe = new RegExp(`\\n${b[3]} 0 obj\\n[\\s\\S]*?stream\\n([\\s\\S]*?)\\nendstream`);
-    const stream = s.match(objRe)![1];
+    const res = obj(b[4]);
+    const fonts = new Map([...(res.match(/\/Font <<([\s\S]*?)>>/)?.[1] ?? "").matchAll(/\/(\S+) (\d+) 0 R/g)].map((f) => [f[1], f[2]]));
+    const stream = streamOf(b[3]);
     const byY = new Map<string, string>();
     const order: string[] = [];
-    for (const t of stream.matchAll(/1 0 0 1 [\d.-]+ ([\d.-]+) Tm\n[\s\S]*?\[([^\]]*)\] TJ/g)) {
-      const text = [...t[2].matchAll(/<([0-9a-f]*)>/g)].map((x) => winAnsi(x[1])).join("");
+    let font = "";
+    for (const t of stream.matchAll(/1 0 0 1 [\d.-]+ ([\d.-]+) Tm\n([\s\S]*?)\[([^\]]*)\] TJ/g)) {
+      const tf = t[2].match(/\/(\S+) [\d.]+ Tf/);
+      if (tf) font = tf[1];
+      const dec = fonts.has(font) ? decoderFor(fonts.get(font)!) : winAnsi;
+      const text = [...t[3].matchAll(/<([0-9a-f]*)>/g)].map((x) => dec(x[1])).join("");
       if (!byY.has(t[1])) order.push(t[1]);
       byY.set(t[1], (byY.get(t[1]) ?? "") + text);
     }

@@ -3,12 +3,14 @@ import JSZip from "jszip";
 import type { CalibratedSnapshot } from "@/types/document";
 import {
   DEFAULT_ACCENT_DARK,
+  HIGHLIGHT_AMBER,
   DEFAULT_ACCENT_LIGHT,
   toHexRgb,
 } from "./colors";
 import { citationCaps, type StyledBlock, type StyledRun } from "./contentWalk";
 import { layoutSnapshot, roleStyle, type PngPage, type SnapshotLayout } from "./pngLayout";
-import { metricCompatibleCss } from "./textMeasure";
+import { afmMeasurer, metricCompatibleCss } from "./textMeasure";
+import { DARK_YELLOW_PRESET, ensureContrast } from "@/lib/reading/contrast";
 
 export interface PngBuildOptions {
   resolvedColors?: { accent: string };
@@ -54,23 +56,31 @@ interface Palette {
   fg: string;
   muted: string;
   accent: string;
+  /** Title colour: dark theme lifts the accent to 4.5:1 on the background. */
+  title: string;
+  /** Highlight fill behind marked text. */
+  highlight: string;
   light: boolean;
 }
 
 /** Colours for a theme. Theme never affects layout. */
 export function paletteFor(theme: "light" | "dark", accentIn?: string): Palette {
   const light = theme === "light";
+  const bg = light ? "#F7F4EF" : "#1A1A1A";
+  const accent = toHexRgb(accentIn) || (light ? DEFAULT_ACCENT_LIGHT : DEFAULT_ACCENT_DARK);
   return {
     light,
-    bg: light ? "#F7F4EF" : "#1A1A1A",
+    bg,
     fg: light ? "#111111" : "#F0EDE6",
     muted: light ? "#555555" : "#A8A29A",
-    accent: toHexRgb(accentIn) || (light ? DEFAULT_ACCENT_LIGHT : DEFAULT_ACCENT_DARK),
+    accent,
+    title: light ? accent : ensureContrast(accent, bg),
+    highlight: light ? HIGHLIGHT_AMBER : DARK_YELLOW_PRESET,
   };
 }
 
 export function blockColor(type: StyledBlock["type"], p: Palette): string {
-  if (type === "Title") return p.accent;
+  if (type === "Title") return p.title;
   if (type === "Caption") return p.muted;
   if (type === "H2") return p.light ? "#222222" : "#D4CFC5";
   return p.fg;
@@ -97,9 +107,22 @@ function pageSvg(layout: SnapshotLayout, page: PngPage, p: Palette): string {
       block.align === "center" ? f.left + f.contentWidth / 2
         : block.align === "right" ? f.left + f.contentWidth
           : f.left;
-    const tspans = trimRunsEnd(sliceRuns(block.runs, line.start, line.end))
+    const runs = trimRunsEnd(sliceRuns(block.runs, line.start, line.end));
+    const styleOf = (run: StyledRun) => ({ font: run.fontFamily, bold: role.bold || !!run.bold, italic: role.italic || !!run.italic });
+    const widths = runs.map((run) => afmMeasurer(run.text, line.size, styleOf(run)));
+    const total = widths.reduce((a, w) => a + w, 0);
+    let hx = anchor === "middle" ? x - total / 2 : anchor === "end" ? x - total : x;
+    runs.forEach((run, i) => {
+      if (run.highlight) {
+        parts.push(
+          `<rect x="${hx.toFixed(2)}" y="${(line.y + line.size * 0.15).toFixed(2)}" width="${widths[i].toFixed(2)}" height="${(line.size * 1.05).toFixed(2)}" fill="${escapeXml(p.highlight)}" />`,
+        );
+      }
+      hx += widths[i];
+    });
+    const tspans = runs
       .map((run) => {
-        const fill = run.highlight ? "#6B5A1E" : run.color || color;
+        const fill = run.color || color;
         const deco = [run.underline ? "underline" : "", run.strike ? "line-through" : ""].filter(Boolean).join(" ");
         return `<tspan fill="${escapeXml(fill)}" font-family="${escapeXml(metricCompatibleCss(run.fontFamily))}" font-weight="${role.bold || run.bold ? 700 : 400}" font-style="${role.italic || run.italic ? "italic" : "normal"}"${deco ? ` text-decoration="${deco}"` : ""}>${escapeXml(run.text)}</tspan>`;
       })

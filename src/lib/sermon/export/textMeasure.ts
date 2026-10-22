@@ -1,5 +1,5 @@
-import { AFM_WIDTHS, METRIC_CHARS } from "./fontMetrics";
-import { pdfkitFont, type FontFamilyId } from "./fonts";
+import { APP_METRIC_CHARS as METRIC_CHARS, APP_WIDTHS } from "./appFontMetrics";
+import type { FontFamilyId } from "./fonts";
 
 /** Style that affects glyph widths. */
 export interface MeasureStyle {
@@ -27,7 +27,7 @@ function charWidth(ch: string, widths: readonly number[], memo: Map<string, numb
   if (hit !== undefined) return hit;
   let w: number;
   const i = INDEX.get(ch);
-  if (i !== undefined) w = widths[i];
+  if (i !== undefined && widths[i] >= 0) w = widths[i];
   else if (SPACE_LIKE.test(ch)) w = widths[0];
   else if (/\p{M}/u.test(ch)) w = 0; // combining mark
   else {
@@ -36,42 +36,58 @@ function charWidth(ch: string, widths: readonly number[], memo: Map<string, numb
     const base = ch.normalize("NFD").replace(/\p{M}/gu, "");
     const j = base.length === 1 ? INDEX.get(base) : undefined;
     // Anything else (Greek, Hebrew …): a wide-ish fallback so we never overflow.
-    w = j !== undefined ? widths[j] : Math.max(widths[INDEX.get("n")!], 600);
+    w = j !== undefined && widths[j] >= 0 ? widths[j] : Math.max(widths[INDEX.get("n")!], 600);
   }
   memo.set(ch, w);
   return w;
 }
 
-/** Default measurer: Adobe Core 14 metrics (Helvetica/Times/Courier families). */
+/**
+ * Export font for a family + style: static Literata / Inter / JetBrains Mono
+ * instances in assets/fonts/export. PDF embeds these files, PNG renders them
+ * by family name via fontconfig, and the measurer below uses their widths.
+ */
+export function exportFontName(id: FontFamilyId, style: { bold?: boolean; italic?: boolean } = {}): string {
+  const fam = id === "mono" ? "JetBrainsMonoExport" : id === "sans" ? "InterExport" : "LiterataExport";
+  const st = style.bold && style.italic ? "BoldItalic" : style.bold ? "Bold" : style.italic ? "Italic" : "Regular";
+  return `${fam}-${st}`;
+}
+
+/** Default measurer: the export fonts' real advance widths (pure table). */
 export const afmMeasurer: TextMeasurer = (text, sizePx, style) => {
-  const name = pdfkitFont(style.font, style);
-  const widths = AFM_WIDTHS[name];
+  const name = exportFontName(style.font, style);
+  const widths = APP_WIDTHS[name];
   let memo = cache.get(name);
   if (!memo) cache.set(name, (memo = new Map()));
   let units = 0;
   for (const ch of text) units += charWidth(ch, widths, memo);
   return (units / 1000) * sizePx;
 };
+export const appFontMeasurer = afmMeasurer;
 
 /**
- * Font faces that share the default measurer's metrics, for renderers.
- * PNG (SVG via fontconfig) uses the Liberation families, which ship in both
- * Dockerfiles; PPTX/DOCX use the Office faces with the same metrics.
+ * CSS families for the PNG renderer: the export instances first (registered
+ * with fontconfig from assets/fonts in both Dockerfiles), same widths as above.
  */
 export function metricCompatibleCss(id: FontFamilyId): string {
   switch (id) {
-    case "mono": return '"Liberation Mono", "Courier New", Courier, monospace';
-    case "serif": return '"Liberation Serif", "Times New Roman", Times, serif';
+    case "mono": return '"JetBrains Mono Export", "JetBrains Mono", "Liberation Mono", monospace';
+    case "serif": return '"Literata Export", Literata, "Liberation Serif", serif';
     case "sans":
-    default: return '"Liberation Sans", Arial, Helvetica, sans-serif';
+    default: return '"Inter Export", Inter, "Liberation Sans", sans-serif';
   }
 }
 
+/**
+ * Office faces for PPTX/DOCX (viewers don't have Literata/Inter). Each is no
+ * wider than its export font, so the pre-broken, non-wrapping PPTX lines
+ * never overflow; they just sit slightly narrower.
+ */
 export function metricCompatibleOffice(id: FontFamilyId): string {
   switch (id) {
     case "mono": return "Courier New";
     case "serif": return "Times New Roman";
     case "sans":
-    default: return "Arial";
+    default: return "Calibri"; // Arial is about as wide as Inter; Calibri is safely narrower
   }
 }

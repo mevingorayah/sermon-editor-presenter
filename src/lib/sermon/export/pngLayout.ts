@@ -348,7 +348,11 @@ export interface SnapshotLayout {
 /** Lay out a calibrated snapshot exactly as every export does. */
 export function layoutSnapshot(snapshot: CalibratedSnapshot, opts: LayoutOptions = {}): SnapshotLayout {
   const target = pageSpecFromSnapshot(snapshot);
-  let styled = styledBlocksFromSnapshot(snapshot);
+  // Body text is serif (as in Edit) unless the writer picked a font.
+  let styled = styledBlocksFromSnapshot(snapshot).map((b) => ({
+    ...b,
+    runs: b.runs.map((r) => (r.fontExplicit ? r : { ...r, fontFamily: "serif" as const })),
+  }));
   if (!styled.length) {
     styled = [{ type: "Title", align: "left", runs: [{ text: titleTextFromSnapshot(snapshot), fontFamily: "serif" }] }];
   }
