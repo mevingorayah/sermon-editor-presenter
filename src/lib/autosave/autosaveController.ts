@@ -204,6 +204,37 @@ export class AutosaveController {
     return this.flush();
   }
 
+  /**
+   * Save everything queued right now (skip debounce/backoff) and wait for it,
+   * including any save already in flight. Used before a doc switch so an edit
+   * made just before the switch is never dropped. Resolves true when nothing
+   * is left to save; false if a save failed (the edit stays queued and the
+   * normal retry/offline status applies).
+   */
+  async flushPending(): Promise<boolean> {
+    if (this.disposed) return this.dirty.size === 0;
+    for (const h of this.debounce.values()) this.timers.clear(h);
+    this.debounce.clear();
+    if (this.dirty.size > 0) {
+      this.attempts = 0;
+      this.exhausted = false;
+      this.clearRetry();
+    }
+    // Bounded: each pass either drains the queue, fails, or waits on a flight.
+    for (let i = 0; i < 10; i++) {
+      if (this.flight) {
+        await this.flight;
+        continue;
+      }
+      if (this.dirty.size === 0) return true;
+      await this.flush();
+      if (this.dirty.size > 0 && (this.retryTimer !== null || this.exhausted)) {
+        return false;
+      }
+    }
+    return this.dirty.size === 0 && !this.flight;
+  }
+
   get hasPending(): boolean {
     return this.dirty.size > 0;
   }

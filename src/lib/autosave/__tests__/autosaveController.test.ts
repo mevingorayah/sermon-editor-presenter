@@ -702,3 +702,71 @@ describe("autosave error classification and retries", () => {
     );
   });
 });
+
+/* ------------------------------------------------------------------ */
+
+describe("flushPending before a sermon switch", () => {
+  let server: FakeServer;
+  let originalFetch: typeof fetch;
+  const ID = "44444444-4444-4444-8444-444444444444";
+
+  beforeEach(() => {
+    installLocalStorage();
+    server = new FakeServer();
+    server.sermons.set(ID, {
+      id: ID,
+      meta: { title: "Fixture", createdAt: "x", updatedAt: "x" },
+      content: makeDoc(ID).content,
+      presentation: { ...DEFAULT_PRESENTATION_SETTINGS },
+      notes: "",
+    } as Sermon);
+    originalFetch = globalThis.fetch;
+    globalThis.fetch = server.handle as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    delete (globalThis as { window?: unknown }).window;
+  });
+
+  it("saves a debounced edit immediately and resolves true", async () => {
+    const { timers, controller, edit } = setup(server, makeDoc(ID));
+    edit("Typed just before switching");
+    const ok = await controller.flushPending();
+    assert.equal(ok, true);
+    assert.equal(controller.hasPending, false);
+    assert.equal(server.count("PATCH", /\/content$/), 1);
+    const saved = server.sermons.get(ID)!;
+    assert.deepEqual(saved.content, makeDoc(ID, "Typed just before switching").content);
+    // The debounce timer was cleared: no second PATCH later.
+    await timers.advance(2_000);
+    assert.equal(server.count("PATCH", /\/content$/), 1);
+  });
+
+  it("waits for an in-flight save and a newer queued edit", async () => {
+    const { timers, controller, edit } = setup(server, makeDoc(ID));
+    edit("first");
+    await timers.advance(650); // first PATCH starts
+    edit("second");
+    assert.equal(await controller.flushPending(), true);
+    assert.deepEqual(
+      server.sermons.get(ID)!.content,
+      makeDoc(ID, "second").content,
+    );
+  });
+
+  it("returns false and keeps the edit queued when the save fails", async () => {
+    const { statuses, controller, edit } = setup(server, makeDoc(ID));
+    server.override = () => "network";
+    edit("offline edit");
+    assert.equal(await controller.flushPending(), false);
+    assert.equal(controller.hasPending, true);
+    assert.equal(statuses.at(-1)!.kind, "offline");
+  });
+
+  it("resolves true with nothing queued and makes no request", async () => {
+    const { controller } = setup(server, makeDoc(ID));
+    assert.equal(await controller.flushPending(), true);
+    assert.equal(server.calls.length, 0);
+  });
+});

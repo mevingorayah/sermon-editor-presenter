@@ -224,6 +224,25 @@ export function EditShell() {
     return () => window.removeEventListener("online", onOnline);
   }, [autosave]);
 
+  // Leaving the page: start any debounced save now (the local copy is already
+  // stored, so this only shortens the window before the server has it).
+  useEffect(() => {
+    const flushNow = () => {
+      if (autosave.hasPending) void autosave.flushPending();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flushNow();
+    };
+    window.addEventListener("pagehide", flushNow);
+    window.addEventListener("beforeunload", flushNow);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flushNow);
+      window.removeEventListener("beforeunload", flushNow);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [autosave]);
+
   const onContentChange = useCallback(
     (content: JSONContent) => {
       setDoc((prev) => {
@@ -270,6 +289,9 @@ export function EditShell() {
       if (!isServerSermonId(id)) return;
       setBusy(true);
       try {
+        // Save the current sermon's pending edit before leaving it. If that
+        // fails, stay put so the edit is kept and the not-saved state shows.
+        if (!(await autosave.flushPending())) return;
         autosave.cancel();
         const sermon = await getSermon(id);
         const next = sermonToDocument(sermon, docRef.current);
@@ -290,6 +312,7 @@ export function EditShell() {
   const onCreate = useCallback(async () => {
     setBusy(true);
     try {
+      if (!(await autosave.flushPending())) return;
       autosave.cancel();
       const sermon = await createSermon({
         title: "Untitled sermon",
