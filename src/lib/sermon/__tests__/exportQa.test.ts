@@ -327,3 +327,24 @@ test("text size: max is 48 pt on A5 and half-letter, 72 pt elsewhere; exports cl
   const fit60 = layoutSnapshot(docSnap(resolveFit(1024, 600), text, { textSizePt: 60 } as Partial<CalibratedSnapshot>));
   assert.notDeepEqual(fit.pages[0].lines[0].size, fit60.pages[0].lines[0].size, "fit-screen keeps 72 pt");
 });
+
+test("words: a joined word too wide even at 24 pt breaks after its '/', never inside a word", () => {
+  for (const format of ["a5", "half-letter"]) {
+    const spec = allPageSpecs().find((x) => x.format === format && x.orientation === "portrait")!;
+    const joined = "réconfortements/encouragements"; // wider than the column at 24 pt
+    const s = docSnap(spec, [{ type: "Body", text: `Il donne ${joined} chaque matin.` }],
+      { textSizePt: 72, lineSpacing: 2, paragraphSpacingPt: 48, margins: { top: "2in", right: "2in", bottom: "2in", left: "2in" } } as Partial<CalibratedSnapshot>);
+    const L = layoutSnapshot(s);
+    const t = L.blocks[0].text;
+    const lines = L.pages.flatMap((p) => p.lines).filter((l) => l.kind === "text");
+    const shown = lines.map((l) => t.slice(l.start, l.end).trimEnd());
+    const i = shown.indexOf("réconfortements/");
+    assert.ok(i >= 0 && shown[i + 1] === "encouragements", `${format}: ${shown.join(" | ")}`);
+    const base = Math.max(...lines.map((l) => l.size));
+    for (const l of lines) assert.ok(l.size >= base * (24 / 48) - 1e-6, `${format}: floor 24 pt`);
+    for (const l of lines.slice(0, -1)) {
+      const c = t[l.end - 1];
+      assert.ok(/\s/.test(c) || c === "/", `${format}: "${t.slice(l.start, l.end)}" ends inside a word`);
+    }
+  }
+});
