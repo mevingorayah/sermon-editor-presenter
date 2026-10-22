@@ -163,7 +163,7 @@ test("page contract: fit-screen, legacy tablet, legal/custom only when set", asy
   const page = m.toPatch(fit).page!;
   assert.equal(page.format, "fit-screen");
   assert.deepEqual(page.pageSpec, { kind: "fit", width: 1320, height: 2112, orientation: "portrait" });
-  assert.equal(m.fitLabel(fit), "Fit this screen (1320×2112, 5:8)");
+  assert.equal(m.fitLabel(fit), "Fit this screen (1320×2112, 10:16)");
   const back = m.fromSettings({ calibrationTarget: "paper-a4", page } as never);
   assert.equal(back.format, "fit-screen");
   const snap = snapshotFor(doc as never, { calibrationTarget: "paper-a4", page } as never);

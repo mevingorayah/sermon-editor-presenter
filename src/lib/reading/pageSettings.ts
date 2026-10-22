@@ -7,7 +7,7 @@
  */
 import type { FitPageSpecSettings, CustomPageSettings, CalibratedMargins, CalibratedSnapshot, PresentationSettings, SermonContent, SermonPageSettings } from "@/types/document";
 import { buildCalibratedSnapshot } from "@/lib/calibration";
-import { PAGE_LIMITS, clamp, customPageError, pageSnapshotFields, pageSpecFromTarget, type PageFormat, type PageOrientation } from "@/lib/sermon/export/frames";
+import { PAGE_LIMITS, clamp, customPageError, fitScreenLabel, pageSnapshotFields, pageSpecFromTarget, type PageFormat, type PageOrientation } from "@/lib/sermon/export/frames";
 
 export type { PageFormat, PageOrientation };
 
@@ -182,12 +182,7 @@ export function fitChoice(c: PageChoice, vw: number, vh: number, dpr?: number): 
   return { ...c, format: "fit-screen", orientation, custom: undefined, fit: { kind: "fit", width, height, orientation, ...(dpr ? { dpr } : {}) } };
 }
 
-/** Export dialog label, e.g. "Fit this screen (1320×2112, 10:16)". */
+/** Export dialog label, e.g. "Fit this screen (1320×2112, 10:16)" (#29's fitScreenLabel). */
 export function fitLabel(c: PageChoice): string | null {
-  if (c.format !== "fit-screen" || !c.fit) return null;
-  const { width: w, height: h } = c.fit;
-  const g = (x: number, y: number): number => (y ? g(y, x % y) : x);
-  const r = g(w, h);
-  const ratio = w / r <= 32 && h / r <= 32 ? `${w / r}:${h / r}` : (w / h).toFixed(2);
-  return `Fit this screen (${w}×${h}, ${ratio})`;
+  return c.format === "fit-screen" && c.fit ? fitScreenLabel({ ...c.fit, orientation: c.orientation }) : null;
 }
