@@ -12,6 +12,7 @@ import type { CalibratedSnapshot } from "@/types/document";
 import { APPROVED_FONT_IDS } from "../export/fonts";
 import { allPageSpecs, layoutSnapshot, type FitPageSpec, type PageSpec } from "../export/pngLayout";
 import { marginMaxIn, maxMarginIn } from "../export/margins";
+import { maxTextSizePt } from "../export/frames";
 import { presentationSettingsSchema } from "../schema";
 import { afmMeasurer, exportFontName, fallbackFontName, splitByCoverage } from "../export/textMeasure";
 import { styledBlocksFromSnapshot, trimAfterOpeningBracket, type StyledRun } from "../export/contentWalk";
@@ -96,7 +97,9 @@ test("glyph fallback: PDF embeds the fallback font for '↑' in Lora and keeps t
 
 const heads = new Set(["Title", "H1", "H2", "H3"]);
 /** A line ending inside a word (not at a space or after / … – —). */
-const midWord = (t: string, end: number) => end < t.length && /\S/.test(t[end]) && !/[\s/…–—]/.test(t[end - 1]);
+const letter = (c: string | undefined) => /\p{L}/u.test(c ?? "");
+const midWord = (t: string, end: number) => end < t.length && /\S/.test(t[end])
+  && !(/[\s…–—]/.test(t[end - 1]) || (t[end - 1] === "/" && !(letter(t[end - 2]) && letter(t[end]))));
 const resolveFit = (width: number, height: number): FitPageSpec => ({ kind: "fit", width, height } as FitPageSpec);
 const SENT = "La lumière douce se lève sur les collines et chacun avance avec confiance. ";
 function headingDoc(shift: number): CalibratedSnapshot["semanticBlocks"] {
@@ -289,4 +292,59 @@ test("PDF: a run is advanced by the width actually drawn (U+202F fallback), so n
   const thin = await xs("« Amen\u2009!\u00a0» (");
   assert.equal(nnbsp.length, 3);
   assert.ok(Math.abs(nnbsp[1] - thin[1]) < 0.01, `italic run at ${nnbsp[1]} vs ${thin[1]}`);
+});
+
+test("words: a '/' between letters is not a break; the joined word shrinks its line instead (≥ 24 pt)", () => {
+  for (const format of ["a5", "half-letter"]) {
+    const spec = allPageSpecs().find((x) => x.format === format && x.orientation === "portrait")!;
+    const joined = "rassemblées/unies";
+    const s = docSnap(spec, [{ type: "Body", text: `Les brebis ${joined} reviennent au berger.` }],
+      { textSizePt: 72, lineSpacing: 2, paragraphSpacingPt: 48, margins: { top: "2in", right: "2in", bottom: "2in", left: "2in" } } as Partial<CalibratedSnapshot>);
+    const L = layoutSnapshot(s);
+    const lines = L.pages.flatMap((p) => p.lines).filter((l) => l.kind === "text");
+    const t = L.blocks[0].text;
+    const holder = lines.find((l) => t.slice(l.start, l.end).includes(joined));
+    assert.ok(holder, `${format}: "${joined}" stays on one line: ${lines.map((l) => JSON.stringify(t.slice(l.start, l.end))).join(" | ")}`);
+    const others = lines.filter((l) => l !== holder);
+    assert.ok(others.length > 0 && holder.size < others[0].size, `${format}: only the line with the joined word shrinks`);
+    assert.ok(holder.size >= 24 * (others[0].size / 48) - 1e-6, `${format}: floor 24 pt`);
+    for (const l of lines) assert.ok(!midWord(t, l.end));
+  }
+});
+
+test("text size: max is 48 pt on A5 and half-letter, 72 pt elsewhere; exports clamp to it", () => {
+  for (const f of ["a5", "half-letter"]) assert.equal(maxTextSizePt(f), 48);
+  for (const f of ["a4", "letter", "legal", "4:3", "16:10", "16:9", "custom", "fit-screen"]) assert.equal(maxTextSizePt(f), 72);
+  const text: CalibratedSnapshot["semanticBlocks"] = [{ type: "H1", text: "Un titre" }, { type: "Body", text: SENT.repeat(3) }];
+  for (const spec of allPageSpecs()) {
+    const at = (pt: number) => layoutSnapshot(docSnap(spec, text, { textSizePt: pt } as Partial<CalibratedSnapshot>));
+    const cap = maxTextSizePt(spec.format);
+    const sizes = (L: ReturnType<typeof at>) => L.pages.flatMap((p) => p.lines.map((l) => l.size));
+    assert.deepEqual(sizes(at(72)), sizes(at(cap)), `${spec.format} ${spec.orientation}: 72 pt renders as ${cap} pt`);
+    if (cap < 72) assert.notDeepEqual(sizes(at(40)), sizes(at(cap)));
+  }
+  const fit = layoutSnapshot(docSnap(resolveFit(1024, 600), text, { textSizePt: 72 } as Partial<CalibratedSnapshot>));
+  const fit60 = layoutSnapshot(docSnap(resolveFit(1024, 600), text, { textSizePt: 60 } as Partial<CalibratedSnapshot>));
+  assert.notDeepEqual(fit.pages[0].lines[0].size, fit60.pages[0].lines[0].size, "fit-screen keeps 72 pt");
+});
+
+test("words: a joined word too wide even at 24 pt breaks after its '/', never inside a word", () => {
+  for (const format of ["a5", "half-letter"]) {
+    const spec = allPageSpecs().find((x) => x.format === format && x.orientation === "portrait")!;
+    const joined = "réconfortements/encouragements"; // wider than the column at 24 pt
+    const s = docSnap(spec, [{ type: "Body", text: `Il donne ${joined} chaque matin.` }],
+      { textSizePt: 72, lineSpacing: 2, paragraphSpacingPt: 48, margins: { top: "2in", right: "2in", bottom: "2in", left: "2in" } } as Partial<CalibratedSnapshot>);
+    const L = layoutSnapshot(s);
+    const t = L.blocks[0].text;
+    const lines = L.pages.flatMap((p) => p.lines).filter((l) => l.kind === "text");
+    const shown = lines.map((l) => t.slice(l.start, l.end).trimEnd());
+    const i = shown.indexOf("réconfortements/");
+    assert.ok(i >= 0 && shown[i + 1] === "encouragements", `${format}: ${shown.join(" | ")}`);
+    const base = Math.max(...lines.map((l) => l.size));
+    for (const l of lines) assert.ok(l.size >= base * (24 / 48) - 1e-6, `${format}: floor 24 pt`);
+    for (const l of lines.slice(0, -1)) {
+      const c = t[l.end - 1];
+      assert.ok(/\s/.test(c) || c === "/", `${format}: "${t.slice(l.start, l.end)}" ends inside a word`);
+    }
+  }
 });
