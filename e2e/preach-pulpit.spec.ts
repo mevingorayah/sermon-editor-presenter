@@ -180,7 +180,7 @@ for (const target of ["screen-16-9", "paper-a4"]) {
   });
 }
 
-const FORMATS = ["a4", "letter", "half-letter", "16-9", "16-10"];
+const FORMATS = ["fit", "a4", "a5", "letter", "half-letter", "4-3", "16-10", "16-9"];
 for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 800 }, { width: 2112, height: 1320 }, { width: 800, height: 1280 }, { width: 1000, height: 300 }]) {
   test(`⚙ Page: every format re-renders live, saved, never clipped (${vp.width}x${vp.height})`, async ({ page }) => {
     await page.setViewportSize(vp);
