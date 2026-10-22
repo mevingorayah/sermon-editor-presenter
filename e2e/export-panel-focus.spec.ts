@@ -38,9 +38,8 @@ test("closing Document setup returns focus; filename/notes are not persisted", a
   page.on("pageerror", (e) => pageErrors.push(e.message));
   await freshEdit(page);
 
-  // Arrive via Edit's "Export…" deep link: the opener lives on /edit.
-  await page.getByRole("link", { name: "Export…" }).click();
-  await page.waitForURL(/\/preach\?calibrate=1$/);
+  // Preach's own deep link (Edit now opens export in place, see export-from-edit).
+  await page.goto("/preach?calibrate=1", { waitUntil: "networkidle" });
   const panel = panelOf(page);
   await expect(panel).toBeVisible({ timeout: 20_000 });
   await expect(panel.getByRole("heading", { name: /Document setup/ })).toBeFocused();
@@ -50,7 +49,7 @@ test("closing Document setup returns focus; filename/notes are not persisted", a
   await stem.fill("Temporary-Name");
   await panel.getByLabel("Include study notes").check();
 
-  // Close: the "Export…" link is gone (cross-route) → in-page Calibrate toggle.
+  // Close: deep link has no opener → in-page Calibrate toggle.
   await panel.getByRole("button", { name: "Close document setup" }).click();
   await expect(panel).toBeHidden();
   const calibrate = page.getByRole("button", { name: "Calibrate" });

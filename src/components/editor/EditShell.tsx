@@ -29,6 +29,8 @@ import {
 import type { Sermon } from "@/lib/sermon/types";
 import type { SermonDocument } from "@/types/document";
 import { DEFAULT_PRESENTATION_SETTINGS } from "@/types/document";
+import type { PresentationSettings } from "@/types/document";
+import { CalibrationPanel } from "@/components/reading/CalibrationPanel";
 import { SermonEditor } from "./SermonEditor";
 import { OutlineNav } from "./OutlineNav";
 import { FindBar } from "./FindBar";
@@ -101,6 +103,10 @@ export function EditShell() {
   const [editor, setEditor] = useState<Editor | null>(null);
   const [status, setStatus] = useState<SaveStatus>("saving");
   const [busy, setBusy] = useState(false);
+  /** Export window settings, seeded from the sermon's own page size. */
+  const [exportSettings, setExportSettings] =
+    useState<PresentationSettings | null>(null);
+  const exportBtnRef = useRef<HTMLButtonElement>(null);
   /**
    * Remounts the editor only on real doc switches — not when autosave re-keys
    * the same doc to a new server id (local-* promotion / 404 recovery), so the
@@ -413,13 +419,20 @@ export function EditShell() {
               Retry
             </button>
           ) : null}
-          <Link
-            href="/preach?calibrate=1"
+          <button
+            ref={exportBtnRef}
+            type="button"
             className={styles.exportLink}
-            title="Document setup and export (opens Preach with Calibration)"
+            aria-haspopup="dialog"
+            onClick={() =>
+              setExportSettings({
+                ...DEFAULT_PRESENTATION_SETTINGS,
+                ...doc.presentationSettings,
+              })
+            }
           >
-            Export…
-          </Link>
+            Export (PDF, PNG, PowerPoint)
+          </button>
           <Link href="/preach" className={styles.preachBtn}>
             Enter Preaching
           </Link>
@@ -450,6 +463,44 @@ export function EditShell() {
           />
         </main>
       </div>
+      {exportSettings ? (
+        <div
+          className={styles.exportOverlay}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Export"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setExportSettings(null);
+              exportBtnRef.current?.focus();
+            }
+          }}
+        >
+          <CalibrationPanel
+            content={doc.content}
+            title={doc.title}
+            notes={doc.notes ?? ""}
+            autoFocus
+            target={exportSettings.calibrationTarget}
+            typeScaleStep={exportSettings.typeScaleStep}
+            lineHeight={exportSettings.lineHeight}
+            theme={exportSettings.theme}
+            onTargetChange={(calibrationTarget) =>
+              setExportSettings((p) => (p ? { ...p, calibrationTarget } : p))
+            }
+            onTypeScaleChange={(typeScaleStep) =>
+              setExportSettings((p) => (p ? { ...p, typeScaleStep } : p))
+            }
+            onLineHeightChange={(lineHeight) =>
+              setExportSettings((p) => (p ? { ...p, lineHeight } : p))
+            }
+            onClose={() => {
+              setExportSettings(null);
+              exportBtnRef.current?.focus();
+            }}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

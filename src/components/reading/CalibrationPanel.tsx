@@ -25,6 +25,10 @@ import {
 } from "@/lib/export-client/payload";
 import { browserCssVarResolver } from "@/lib/export-client/flattenColors";
 import { formatExportError } from "@/lib/export-client/exportError";
+import {
+  DEFAULT_EXPORT_THEME,
+  type ExportTheme,
+} from "@/lib/export-client/theme";
 import type {
   CalibrationTarget,
   ExportFormat,
@@ -32,7 +36,12 @@ import type {
   ReadingTheme,
   TypeScaleStep,
 } from "@/types/document";
-import { countPngPages, pngExportLabel, pngFrame, pngFrameSize } from "@/lib/sermon/export/pngLayout";
+import {
+  countPngPages,
+  pngExportLabel,
+  pngFrame,
+  pngFrameSize,
+} from "@/lib/sermon/export/pngLayout";
 import { ReadingView } from "./ReadingView";
 import styles from "./CalibrationPanel.module.css";
 
@@ -55,7 +64,8 @@ interface CalibrationPanelProps {
   onTargetChange: (t: CalibrationTarget) => void;
   onTypeScaleChange: (s: TypeScaleStep) => void;
   onLineHeightChange: (lh: LineHeightOption) => void;
-  onThemeChange: (t: ReadingTheme) => void;
+  /** Unused since the export window has its own Light/Dark choice. */
+  onThemeChange?: (t: ReadingTheme) => void;
   onClose: () => void;
 }
 
@@ -72,7 +82,6 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
     onTargetChange,
     onTypeScaleChange,
     onLineHeightChange,
-    onThemeChange,
     onClose,
   } = props;
 
@@ -83,16 +92,19 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
   // null = untouched → follow the sermon title; string = user-edited stem.
   const [stemDraft, setStemDraft] = useState<string | null>(null);
   const [includeNotes, setIncludeNotes] = useState(false);
+  // Export window Light/Dark: applies to PDF, PNG and PowerPoint (colours only).
+  const [exportTheme, setExportTheme] =
+    useState<ExportTheme>(DEFAULT_EXPORT_THEME);
 
   const meta = CALIBRATION_TARGETS.find((t) => t.id === target)!;
   const margins = marginsFor(target);
   // Preview is the export frame scaled down: margins in preview px (real
   // inches on a 300px-wide A4 preview used to eat the whole page).
   const previewFrame = pngFrame(target, margins);
-  const previewPx = (framePx: number) => `${((framePx * meta.previewWidth) / previewFrame.width).toFixed(2)}px`;
+  const previewPx = (framePx: number) =>
+    `${((framePx * meta.previewWidth) / previewFrame.width).toFixed(2)}px`;
   const previewSize = pngFrameSize(target);
-  const previewTheme: ReadingTheme =
-    meta.kind === "paper" ? "light" : theme;
+  const previewTheme: ReadingTheme = exportTheme;
   const scale = typeScaleMultiplier(typeScaleStep);
   const stem = stemDraft ?? defaultFilenameStem(title);
   const savedStem = sanitizeFilenameStem(stem);
@@ -131,6 +143,7 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
         includeNotes,
         notes,
         resolveVar: browserCssVarResolver(),
+        exportTheme,
       });
       const res = await fetch(
         `/api/export?format=${encodeURIComponent(format)}`,
@@ -165,13 +178,12 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
         return;
       }
 
-      const filename =
-        downloadFilename(
-          res.headers.get("Content-Disposition"),
-          res.headers.get("Content-Type") ?? blob.type,
-          stem,
-          format,
-        );
+      const filename = downloadFilename(
+        res.headers.get("Content-Disposition"),
+        res.headers.get("Content-Type") ?? blob.type,
+        stem,
+        format,
+      );
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -268,15 +280,15 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
         </label>
 
         <label className={styles.label}>
-          Theme {meta.kind === "paper" ? "(print → light)" : ""}
+          Light or dark (PDF, PNG, PowerPoint)
           <select
             className={styles.select}
-            value={previewTheme}
-            disabled={meta.kind === "paper"}
-            onChange={(e) => onThemeChange(e.target.value as ReadingTheme)}
+            value={exportTheme}
+            data-testid="export-theme"
+            onChange={(e) => setExportTheme(e.target.value as ExportTheme)}
           >
-            <option value="dark">Dark</option>
             <option value="light">Light</option>
+            <option value="dark">Dark</option>
           </select>
         </label>
 
@@ -335,7 +347,11 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
             aspectRatio: `${previewSize.width} / ${previewSize.height}`,
             boxSizing: "border-box",
             paddingTop: previewPx(previewFrame.top),
-            paddingRight: previewPx(previewFrame.width - previewFrame.left - previewFrame.contentWidth),
+            paddingRight: previewPx(
+              previewFrame.width -
+                previewFrame.left -
+                previewFrame.contentWidth,
+            ),
             paddingBottom: previewPx(previewFrame.height - previewFrame.bottom),
             paddingLeft: previewPx(previewFrame.left),
           }}
@@ -354,7 +370,7 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
             <ReadingView
               content={content}
               bionic={false}
-              theme={theme}
+              theme={exportTheme}
               flattenGradient
             />
           </div>
@@ -368,26 +384,39 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
         aria-busy={busyFormat ? true : undefined}
       >
         {EXPORT_FORMATS.map((f) => (
-          <button
-            key={f.id}
-            type="button"
-            className={
-              f.print ? styles.exportBtn : `${styles.exportBtn} ${styles.exportBtnSecondary}`
-            }
-            aria-disabled={busyFormat ? true : undefined}
-            onClick={() => postExport(f.id)}
-          >
-            {f.id === "png" ? pngExportLabel(pngPages) : f.label}
-          </button>
+          <span key={f.id} className={styles.exportItem}>
+            <button
+              type="button"
+              className={
+                f.print
+                  ? styles.exportBtn
+                  : `${styles.exportBtn} ${styles.exportBtnSecondary}`
+              }
+              aria-disabled={busyFormat ? true : undefined}
+              aria-describedby={
+                f.id === "pptx" ? `${ids}-pptx-note` : undefined
+              }
+              onClick={() => postExport(f.id)}
+            >
+              {f.id === "png" ? pngExportLabel(pngPages) : f.label}
+            </button>
+            {f.id === "pptx" ? (
+              <span
+                className={styles.fieldHint}
+                id={`${ids}-pptx-note`}
+                data-testid="pptx-font-note"
+              >
+                PowerPoint uses standard fonts, so line breaks may differ
+                slightly.
+              </span>
+            ) : null}
+          </span>
         ))}
       </div>
       {/* Single persistent live region: hint until an export runs, then status. */}
-      <p
-        className={exportStatus ? styles.status : styles.hint}
-        role="status"
-      >
+      <p className={exportStatus ? styles.status : styles.hint} role="status">
         {exportStatus ??
-          "DOCX and PDF print in light ink. PNG (one image per frame; several frames download as a .zip) and PowerPoint (a slide per H1) follow the target and theme above."}
+          "DOCX prints in light ink. PDF, PNG (one image per frame; several frames download as a .zip) and PowerPoint (a slide per H1) follow the page size and Light/dark choice above."}
       </p>
     </aside>
   );

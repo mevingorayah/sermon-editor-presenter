@@ -227,3 +227,9 @@
 .hint code {
   font-size: 0.7rem;
 }
+
+.exportItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
