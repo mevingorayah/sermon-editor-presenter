@@ -340,3 +340,36 @@ export function MessageDialog({
     </Dialog>
   );
 }
+
+/** In-app confirmation (never window.confirm). Focus starts on Cancel; Escape = Cancel. */
+export function ConfirmDialog({
+  title,
+  message,
+  confirmLabel,
+  onConfirm,
+  onCancel,
+  testId,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  testId?: string;
+}) {
+  const cancel = useRef<HTMLButtonElement>(null);
+  return (
+    <Dialog label={title} onClose={onCancel} initialFocus={cancel} role="alertdialog" testId={testId}>
+      <h2 className={styles.h2}>{title}</h2>
+      <p>{message}</p>
+      <div className={styles.row}>
+        <button type="button" ref={cancel} onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="button" className={styles.danger} onClick={onConfirm}>
+          {confirmLabel}
+        </button>
+      </div>
+    </Dialog>
+  );
+}

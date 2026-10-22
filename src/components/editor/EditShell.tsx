@@ -7,7 +7,10 @@ import { extractTitleFromContent, loadDocument } from "@/lib/documentStore";
 import { extractOutline } from "@/lib/outline";
 import { createSeedDocument } from "@/lib/seed";
 import {
+  parseSermonFile,
   serializeBackupFile,
+  serializeSermonFile,
+  sermonFileName,
   SermonFileError,
   type SermonBackupFile,
 } from "@/lib/sermon-file";
@@ -74,9 +77,11 @@ import {
   ConflictPrompt,
   OpenElsewhereBanner,
   FirstRunScreen,
+  ConfirmDialog,
   MessageDialog,
   RestorePreviewDialog,
 } from "./StoragePanels";
+import { saveTextToPc } from "@/lib/localStore/saveToPc";
 import styles from "./EditShell.module.css";
 
 export const STORAGE_MODE_KEY = "sermon-editor-presenter:storage-mode:v1";
@@ -137,6 +142,7 @@ export function EditShell() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [openElsewhere, setOpenElsewhere] = useState(false);
   const [persisted, setPersisted] = useState<boolean | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState<SermonDocument | null>(null);
 
   const docRef = useRef<SermonDocument | null>(null);
   const dirRef = useRef<DirHandleLike | null>(null);
@@ -153,6 +159,9 @@ export function EditShell() {
   const channel = useRef<BroadcastChannel | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const keyCounter = useRef(0);
+  const openFileInput = useRef<HTMLInputElement>(null);
+  /** Edits made since the last Save to PC / Open (the .sermon file is behind). */
+  const fileDirty = useRef(false);
   /** The open sermon had edits not yet written when Restore was started. */
   const restoreOpenDirty = useRef(false);
 
@@ -440,6 +449,7 @@ export function EditShell() {
     (next: SermonDocument) => {
       docRef.current = next;
       editSeq.current += 1;
+      fileDirty.current = true;
       apply({ type: "edit" });
       if (modeRef.current === "folder") {
         // Automatic browser backup on every keystroke (folder mode only, so a
@@ -835,6 +845,85 @@ export function EditShell() {
     }
   }, [allSermons, apply, broadcast, flush, restore, restoreChoices, showDoc]);
 
+  const onSaveToPc = useCallback(async () => {
+    setMenuOpen(false);
+    const d = docRef.current;
+    if (!d) return;
+    try {
+      const r = await saveTextToPc(serializeSermonFile(d), sermonFileName(d.title || "Untitled sermon"));
+      if (r !== "cancelled") fileDirty.current = false;
+    } catch (err) {
+      setMessage({
+        title: "Save to PC",
+        message: "The sermon couldn't be saved to your PC. It is still safe here; try again.",
+        details: [err instanceof Error ? err.message : String(err)],
+      });
+    }
+  }, []);
+
+  const loadOpenedSermon = useCallback(
+    async (d: SermonDocument) => {
+      setConfirmOpen(null);
+      setBusy(true);
+      try {
+        await flush();
+        showDoc(d, readLibrary()[d.id]?.savedAt ?? null);
+        fileDirty.current = false;
+        editSeq.current += 1;
+        apply({ type: "edit" });
+        await persist();
+      } finally {
+        setBusy(false);
+      }
+    },
+    [apply, flush, persist, showDoc],
+  );
+
+  const onOpenFile = useCallback(
+    async (file: File) => {
+      let d: SermonDocument;
+      try {
+        d = parseSermonFile(await file.text()).sermon;
+      } catch (err) {
+        if (err instanceof SermonFileError) {
+          setMessage({ title: "Open", message: err.message, details: err.details });
+        } else {
+          setMessage({ title: "Open", message: "This file couldn't be read, so nothing was opened." });
+        }
+        return;
+      }
+      // Pending autosaves are flushed before loading; only edits not in a saved
+      // .sermon file (or an unresolved conflict) need the warning.
+      if (fileDirty.current || conflictRef.current) {
+        setConfirmOpen(d);
+        return;
+      }
+      await loadOpenedSermon(d);
+    },
+    [loadOpenedSermon],
+  );
+
+  const triggerOpen = useCallback(() => {
+    setMenuOpen(false);
+    openFileInput.current?.click();
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "s") {
+        e.preventDefault();
+        void onSaveToPc();
+      } else if (k === "o") {
+        e.preventDefault();
+        triggerOpen();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onSaveToPc, triggerOpen]);
+
   const listItems = useMemo(() => {
     const items = Object.values(library).map((e) => ({
       id: e.doc.id,
@@ -902,6 +991,38 @@ export function EditShell() {
               {ACTION_LABELS[action]}
             </button>
           ) : null}
+          <button
+            type="button"
+            className={styles.fileBtn}
+            aria-label="Save to PC (Ctrl+S)"
+            aria-keyshortcuts="Control+S Meta+S"
+            data-testid="save-to-pc"
+            onClick={() => void onSaveToPc()}
+          >
+            Save to PC
+          </button>
+          <button
+            type="button"
+            className={styles.fileBtn}
+            aria-label="Open a sermon file from PC (Ctrl+O)"
+            aria-keyshortcuts="Control+O Meta+O"
+            data-testid="open-file"
+            onClick={triggerOpen}
+          >
+            Open
+          </button>
+          <input
+            ref={openFileInput}
+            type="file"
+            accept=".sermon,.json,application/json"
+            hidden
+            data-testid="open-input"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) void onOpenFile(f);
+            }}
+          />
           <div className={styles.menu}>
             <button
               type="button"
@@ -1015,6 +1136,16 @@ export function EditShell() {
           openHasUnsavedEdits={restoreOpenDirty.current || hasUnsavedEdits() || !!conflict}
           onApply={() => void applyRestore()}
           onCancel={() => setRestore(null)}
+        />
+      ) : null}
+      {confirmOpen ? (
+        <ConfirmDialog
+          title="Replace unsaved changes?"
+          message="Opening will replace unsaved changes. Continue?"
+          confirmLabel="Open"
+          testId="open-confirm"
+          onConfirm={() => void loadOpenedSermon(confirmOpen)}
+          onCancel={() => setConfirmOpen(null)}
         />
       ) : null}
       {message ? <MessageDialog {...message} onClose={() => setMessage(null)} /> : null}

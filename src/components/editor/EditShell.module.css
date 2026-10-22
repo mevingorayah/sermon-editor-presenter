@@ -177,3 +177,7 @@
 .menuList button { text-align: left; padding: 0.45rem 0.6rem; border: 0; border-radius: 6px; background: none; color: var(--edit-fg); cursor: pointer; font-size: 0.875rem; }
 .menuList button:hover { background: var(--edit-bg); }
 .menuNote { margin: 0.2rem 0.6rem 0.35rem; font-size: 0.75rem; color: var(--edit-fg-muted); }
+
+.fileBtn { min-height: 44px; min-width: 44px; padding: 0.45rem 0.9rem; border-radius: 8px; border: 1px solid var(--edit-border); background: var(--edit-bg-elevated); color: var(--edit-fg); font-weight: 600; font-size: 0.875rem; cursor: pointer; }
+.fileBtn:hover { border-color: var(--edit-accent); }
+.fileBtn:focus-visible { border-color: var(--edit-accent); outline: 2px solid var(--edit-accent); outline-offset: 2px; }
