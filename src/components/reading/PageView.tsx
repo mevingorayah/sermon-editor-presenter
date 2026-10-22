@@ -147,6 +147,7 @@ function Line({
       data-line=""
       data-kind={l.kind}
       data-block={l.blockType}
+      data-bi={l.blockIndex}
       style={{
         top: l.y,
         left: frame.left,

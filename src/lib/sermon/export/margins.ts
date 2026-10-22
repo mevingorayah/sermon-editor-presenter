@@ -43,6 +43,16 @@ export function pageWidthInchesFor(target: PageInput): number {
 /** Default margins: 0.8 in on every side, every format (no percentages). */
 export const DEFAULT_MARGINS: CalibratedMargins = { top: "0.8in", right: "0.8in", bottom: "0.8in", left: "0.8in" };
 
+/**
+ * UX ruling: a margin is at most min(2 in, 20 % of the page's shorter side),
+ * in 0.05 in steps (half-Letter: 1.1 in). Preach clamps saved margins to it (pageSettings.fromSettings).
+ */
+export function marginMaxIn(target: PageInput): number {
+  const { width, height } = frameSizeInches(target);
+  const cap = Math.floor((0.2 * Math.min(width, height) + 1e-9) * 20) / 20;
+  return Math.max(PAGE_LIMITS.marginIn.min, Math.min(PAGE_LIMITS.marginIn.max, cap));
+}
+
 export function resolveMargins(
   margins: CalibratedMargins,
   target: PageInput,

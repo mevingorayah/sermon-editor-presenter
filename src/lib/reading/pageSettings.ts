@@ -7,6 +7,8 @@
  */
 import type { FitPageSpecSettings, CustomPageSettings, CalibratedMargins, CalibratedSnapshot, PresentationSettings, SermonContent, SermonPageSettings } from "@/types/document";
 import { buildCalibratedSnapshot } from "@/lib/calibration";
+import { marginMaxIn } from "@/lib/sermon/export/margins";
+import { pageSpecFromSnapshot } from "@/lib/sermon/export/pngLayout";
 import { PAGE_LIMITS, clamp, customPageError, fitScreenLabel, pageSnapshotFields, pageSpecFromTarget, type PageFormat, type PageOrientation } from "@/lib/sermon/export/frames";
 
 export type { PageFormat, PageOrientation };
@@ -76,14 +78,16 @@ export function toInches(v: unknown, fallback = PAGE_LIMITS.marginIn.default): n
   const n = Number(m[1]);
   return m[2] === "mm" ? n / 25.4 : m[2] === "cm" ? n / 2.54 : m[2] === "pt" ? n / 72 : n;
 }
-const clampMargin = (n: number) => clamp(n, PAGE_LIMITS.marginIn);
 
 export function fromSettings(ps: Pick<PresentationSettings, "calibrationTarget"> & { page?: SermonPageSettings }): PageChoice {
   const p = ps.page ?? {};
   const legacy = pageSpecFromTarget(String(ps.calibrationTarget));
   const m = p.margins;
+  const fmt = formatOf(p, legacy);
+  const max = marginMax({ ...fmt, target: String(ps.calibrationTarget) });
+  const clampMargin = (n: number) => Math.min(max, clamp(n, PAGE_LIMITS.marginIn));
   return {
-    ...formatOf(p, legacy),
+    ...fmt,
     textSizePt: clamp(p.textSizePt, PAGE_LIMITS.textSizePt),
     lineSpacing: clamp(p.lineSpacing, PAGE_LIMITS.lineSpacing),
     paragraphSpacingPt: clamp(p.paragraphSpacingPt, PAGE_LIMITS.paragraphSpacingPt),
@@ -94,6 +98,22 @@ export function fromSettings(ps: Pick<PresentationSettings, "calibrationTarget">
       left: clampMargin(toInches(m?.left)),
     },
   };
+}
+
+/** Margin slider max for this page: min(2 in, 20 % of the shorter side). */
+export function marginMax(c: Pick<PageChoice, "format" | "orientation" | "custom" | "fit"> & { target?: string }): number {
+  const page: SermonPageSettings = {
+    format: c.format,
+    orientation: c.orientation,
+    ...(c.format === "custom" && c.custom ? { custom: c.custom } : {}),
+    ...(c.format === "fit-screen" && c.fit ? { pageSpec: { ...c.fit, orientation: c.orientation } } : {}),
+  } as SermonPageSettings;
+  try {
+    const f = pageSnapshotFields(page as Parameters<typeof pageSnapshotFields>[0]);
+    return marginMaxIn(pageSpecFromSnapshot({ target: (c.target ?? "screen-16-9") as never, ...(f as object) }) as never);
+  } catch {
+    return PAGE_LIMITS.marginIn.max;
+  }
 }
 
 function formatOf(p: SermonPageSettings, legacy: { format: PageFormat; orientation: PageOrientation }) {

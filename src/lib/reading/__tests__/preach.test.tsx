@@ -136,7 +136,10 @@ test("page settings adapter: PresentationSettings.page round-trip and limits", a
   assert.deepEqual([d.textSizePt, d.lineSpacing, d.paragraphSpacingPt, d.margins.top], [28, 1.55, 20, 0.8]);
   assert.equal(m.stepTextSize({ ...d, textSizePt: 24 }, -1).textSizePt, 24);
   assert.equal(m.stepTextSize({ ...d, textSizePt: 72 }, 1).textSizePt, 72);
-  assert.equal(m.fromSettings(settingsFor({ margins: { top: "50mm", right: "6mm", bottom: "9in", left: "x" } })).margins.bottom, 2);
+  assert.equal(m.fromSettings(settingsFor({ margins: { top: "50mm", right: "6mm", bottom: "9in", left: "x" } })).margins.bottom, 1.65); // A4: 20 % of 8.27 in
+  // UX ruling: margin max = min(2 in, 20 % of the shorter side); half-Letter 1.1 in.
+  assert.equal(m.marginMax({ format: "half-letter", orientation: "portrait" }), 1.1);
+  assert.equal(m.marginMax({ format: "letter", orientation: "landscape" }), 1.7);
   const r = m.resetSpacing({ ...d, format: "16:9", orientation: "landscape", lineSpacing: 2, margins: { top: 2, right: 2, bottom: 2, left: 2 } });
   assert.equal(r.format, "16:9");
   assert.deepEqual([r.lineSpacing, r.margins.left], [1.55, 0.8]);

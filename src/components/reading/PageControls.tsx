@@ -2,7 +2,7 @@
 
 import type { PageChoice, PageOrientation } from "@/lib/reading/pageSettings";
 import { useState } from "react";
-import { FIT_BUTTON, FORMAT_GROUPS, customError, extraButton, LIMITS, naturalOrientation, resetSpacing, stepTextSize } from "@/lib/reading/pageSettings";
+import { FIT_BUTTON, FORMAT_GROUPS, customError, extraButton, LIMITS, marginMax, naturalOrientation, resetSpacing, stepTextSize } from "@/lib/reading/pageSettings";
 import styles from "./PreachBar.module.css";
 
 interface Props {
@@ -20,6 +20,7 @@ interface Props {
 export function PageControls({ choice, followDevice, onChange, onFit, onFollowDeviceChange, fullscreen, onFullscreenToggle }: Props) {
   const T = LIMITS.textSizePt;
   const [eachSide, setEachSide] = useState(false);
+  const mMax = marginMax(choice);
   const setOrientation = (o: PageOrientation) => {
     onFollowDeviceChange(false); // manual switch turns following off
     onChange({ ...choice, orientation: o });
@@ -111,7 +112,7 @@ export function PageControls({ choice, followDevice, onChange, onFit, onFollowDe
             label={`Margin ${side}`}
             unit="in"
             min={LIMITS.marginIn.min}
-            max={LIMITS.marginIn.max}
+            max={mMax}
             step={0.05}
             value={choice.margins[side]}
             onChange={(v) => onChange({ ...choice, margins: { ...choice.margins, [side]: v } })}
@@ -123,7 +124,7 @@ export function PageControls({ choice, followDevice, onChange, onFit, onFollowDe
           label="Margins"
           unit="in"
           min={LIMITS.marginIn.min}
-          max={LIMITS.marginIn.max}
+          max={mMax}
           step={0.05}
           value={choice.margins.top}
           onChange={(v) => onChange({ ...choice, margins: { top: v, right: v, bottom: v, left: v } })}

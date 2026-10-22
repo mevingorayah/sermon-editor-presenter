@@ -20,13 +20,13 @@ const content = {
   ],
 };
 
-async function seed(page: Page, opts: { theme?: "light" | "dark"; view?: "page" | "flow"; target?: string; format?: string } = {}) {
+async function seed(page: Page, opts: { theme?: "light" | "dark"; view?: "page" | "flow"; target?: string; format?: string; page?: Record<string, unknown>; content?: unknown } = {}) {
   const sermon = {
     id: "11111111-2222-4333-8444-555555555555",
     updatedAt: new Date().toISOString(),
     notes: "",
     title: "The Sower",
-    content,
+    content: opts.content ?? content,
     presentationSettings: {
         theme: opts.theme ?? "light",
         bionic: false,
@@ -34,7 +34,7 @@ async function seed(page: Page, opts: { theme?: "light" | "dark"; view?: "page" 
         lineHeight: 1.55,
         calibrationTarget: opts.target ?? "screen-16-9",
         // New sermons default to A4 portrait (#29); seed a page only when asked.
-        page: opts.format ? { format: opts.format, orientation: "landscape" } : { format: "a4", orientation: "portrait" },
+        page: opts.page ?? (opts.format ? { format: opts.format, orientation: "landscape" } : { format: "a4", orientation: "portrait" }),
       },
   };
   await page.addInitScript(
@@ -242,6 +242,54 @@ for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 800 }, { w
     await expect(page.locator("[data-text-pt]")).toHaveText("30 pt");
   });
 }
+
+test("half-Letter at max settings: no clipped lines, no mid-word breaks, headings whole", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  // Made-up long words (not sermon content).
+  const para = "La suffisance de Jésus-Christ demeure anticonstitutionnellement inébranlable pour notre réconciliation quotidienne et notre persévérance. ";
+  const longContent = {
+    type: "doc",
+    content: [
+      { type: "heading", attrs: { level: 1 }, content: [t("Jésus-Christ et la suffisance")] },
+      ...Array.from({ length: 4 }, () => ({ type: "paragraph", content: [t(para + para)] })),
+      { type: "heading", attrs: { level: 2 }, content: [t("Incompréhensiblement")] },
+      { type: "paragraph", content: [t(para)] },
+    ],
+  };
+  await seed(page, {
+    view: "page",
+    content: longContent,
+    page: { format: "half-letter", orientation: "portrait", textSizePt: 72, lineSpacing: 2, paragraphSpacingPt: 48, margins: { top: "2in", right: "2in", bottom: "2in", left: "2in" } },
+  });
+  await page.goto("/preach", { waitUntil: "networkidle" });
+  const view = page.locator("[data-page-view]");
+  await expect(view).toBeVisible({ timeout: 20_000 });
+  const count = Number(await view.getAttribute("data-page-count"));
+  expect(count).toBeGreaterThan(1);
+  const seen: string[] = [];
+  for (let i = 0; i < count; i++) {
+    await expect(view).toHaveAttribute("data-page-index", String(i));
+    const r = await page.evaluate(() => {
+      const s = document.querySelector("section[data-page]")!.getBoundingClientRect();
+      const lines = Array.from(document.querySelectorAll<HTMLElement>("section[data-page] [data-line]"));
+      const clipped = lines.filter((l) => {
+        const b = l.getBoundingClientRect();
+        return b.bottom > s.bottom + 1 || b.top < s.top - 1 || b.right > s.right + 1 || l.scrollWidth > l.clientWidth + 1;
+      }).length;
+      return { clipped, lines: lines.map((l) => ({ bi: l.dataset.bi!, kind: l.dataset.kind!, text: l.textContent ?? "" })) };
+    });
+    expect(r.clipped, `page ${i + 1}`).toBe(0);
+    seen.push(...r.lines.filter((l) => l.kind === "text").map((l) => `${l.bi}\u0000${l.text}`));
+    await page.keyboard.press("ArrowRight");
+  }
+  // Within a block, every line but the last ends at a space: no word is cut.
+  for (let i = 0; i + 1 < seen.length; i++) {
+    const [bi, text] = seen[i].split("\u0000");
+    if (seen[i + 1].split("\u0000")[0] === bi) expect(text, `mid-word break after "${text}"`).toMatch(/\s$/);
+  }
+  // The hyphenated name stays whole in the heading.
+  expect(seen.some((l) => l.startsWith("0\u0000") && l.includes("Jésus-Christ"))).toBe(true);
+});
 
 test("page view: 16:9 fills a 16:9 screen; toggle to flow", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
