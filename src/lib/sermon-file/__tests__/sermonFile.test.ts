@@ -330,3 +330,8 @@ describe("older server-shape files", () => {
     assert.equal("createdAt" in parseSermonFile(JSON.stringify(old)).sermon, false);
   });
 });
+
+it("sermonFileName drops full stops like commas", () => {
+  assert.equal(sermonFileName("Vivre pleinement. Rien de moins"), "Vivre-pleinement-Rien-de-moins.sermon");
+  assert.equal(sermonFileName("Fin..."), "Fin.sermon");
+});
