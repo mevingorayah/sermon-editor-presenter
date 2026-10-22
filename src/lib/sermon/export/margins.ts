@@ -1,4 +1,5 @@
 import type { CalibratedMargins, CalibrationTarget } from "@/types/document";
+import { PAGE_LIMITS, clamp, isPaperPage, pngFrameWidthInches, type PageInput } from "./frames";
 
 export interface ResolvedMarginsInches {
   top: number;
@@ -31,42 +32,35 @@ export function parseLengthToInches(
   return 0.75;
 }
 
-export function pageWidthInchesFor(target: string): number {
-  switch (target) {
-    case "paper-a4":
-      return 8.27;
-    case "paper-letter":
-      return 8.5;
-    case "paper-half-letter":
-      return 5.5;
-    case "tablet-portrait":
-      return 8;
-    case "screen-16-10":
-      return 13.3;
-    case "screen-16-9":
-    default:
-      return 13.3;
-  }
+/** Page width in inches: the shared frame geometry (frames.ts). */
+export function pageWidthInchesFor(target: PageInput): number {
+  return pngFrameWidthInches(target);
 }
+
+/** Default margins: 0.8 in on every side, every format (no percentages). */
+export const DEFAULT_MARGINS: CalibratedMargins = { top: "0.8in", right: "0.8in", bottom: "0.8in", left: "0.8in" };
 
 export function resolveMargins(
   margins: CalibratedMargins,
-  target: string,
+  target: PageInput,
 ): ResolvedMarginsInches {
   const width = pageWidthInchesFor(target);
+  // Every side is 0.25–2 in on every format (PM limits); legacy % values are
+  // converted against the page width, then clamped.
+  const side = (raw: string) => clamp(parseLengthToInches(raw, width), PAGE_LIMITS.marginIn);
   return {
-    top: parseLengthToInches(margins.top, width),
-    right: parseLengthToInches(margins.right, width),
-    bottom: parseLengthToInches(margins.bottom, width),
-    left: parseLengthToInches(margins.left, width),
+    top: side(margins.top),
+    right: side(margins.right),
+    bottom: side(margins.bottom),
+    left: side(margins.left),
     binderGutter: margins.binderGutter
       ? parseLengthToInches(margins.binderGutter, width)
       : 0,
   };
 }
 
-export function isPaperTarget(target: string): boolean {
-  return target.startsWith("paper-");
+export function isPaperTarget(target: PageInput): boolean {
+  return isPaperPage(target);
 }
 
 export type { CalibrationTarget };

@@ -18,7 +18,7 @@ function sanitizeStem(raw: string): string {
   return s || "sermon-export";
 }
 
-async function exportAndDownload(page: Page, name: string) {
+async function exportAndDownload(page: Page, name: string | RegExp) {
   const [download] = await Promise.all([
     page.waitForEvent("download"),
     page.getByRole("button", { name }).click(),
@@ -68,7 +68,8 @@ test("Edit Export… → Preach Calibration → DOCX + PNG downloads", async ({ 
   for (const name of [
     "Export DOCX",
     "Export PDF",
-    "Image (.png)",
+    // PNG label carries the page count at >= 24pt: "Image (.png)" or "Images (N pages, .zip)".
+    /^Images? \((\.png|\d+ pages, \.zip)\)$/,
     "Export PowerPoint (PPTX)",
   ]) {
     await expect(panel.getByRole("button", { name })).toBeEnabled();
@@ -83,7 +84,7 @@ test("Edit Export… → Preach Calibration → DOCX + PNG downloads", async ({ 
   expect(docxBytes.subarray(0, 2).toString("latin1")).toBe("PK");
   await expect(panel.getByRole("status")).toHaveText(`Downloaded ${STEM}.docx`);
 
-  const png = await exportAndDownload(page, "Image (.png)");
+  const png = await exportAndDownload(page, /^Images? \(/);
   expect(png.suggestedFilename()).toBe(`${STEM}.png`);
   const pngBytes = await readFile((await png.path())!);
   expect(pngBytes.subarray(1, 4).toString("latin1")).toBe("PNG");

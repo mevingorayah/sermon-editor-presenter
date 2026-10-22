@@ -1,8 +1,7 @@
-import JSZip from "jszip";
 import type { CalibratedSnapshot, ExportFormat } from "@/types/document";
 import { buildDocx } from "./docx";
 import { buildPdf } from "./pdf";
-import { buildPng, buildPngPages } from "./png";
+import { buildPng, buildPngPages, zipPngPages } from "./png";
 import { buildPptx } from "./pptx";
 import { filenameWithExt, sanitizeFilenameStem } from "./filename";
 import { titleTextFromSnapshot } from "./contentWalk";
@@ -12,6 +11,8 @@ export interface ExportOptions {
   includeNotes?: boolean;
   notes?: string;
   resolvedColors?: { accent: string };
+  /** PDF/PNG/PPTX colours; PDF defaults to light, PNG/PPTX to the snapshot theme. */
+  exportTheme?: "light" | "dark";
 }
 
 export interface ExportResult {
@@ -54,7 +55,7 @@ export async function exportSnapshot(
   }
 
   if (format === "pdf") {
-    const buffer = await buildPdf(snapshot, workerOpts);
+    const buffer = await buildPdf(snapshot, { ...workerOpts, exportTheme: options.exportTheme });
     return {
       buffer,
       contentType: "application/pdf",
@@ -63,33 +64,29 @@ export async function exportSnapshot(
   }
 
   if (format === "png") {
-    // includeNotes ignored for PNG (slice 2).
+    // includeNotes ignored for PNG. One page → .png; several → .zip of pages.
     const pages = await buildPngPages(snapshot, {
       resolvedColors: options.resolvedColors,
+      exportTheme: options.exportTheme,
     });
-    if (pages.length === 1) {
+    if (pages.length > 1) {
       return {
-        buffer: pages[0],
-        contentType: "image/png",
-        filename: filenameWithExt(stem, "png"),
+        buffer: await zipPngPages(pages, stem),
+        contentType: "application/zip",
+        filename: filenameWithExt(stem, "zip"),
       };
     }
-    // Several frames: one PNG per page in a zip, named stem-01.png, stem-02.png…
-    const zip = new JSZip();
-    const clean = filenameWithExt(stem, "png").replace(/\.png$/, "");
-    pages.forEach((p, i) =>
-      zip.file(`${clean}-${String(i + 1).padStart(2, "0")}.png`, p),
-    );
     return {
-      buffer: await zip.generateAsync({ type: "nodebuffer" }),
-      contentType: "application/zip",
-      filename: filenameWithExt(stem, "zip"),
+      buffer: pages[0],
+      contentType: "image/png",
+      filename: filenameWithExt(stem, "png"),
     };
   }
 
   if (format === "pptx") {
     const buffer = await buildPptx(snapshot, {
       resolvedColors: options.resolvedColors,
+      exportTheme: options.exportTheme,
     });
     return {
       buffer,

@@ -22,6 +22,25 @@ export interface PresentationSettings {
   bionic: boolean;
   /** Calibration / export preview target */
   calibrationTarget: CalibrationTarget;
+  /**
+   * Per-sermon page settings (optional; older sermons omit them and get the
+   * defaults from `PAGE_LIMITS` in export/frames.ts).
+   */
+  page?: SermonPageSettings;
+}
+
+/** The sermon's own page: Preach and every export use it. */
+export interface SermonPageSettings {
+  format?: "a4" | "letter" | "half-letter" | "tablet" | "16:9" | "16:10";
+  orientation?: "portrait" | "landscape";
+  /** 24–72 pt, step 2, default 28. */
+  textSizePt?: number;
+  /** 1.2–2.0, step 0.05, default 1.55. */
+  lineSpacing?: number;
+  /** 0–48 pt, step 2, default 20. */
+  paragraphSpacingPt?: number;
+  /** Each side 0.25–2 in (e.g. "0.8in" or "20mm"); default 0.8in. */
+  margins?: CalibratedMargins;
 }
 
 export interface SermonDocument {
@@ -70,8 +89,18 @@ export interface CalibratedSnapshot {
   target: CalibrationTarget | string;
   margins: CalibratedMargins;
   typeScaleStep: number; // -2..2
-  lineHeight: LineHeightOption;
+  /** Legacy presets 1.55/1.7/1.85, or any 1.2–2.0 line spacing. */
+  lineHeight: LineHeightOption | number;
+  /** Page line spacing 1.2–2.0 (step 0.05, default 1.55); wins over `lineHeight`. */
+  lineSpacing?: number;
   theme: ReadingTheme; // print default light
+  /** Optional page overrides (win over `target`). */
+  pageFormat?: SermonPageSettings["format"];
+  orientation?: SermonPageSettings["orientation"];
+  textSizePt?: number;
+  paragraphSpacingPt?: number;
+  /** Block builder defaults per block type (sermon.globalStyles); missing = app defaults. */
+  globalStyles?: import("@/lib/sermon/blockStyle").GlobalStyles;
   flattenGradient: true;
   bionic: false; // never in export
   semanticBlocks: SemanticBlock[];
@@ -105,4 +134,9 @@ export interface ExportRequestOptions {
   notes?: string;
   /** Concrete accent for workers (e.g. PPTX/PNG chrome). */
   resolvedColors?: { accent: string };
+  /**
+   * Colours for PDF/PNG/PPTX. Default: PDF light; PNG/PPTX follow the
+   * snapshot theme. Never changes layout.
+   */
+  exportTheme?: "light" | "dark";
 }

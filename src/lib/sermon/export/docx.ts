@@ -1,3 +1,5 @@
+import { LineRuleType } from "docx";
+import { snapshotLineSpacing } from "./frames";
 import {
   AlignmentType,
   Document,
@@ -7,7 +9,9 @@ import {
   TextRun,
   ShadingType,
   PageOrientation,
+  BorderStyle,
 } from "docx";
+import { BORDER_LEFT_CSS_PX, lookAlign } from "./blockLook";
 import type { CalibratedSnapshot } from "@/types/document";
 import { HIGHLIGHT_AMBER, hexWithoutHash, toHexRgb } from "./colors";
 import {
@@ -20,6 +24,8 @@ import {
   type TextAlign,
 } from "./contentWalk";
 import { docxFontName } from "./fonts";
+import { frameSizeInches, type PageInput } from "./frames";
+import { pageSpecFromSnapshot } from "./pngLayout";
 import { isPaperTarget, resolveMargins } from "./margins";
 
 export interface DocxBuildOptions {
@@ -28,31 +34,18 @@ export interface DocxBuildOptions {
   resolvedColors?: { accent: string };
 }
 
-/** Page size in twips (1440 per inch) for each calibration target. */
-export function docxPageSize(target: string): {
+/** Page size in twips (1440 per inch): the shared frame (frames.ts). */
+export function docxPageSize(target: PageInput): {
   width: number;
   height: number;
   orientation: (typeof PageOrientation)[keyof typeof PageOrientation];
 } {
-  const t = (w: number, h: number) => ({
-    width: Math.round(w * 1440),
-    height: Math.round(h * 1440),
-  });
-  switch (target) {
-    case "paper-letter":
-      return { ...t(8.5, 11), orientation: PageOrientation.PORTRAIT };
-    case "paper-half-letter":
-      return { ...t(5.5, 8.5), orientation: PageOrientation.PORTRAIT };
-    case "tablet-portrait":
-      return { ...t(8, 10.667), orientation: PageOrientation.PORTRAIT };
-    case "screen-16-9":
-      return { ...t(13.333, 7.5), orientation: PageOrientation.LANDSCAPE };
-    case "screen-16-10":
-      return { ...t(13.3, 8.3125), orientation: PageOrientation.LANDSCAPE };
-    case "paper-a4":
-    default:
-      return { ...t(8.27, 11.69), orientation: PageOrientation.PORTRAIT };
-  }
+  const { width, height } = frameSizeInches(target);
+  return {
+    width: Math.round(width * 1440),
+    height: Math.round(height * 1440),
+    orientation: width > height ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT,
+  };
 }
 
 function alignType(align: TextAlign) {
@@ -91,10 +84,61 @@ function runToTextRun(
   });
 }
 
+/** Default run size (half-points) per role, as the unstyled path uses. */
+const DOCX_ROLE_SIZE: Record<StyledBlock["type"], number> = { Title: 56, H1: 36, H2: 28, Body: 24, Scripture: 24, Caption: 20 };
+const TWIPS_PER_CSS_PX = 15; // 1440 / 96
+
+/**
+ * Builder-styled block: Word flows text itself, so this approximates Edit
+ * with the same colours, size (stored pt, no 24 pt floor on paper), weight,
+ * italic, alignment, fill, left rule and spacing. Columns stack.
+ */
+function styledBlockToParagraphs(block: StyledBlock, accent?: string): Paragraph[] {
+  const look = block.look!;
+  const sp = look.spacing;
+  const tw = (v?: number) => (v === undefined ? undefined : Math.round(v * TWIPS_PER_CSS_PX));
+  const size = look.sizePt !== undefined ? Math.round(look.sizePt * 2) : DOCX_ROLE_SIZE[block.type];
+  const defaultColor = look.color ?? (block.type === "Title" ? accent : undefined);
+  const heading = block.type === "Title" ? HeadingLevel.TITLE : block.type === "H1" ? HeadingLevel.HEADING_1 : block.type === "H2" ? HeadingLevel.HEADING_2 : undefined;
+  const align = look.align === "justify" ? AlignmentType.JUSTIFIED : alignType(lookAlign(look, block.align));
+  const shading = look.background ? { type: ShadingType.CLEAR, fill: hexWithoutHash(look.background) } : undefined;
+  const border = look.borderLeft
+    ? { left: { style: BorderStyle.SINGLE, size: Math.round(BORDER_LEFT_CSS_PX * 6), color: hexWithoutHash(look.borderLeft), space: Math.round((sp.pl ?? 0) * 0.75) } }
+    : undefined;
+  const runs = block.runs.length ? block.runs : [{ text: " " } as StyledRun];
+  const out = [
+    new Paragraph({
+      ...(heading ? { heading } : {}),
+      alignment: align,
+      spacing: { before: tw(sp.mt), after: tw(sp.mb) ?? (block.citation ? 0 : 160) },
+      indent: { left: tw(sp.pl), right: tw(sp.pr) },
+      ...(shading ? { shading } : {}),
+      ...(border ? { border } : {}),
+      children: runs.map((r) => {
+        const t = runToTextRun(r, { size, defaultColor });
+        return look.highlight && !r.highlight
+          ? new TextRun({ text: r.text, bold: r.bold, italics: r.italic, size, font: docxFontName(r.fontFamily), color: hexWithoutHash(r.color ?? defaultColor ?? "") || undefined, shading: { type: ShadingType.CLEAR, fill: hexWithoutHash(look.highlight) } })
+          : t;
+      }),
+    }),
+  ];
+  if (block.citation) {
+    out.push(
+      new Paragraph({
+        alignment: AlignmentType.RIGHT,
+        spacing: { after: 240 },
+        children: [new TextRun({ text: citationCaps(block.citation), size: 20, color: "666666" })],
+      }),
+    );
+  }
+  return out;
+}
+
 function blockToParagraphs(
   block: StyledBlock,
   accent?: string,
 ): Paragraph[] {
+  if (block.look) return styledBlockToParagraphs(block, accent);
   const align = alignType(block.align);
   switch (block.type) {
     case "Title":
@@ -241,23 +285,37 @@ export async function buildDocx(
     );
   }
 
-  const margins = resolveMargins(snapshot.margins, String(snapshot.target));
+  const page = pageSpecFromSnapshot(snapshot);
+  const margins = resolveMargins(snapshot.margins, page);
   const inch = 1440;
   const leftInches = margins.left + margins.binderGutter;
 
   void isPaperTarget(String(snapshot.target));
-  const pageSize = docxPageSize(String(snapshot.target));
+  const pageSize = docxPageSize(page);
   void snapshot.theme;
 
   const doc = new Document({
     creator: "sermon-editor-presenter",
     title,
     description: `Calibrated export target=${snapshot.target}`,
+    // Page line spacing (1.2–2.0) as Word "multiple" spacing (240 = single).
+    styles: {
+      default: {
+        document: {
+          paragraph: { spacing: { line: Math.round(240 * snapshotLineSpacing(snapshot)), lineRule: LineRuleType.AUTO } },
+        },
+      },
+    },
     sections: [
       {
         properties: {
           page: {
-            size: pageSize,
+            // The docx library swaps width/height for landscape, so hand it
+            // portrait-ordered sides; the written page is then pageSize.
+            size:
+              pageSize.orientation === PageOrientation.LANDSCAPE
+                ? { ...pageSize, width: pageSize.height, height: pageSize.width }
+                : pageSize,
             margin: {
               top: Math.round(margins.top * inch),
               right: Math.round(margins.right * inch),

@@ -1,23 +1,22 @@
 import sharp from "sharp";
+import JSZip from "jszip";
 import type { CalibratedSnapshot } from "@/types/document";
 import {
   DEFAULT_ACCENT_DARK,
-  DEFAULT_ACCENT_LIGHT,
   HIGHLIGHT_AMBER,
+  DEFAULT_ACCENT_LIGHT,
   toHexRgb,
 } from "./colors";
-import {
-  type StyledBlock,
-  type StyledRun,
-  citationCaps,
-} from "./contentWalk";
-import { cssFontStack } from "./fonts";
-import { isPaperTarget } from "./margins";
-import { exportPages, sliceRuns, type LineToken } from "./pages";
-import { DARK_YELLOW_PRESET, ensureContrast } from "../../reading/contrast";
+import { citationCaps, type StyledBlock, type StyledRun } from "./contentWalk";
+import { lookAlign, lookRole } from "./blockLook";
+import { layoutSnapshot, roleStyle, type PngPage, type SnapshotLayout } from "./pngLayout";
+import { afmMeasurer, metricCompatibleCss } from "./textMeasure";
+import { DARK_YELLOW_PRESET, ensureContrast } from "@/lib/reading/contrast";
 
 export interface PngBuildOptions {
   resolvedColors?: { accent: string };
+  /** Colours only; defaults to the snapshot theme. */
+  exportTheme?: "light" | "dark";
 }
 
 function escapeXml(s: string): string {
@@ -29,121 +28,153 @@ function escapeXml(s: string): string {
     .replace(/'/g, "&apos;");
 }
 
-const CHAR_EM = 0.53; // as pngLayout.ts
-type Token = LineToken;
-
-function familyFor(run: StyledRun): string {
-  return run.fontExplicit ? cssFontStack(run.fontFamily) : cssFontStack("serif");
+/** Runs clipped to [start, end) of the block's plain text. */
+export function sliceRuns(runs: readonly StyledRun[], start: number, end: number): StyledRun[] {
+  const out: StyledRun[] = [];
+  let at = 0;
+  for (const r of runs) {
+    const a = Math.max(start, at);
+    const b = Math.min(end, at + r.text.length);
+    if (a < b) out.push({ ...r, text: r.text.slice(a - at, b - at) });
+    at += r.text.length;
+  }
+  return out;
 }
 
-function tokensToSvg(
-  line: Token[],
-  opts: { size: number; defaultColor: string; forceItalic?: boolean; forceBold?: boolean },
-): string {
-  return line
-    .map(({ run, text }, i) => {
-      const t = i === line.length - 1 ? text.trimEnd() : text;
-      const weight = opts.forceBold || run.bold ? "700" : "400";
-      const style = opts.forceItalic || run.italic ? "italic" : "normal";
-      const deco = [run.underline ? "underline" : "", run.strike ? "line-through" : ""]
-        .filter(Boolean)
-        .join(" ");
-      return `<tspan fill="${escapeXml(run.color || opts.defaultColor)}" font-family="${escapeXml(familyFor(run))}" font-weight="${weight}" font-style="${style}" font-size="${opts.size}"${deco ? ` text-decoration="${deco}"` : ""}>${escapeXml(t)}</tspan>`;
-    })
-    .join("");
+/** Drop trailing whitespace from a line's runs (it never counts for width). */
+export function trimRunsEnd(runs: StyledRun[]): StyledRun[] {
+  const out = runs.map((r) => ({ ...r }));
+  for (let i = out.length - 1; i >= 0; i--) {
+    out[i].text = out[i].text.replace(/\s+$/u, "");
+    if (out[i].text) break;
+    out.pop();
+  }
+  return out;
 }
 
-export interface PngPagesResult {
-  pages: Buffer[];
+interface Palette {
+  bg: string;
+  fg: string;
+  muted: string;
+  accent: string;
+  /** Title colour: dark theme lifts the accent to 4.5:1 on the background. */
+  title: string;
+  /** Highlight fill behind marked text. */
+  highlight: string;
+  light: boolean;
 }
 
-/**
- * PNG export: the whole sermon over as many frames as it needs, one PNG per
- * frame, using the shared page split in pngLayout.ts (same as PPTX slides and
- * the Export button's page count). Notes are ignored for PNG (slice 2).
- */
+/** Colours for a theme. Theme never affects layout. */
+export function paletteFor(theme: "light" | "dark", accentIn?: string): Palette {
+  const light = theme === "light";
+  const bg = light ? "#F7F4EF" : "#1A1A1A";
+  const accent = toHexRgb(accentIn) || (light ? DEFAULT_ACCENT_LIGHT : DEFAULT_ACCENT_DARK);
+  return {
+    light,
+    bg,
+    fg: light ? "#111111" : "#F0EDE6",
+    muted: light ? "#555555" : "#A8A29A",
+    accent,
+    title: light ? accent : ensureContrast(accent, bg),
+    highlight: light ? HIGHLIGHT_AMBER : DARK_YELLOW_PRESET,
+  };
+}
+
+export function blockColor(type: StyledBlock["type"], p: Palette): string {
+  if (type === "Title") return p.title;
+  if (type === "Caption") return p.muted;
+  if (type === "H2") return p.light ? "#222222" : "#D4CFC5";
+  return p.fg;
+}
+
+function pageSvg(layout: SnapshotLayout, page: PngPage, p: Palette): string {
+  const { frame: f, styled } = layout;
+  const parts: string[] = [
+    `<rect x="0" y="0" width="8" height="${f.height}" fill="${escapeXml(p.accent)}" />`,
+  ];
+  for (const b of page.boxes ?? []) {
+    if (b.fill) parts.push(`<rect x="${b.x.toFixed(2)}" y="${b.y.toFixed(2)}" width="${b.w.toFixed(2)}" height="${b.h.toFixed(2)}" fill="${escapeXml(b.fill)}" />`);
+    if (b.border) parts.push(`<rect x="${b.x.toFixed(2)}" y="${b.y.toFixed(2)}" width="${b.borderWidth.toFixed(2)}" height="${b.h.toFixed(2)}" fill="${escapeXml(b.border)}" />`);
+  }
+  for (const line of page.lines) {
+    const block = styled[line.blockIndex];
+    const lx = line.x ?? f.left;
+    const lw = line.width ?? f.contentWidth;
+    const baseline = (line.y + line.size).toFixed(2);
+    if (line.kind === "citation") {
+      parts.push(
+        `<text x="${lx + lw}" y="${baseline}" text-anchor="end" fill="${escapeXml(p.muted)}" font-size="${line.size}" font-family="${escapeXml(metricCompatibleCss("serif"))}">${escapeXml(citationCaps(block.citation ?? ""))}</text>`,
+      );
+      continue;
+    }
+    const role = lookRole(roleStyle(block.type), block.look);
+    const color = block.look?.color ?? blockColor(block.type, p);
+    const align = lookAlign(block.look, block.align);
+    const anchor = align === "center" ? "middle" : align === "right" ? "end" : "start";
+    const x =
+      align === "center" ? lx + lw / 2
+        : align === "right" ? lx + lw
+          : lx;
+    const runs = trimRunsEnd(sliceRuns(block.runs, line.start, line.end));
+    const styleOf = (run: StyledRun) => ({ font: run.fontFamily, bold: role.bold || !!run.bold, italic: role.italic || !!run.italic });
+    const widths = runs.map((run) => afmMeasurer(run.text, line.size, styleOf(run)));
+    const total = widths.reduce((a, w) => a + w, 0);
+    let hx = anchor === "middle" ? x - total / 2 : anchor === "end" ? x - total : x;
+    if (block.look?.highlight && total > 0) {
+      parts.push(
+        `<rect x="${hx.toFixed(2)}" y="${(line.y + line.size * 0.15).toFixed(2)}" width="${total.toFixed(2)}" height="${(line.size * 1.05).toFixed(2)}" fill="${escapeXml(block.look.highlight)}" />`,
+      );
+    }
+    runs.forEach((run, i) => {
+      if (run.highlight) {
+        parts.push(
+          `<rect x="${hx.toFixed(2)}" y="${(line.y + line.size * 0.15).toFixed(2)}" width="${widths[i].toFixed(2)}" height="${(line.size * 1.05).toFixed(2)}" fill="${escapeXml(p.highlight)}" />`,
+        );
+      }
+      hx += widths[i];
+    });
+    const tspans = runs
+      .map((run) => {
+        const fill = run.color || color;
+        const deco = [run.underline ? "underline" : "", run.strike ? "line-through" : ""].filter(Boolean).join(" ");
+        return `<tspan fill="${escapeXml(fill)}" font-family="${escapeXml(metricCompatibleCss(run.fontFamily))}" font-weight="${role.bold || run.bold ? 700 : 400}" font-style="${role.italic || run.italic ? "italic" : "normal"}"${deco ? ` text-decoration="${deco}"` : ""}>${escapeXml(run.text)}</tspan>`;
+      })
+      .join("");
+    parts.push(
+      `<text x="${x}" y="${baseline}" text-anchor="${anchor}" font-size="${line.size}" xml:space="preserve">${tspans}</text>`,
+    );
+  }
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${f.width}" height="${f.height}" viewBox="0 0 ${f.width} ${f.height}">
+  <rect width="100%" height="100%" fill="${escapeXml(p.bg)}" />
+  ${parts.join("\n  ")}
+</svg>`;
+}
+
+/** One PNG per page of the shared layout (`layoutPngPages`). */
 export async function buildPngPages(
   snapshot: CalibratedSnapshot,
   options: PngBuildOptions = {},
 ): Promise<Buffer[]> {
-  const target = String(snapshot.target);
-  const layout = exportPages(snapshot);
-  const { width, height, left, contentWidth } = layout.frame;
-
-  const paper = isPaperTarget(target);
-  const light = paper || snapshot.theme === "light";
-  const bg = light ? "#F7F4EF" : "#1A1A1A";
-  const fg = light ? "#111111" : "#F0EDE6";
-  const muted = light ? "#555555" : "#A8A29A";
-  const accent =
-    toHexRgb(options.resolvedColors?.accent) ||
-    (light ? DEFAULT_ACCENT_LIGHT : DEFAULT_ACCENT_DARK);
-  // Dark theme: the accent is lightened (hue kept) until it reaches 4.5:1 (#19).
-  const titleColor = light ? accent : ensureContrast(accent, bg);
-  const highlightFill = light ? HIGHLIGHT_AMBER : DARK_YELLOW_PRESET;
-
-  const role = (type: StyledBlock["type"]) => {
-    switch (type) {
-      case "Title": return { color: titleColor, bold: true };
-      case "H1": return { color: fg, bold: true };
-      case "H2": return { color: light ? "#222222" : "#D4CFC5", bold: true };
-      case "Caption": return { color: muted };
-      case "Scripture": return { color: fg, italic: true };
-      default: return { color: fg };
-    }
-  };
-
-  const drawLine = (
-    out: string[],
-    line: Token[],
-    size: number,
-    y: number,
-    align: StyledBlock["align"],
-    opts: { defaultColor: string; forceItalic?: boolean; forceBold?: boolean },
-  ) => {
-    const baseline = y + size;
-    const anchor = align === "center" ? "middle" : align === "right" ? "end" : "start";
-    const lineW = line.reduce((n, t) => n + t.text.length, 0) * size * CHAR_EM;
-    const x0 = align === "center" ? left + contentWidth / 2 : align === "right" ? left + contentWidth : left;
-    const start = align === "center" ? x0 - lineW / 2 : align === "right" ? x0 - lineW : x0;
-    let cx = start;
-    for (const t of line) {
-      const tw = t.text.length * size * CHAR_EM;
-      if (t.run.highlight) {
-        out.push(`<rect x="${cx.toFixed(1)}" y="${(baseline - size * 0.85).toFixed(1)}" width="${tw.toFixed(1)}" height="${(size * 1.15).toFixed(1)}" fill="${highlightFill}" />`);
-      }
-      cx += tw;
-    }
-    out.push(`<text xml:space="preserve" x="${x0}" y="${baseline}" text-anchor="${anchor}">${tokensToSvg(line, { size, ...opts })}</text>`);
-  };
-
+  const layout = layoutSnapshot(snapshot);
+  const palette = paletteFor(options.exportTheme ?? snapshot.theme, options.resolvedColors?.accent);
   return Promise.all(
-    layout.pages.map((placed) => {
-      const out = [`<rect x="0" y="0" width="8" height="${height}" fill="${escapeXml(accent)}" />`];
-      for (const p of placed.lines) {
-        const block = layout.blocks[p.blockIndex];
-        if (p.kind === "citation") {
-          const cite: StyledRun = { text: citationCaps(block.citation ?? ""), fontFamily: "serif", color: muted };
-          drawLine(out, [{ run: cite, text: cite.text }], p.size, p.y, "right", { defaultColor: muted });
-        } else {
-          const r = role(block.type);
-          drawLine(out, sliceRuns(block, p.start, p.end), p.size, p.y, block.align, { defaultColor: r.color, forceItalic: r.italic, forceBold: r.bold });
-        }
-      }
-      const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-  <rect width="100%" height="100%" fill="${escapeXml(bg)}" />
-  ${out.join("\n  ")}
-</svg>`;
-      return sharp(Buffer.from(svg)).png().toBuffer();
-    }),
+    layout.pages.map((page) => sharp(Buffer.from(pageSvg(layout, page, palette))).png().toBuffer()),
   );
 }
 
-/** First frame only (kept for callers that want a single image). */
+/** First page only (single-image callers). */
 export async function buildPng(
   snapshot: CalibratedSnapshot,
   options: PngBuildOptions = {},
 ): Promise<Buffer> {
   return (await buildPngPages(snapshot, options))[0];
+}
+
+/** Zip of numbered pages: `<stem>-01.png`, `<stem>-02.png` … */
+export async function zipPngPages(pages: readonly Buffer[], stem: string): Promise<Buffer> {
+  const zip = new JSZip();
+  const pad = Math.max(2, String(pages.length).length);
+  pages.forEach((buf, i) => zip.file(`${stem}-${String(i + 1).padStart(pad, "0")}.png`, buf));
+  return zip.generateAsync({ type: "nodebuffer" });
 }
