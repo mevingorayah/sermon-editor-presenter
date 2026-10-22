@@ -123,7 +123,7 @@ test("wake lock: acquires, re-acquires on visible, releases, silent when unsuppo
 
 test("page settings adapter: PresentationSettings.page round-trip and limits", async () => {
   const m = await import("@/lib/reading/pageSettings");
-  for (const f of m.FORMAT_BUTTONS) {
+  for (const f of m.FORMAT_BUTTONS.filter((b) => b.format !== "fit-screen")) {
     for (const o of ["portrait", "landscape"] as const) {
       const c = { ...m.fromSettings(settingsFor({})), format: f.format, orientation: o, textSizePt: 40 };
       const back = m.fromSettings({ calibrationTarget: "paper-a4", ...m.toPatch(c) } as never);
@@ -154,4 +154,26 @@ test("re-layout keeps the reader on the same paragraph", () => {
   const { blockIndex: block, lineIndex } = a.pages[2][0];
   const pb = pageOfBlock(b.pages, block, lineIndex);
   assert.ok(b.pages[pb].some((l) => l.blockIndex === block));
+});
+
+test("page contract: fit-screen, legacy tablet, legal/custom only when set", async () => {
+  const m = await import("@/lib/reading/pageSettings");
+  const base = { calibrationTarget: "paper-a4" } as never;
+  const fit = m.fitChoice(m.fromSettings(base), 1320, 2112);
+  const page = m.toPatch(fit).page!;
+  assert.equal(page.format, "fit-screen");
+  assert.deepEqual(page.pageSpec, { kind: "fit", width: 1320, height: 2112, orientation: "portrait" });
+  assert.equal(m.fitLabel(fit), "Fit this screen (1320×2112, 5:8)");
+  const back = m.fromSettings({ calibrationTarget: "paper-a4", page } as never);
+  assert.equal(back.format, "fit-screen");
+  const snap = snapshotFor(doc as never, { calibrationTarget: "paper-a4", page } as never);
+  assert.equal(snap.pageSpec?.kind, "fit");
+  const g = buildPageView({ content: doc as never, settings: { calibrationTarget: "paper-a4", page } as never }).geometry;
+  assert.ok(g.heightPx > g.widthPx);
+  const tab = m.fromSettings({ calibrationTarget: "paper-a4", page: { format: "tablet", orientation: "portrait" } } as never);
+  assert.deepEqual([tab.format, tab.orientation], ["4:3", "landscape"]);
+  assert.equal(m.extraButton(m.fromSettings(base)), null);
+  assert.equal(m.extraButton(m.fromSettings({ calibrationTarget: "paper-a4", page: { format: "legal" } } as never))?.key, "legal");
+  const bad = m.fromSettings({ calibrationTarget: "paper-a4", page: { format: "custom", custom: { width: 1, height: 1, unit: "in" } } } as never);
+  assert.ok(m.customError(bad));
 });

@@ -202,20 +202,21 @@ export function PreachShell() {
     const el = scrollRef.current;
     const w = el?.clientWidth || window.innerWidth;
     const h = el?.clientHeight || window.innerHeight;
-    return fitChoice(c, w, h);
+    return fitChoice(c, w, h, window.devicePixelRatio);
   }, []);
   const onFit = useCallback(() => {
     if (doc) applyPage(measureFit(fromSettings(doc.presentationSettings)));
   }, [doc, applyPage, measureFit]);
 
   // Fit this screen: re-measure on rotate/resize (confirm while the timer runs).
-  const fitKey = doc ? JSON.stringify(fromSettings(doc.presentationSettings).custom ?? null) : "";
+  const fitKey = doc ? JSON.stringify(fromSettings(doc.presentationSettings).fit ?? null) : "";
   useEffect(() => {
     if (!doc || !viewport.w) return;
     const cur = fromSettings(doc.presentationSettings);
-    if (cur.format !== "custom" || cur.custom?.unit !== "px") return;
+    if (cur.format !== "fit-screen") return;
     const next = measureFit(cur);
-    if (JSON.stringify(next.custom) === fitKey && next.orientation === cur.orientation) return;
+    const k = (x?: { width: number; height: number }) => JSON.stringify(x ? [x.width, x.height] : null);
+    if (k(next.fit) === k(JSON.parse(fitKey || "null") ?? undefined) && next.orientation === cur.orientation) return;
     applyPage(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewport.w, viewport.h]);
@@ -227,7 +228,7 @@ export function PreachShell() {
     setDoc((prev) => {
       if (!prev) return prev;
       const cur = fromSettings(prev.presentationSettings);
-      if (cur.format === "custom") return prev; // Fit re-measures instead
+      if (cur.format === "fit-screen") return prev; // Fit re-measures instead
       const next = { ...cur, orientation: deviceOrientation(viewport.w, viewport.h) };
       if (next.format === cur.format && next.orientation === cur.orientation) return prev;
       const patch = toPatch(next);

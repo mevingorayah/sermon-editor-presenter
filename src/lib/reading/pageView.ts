@@ -1,7 +1,8 @@
 import type { JSONContent } from "@tiptap/react";
 import type { PresentationSettings } from "@/types/document";
 import { sliceRuns } from "@/lib/sermon/export/pages";
-import { layoutSnapshot, roleStyle } from "@/lib/sermon/export/pngLayout";
+import { layoutSnapshot, pageSpecFromSnapshot, roleStyle } from "@/lib/sermon/export/pngLayout";
+import { pageGeometry } from "@/lib/sermon/export/frames";
 import { snapshotFor } from "@/lib/reading/pageSettings";
 import { citationCaps, type StyledBlock, type StyledRun } from "@/lib/sermon/export/contentWalk";
 import type { PngFrame } from "@/lib/sermon/export/pngLayout";
@@ -28,6 +29,8 @@ export interface PageViewLine {
 
 export interface PageViewModel {
   frame: PngFrame;
+  /** #29 pageGeometry(page): the page Preach shows is the page every export prints. */
+  geometry: ReturnType<typeof pageGeometry>;
   pages: PageViewLine[][];
 }
 
@@ -37,6 +40,7 @@ export function buildPageView(opts: { content: JSONContent; settings: Presentati
   const { frame, styled, pages } = layoutSnapshot(snapshot);
   return {
     frame,
+    geometry: pageGeometry(pageSpecFromSnapshot(snapshot)),
     pages: pages.map((pg, pi) =>
       pg.lines.map((l, li) => {
         const block = styled[l.blockIndex];
