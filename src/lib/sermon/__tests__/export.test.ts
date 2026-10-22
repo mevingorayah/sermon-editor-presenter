@@ -158,14 +158,26 @@ describe("exportSnapshot", () => {
       notes: "should not appear",
       resolvedColors: { accent: "#8B6914" },
     });
-    assert.equal(result.contentType, "image/png");
-    assert.equal(result.filename, "Joy-Screen.png");
+    // Several layout pages come back as a zip of numbered PNGs.
+    let png = result.buffer;
+    if (result.contentType === "application/zip") {
+      assert.equal(result.filename, "Joy-Screen.zip");
+      const JSZip = (await import("jszip")).default;
+      const zip = await JSZip.loadAsync(result.buffer);
+      const first = zip.file("Joy-Screen-01.png");
+      assert.ok(first, "first page is Joy-Screen-01.png");
+      png = await first!.async("nodebuffer");
+    } else {
+      assert.equal(result.contentType, "image/png");
+      assert.equal(result.filename, "Joy-Screen.png");
+    }
+    const result2 = { buffer: png };
     // PNG signature
-    assert.equal(result.buffer[0], 0x89);
-    assert.equal(result.buffer[1], 0x50);
-    assert.equal(result.buffer[2], 0x4e);
-    assert.equal(result.buffer[3], 0x47);
-    assert.ok(result.buffer.length > 1000);
+    assert.equal(result2.buffer[0], 0x89);
+    assert.equal(result2.buffer[1], 0x50);
+    assert.equal(result2.buffer[2], 0x4e);
+    assert.equal(result2.buffer[3], 0x47);
+    assert.ok(result2.buffer.length > 1000);
   });
 
   it("generates a real PPTX buffer", async () => {
@@ -189,10 +201,11 @@ describe("exportSnapshot", () => {
       resolvedColors: { accent: "#5c4a1f" },
     });
     const zip = await JSZip.loadAsync(result.buffer);
-    const slide = await zip.file("ppt/slides/slide2.xml")?.async("string");
-    assert.ok(slide, "Introduction slide exists");
+    const slides = await Promise.all(
+      Object.keys(zip.files).filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n)).map((n) => zip.file(n)!.async("string")),
+    );
     // Centered paragraph under "Introduction" must carry algn="ctr".
-    assert.match(slide!, /algn="ctr"/);
+    assert.match(slides.join(""), /algn="ctr"/);
   });
 });
 

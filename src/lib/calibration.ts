@@ -28,19 +28,10 @@ export const CALIBRATION_TARGETS: TargetMeta[] = [
   { id: "paper-half-letter", label: "Half letter", kind: "paper", aspect: "5.5 / 8.5", previewWidth: 260 },
 ];
 
-/** Margins: screen 5%; paper 0.75in; binder gutter +0.25in on paper. */
+/** Margins: 0.8in on every side, every format (PM limits: 0.25–2in). */
 export function marginsFor(target: CalibrationTarget): CalibratedMargins {
-  const meta = CALIBRATION_TARGETS.find((t) => t.id === target);
-  if (!meta || meta.kind === "screen") {
-    return { top: "5%", right: "5%", bottom: "5%", left: "5%" };
-  }
-  return {
-    top: "0.75in",
-    right: "0.75in",
-    bottom: "0.75in",
-    left: "0.75in",
-    binderGutter: "0.25in",
-  };
+  void target;
+  return { top: "0.8in", right: "0.8in", bottom: "0.8in", left: "0.8in" };
 }
 
 export function buildCalibratedSnapshot(opts: {

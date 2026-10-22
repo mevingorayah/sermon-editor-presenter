@@ -41,13 +41,13 @@ test("download name: Content-Disposition wins, else Content-Type picks .zip vs .
 
 // ---- Shared layout rules (UI UX ruling) ----
 import {
-  layoutPngPages, pngFrame, pngFrameWidthInches, pngPageCount, pngTypeScale, pxPerPt, MIN_BODY_PT, type LayoutBlock,
+  afmMeasurer, layoutPngPages, pngFrame, pngFrameWidthInches, pngPageCount, pngTypeScale, pxPerPt, MIN_BODY_PT, type LayoutBlock,
 } from "../export/pngLayout";
 
 const T = "screen-16-9";
 const LH = 1.7;
 const BODY = 20 * pngTypeScale(T); // px
-const CPL = Math.floor(pngFrame(T).contentWidth / (0.53 * BODY)); // chars per body line
+const CPL = Math.floor(pngFrame(T).contentWidth / (afmMeasurer("m000 ", BODY, { font: "sans" }) / 5)); // chars per body line
 const words = (n: number) => Array.from({ length: n }, (_, i) => `m${String(i).padStart(3, "0")}`).join(" ");
 // "mNNN " = 5 chars; ~CPL/5 words per line.
 const bodyLines = (lines: number): LayoutBlock => ({ type: "Body", text: words(Math.max(1, Math.round((lines * CPL) / 5) - lines)) });
@@ -56,17 +56,19 @@ const linesPerPage = Math.floor((pngFrame(T).bottom - pngFrame(T).top) / (BODY *
 const pageOf = (pages: ReturnType<typeof layoutPngPages>, bi: number, kind?: string) =>
   pages.map((p, i) => (p.lines.some((l) => l.blockIndex === bi && (!kind || l.kind === kind)) ? i : -1)).filter((i) => i >= 0);
 
-test("sizes: 16:9 is 2 px/pt and body is 24 pt = 48 px; all sizes scale together", () => {
+test("sizes: 16:9 is 2 px/pt and body defaults to 28 pt = 56 px; all sizes scale together", () => {
   assert.ok(Math.abs(pxPerPt(T) - 2) < 0.001);
-  assert.ok(Math.abs(BODY - 48) < 0.01);
+  assert.ok(Math.abs(BODY - 56) < 0.01);
   const pages = layoutPngPages(
     [{ type: "H1", text: "Titre" }, { type: "Body", text: "corps" }, { type: "Scripture", text: "verset", citation: "Jn 1.1" }],
     T, LH,
   );
   const lines = pages.flatMap((p) => p.lines);
   const k = pngTypeScale(T);
-  assert.deepEqual(lines.map((l) => +(l.size / k).toFixed(3)), [30, 20, 20, 16]);
-  assert.deepEqual(lines.map((l) => +(l.lineHeight / k).toFixed(3)), [51, 34, 34, 26]);
+  const cite = Math.max(16, (24 * pxPerPt(T)) / k); // citations are lifted to the 24 pt floor
+  assert.deepEqual(lines.map((l) => +(l.size / k).toFixed(3)), [30, 20, 20, +cite.toFixed(3)]);
+  assert.deepEqual(lines.slice(0, 3).map((l) => +(l.lineHeight / k).toFixed(3)), [51, 34, 34]);
+  for (const l of lines) assert.ok(l.size / pxPerPt(T) >= 24 - 1e-9);
   for (const t of ["screen-16-9", "screen-16-10", "tablet-portrait", "paper-letter", "paper-a4", "paper-half-letter"]) {
     const body = layoutPngPages([{ type: "Body", text: "x" }], t, LH)[0].lines[0].size;
     assert.ok(body / pxPerPt(t) >= MIN_BODY_PT - 1e-9, `${t}: ${body / pxPerPt(t)}pt`);
@@ -77,10 +79,10 @@ test("frame widths: 16:9 13.333in, 16:10 10in, tablet 9.25in (Tab S10 Lite)", ()
   assert.equal(pngFrameWidthInches("screen-16-9"), 13.333);
   assert.equal(pngFrameWidthInches("screen-16-10"), 10);
   assert.equal(pngFrameWidthInches("tablet-portrait"), 9.25);
-  // Tablet: 900px / (9.25in x 72) = 1.351 px/pt → body 24pt = 32.4px.
+  // Tablet: 900px / (9.25in x 72) = 1.351 px/pt → body 28pt (default) = 37.84px.
   assert.ok(Math.abs(pxPerPt("tablet-portrait") - 900 / 666) < 1e-9);
   const body = layoutPngPages([{ type: "Body", text: "x" }], "tablet-portrait", LH)[0].lines[0].size;
-  assert.ok(Math.abs(body - 32.432) < 0.01, String(body));
+  assert.ok(Math.abs(body - 37.838) < 0.01, String(body));
 });
 
 test("rule 1: lines never straddle a page, and every char is placed exactly once", () => {

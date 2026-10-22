@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/lib/sermon/__tests__/schema.test.ts src/lib/sermon/__tests__/sanitize-store.test.ts src/lib/sermon/__tests__/export.test.ts src/lib/sermon/__tests__/exportFixes.test.ts src/lib/find/__tests__/collectMatches.test.ts src/lib/sermon/__tests__/sermonApiIds.test.ts src/lib/sermon/__tests__/seedBootstrapRace.test.ts src/lib/__tests__/cssText.test.ts src/lib/export-client/__tests__/flattenColors.test.ts src/lib/export-client/__tests__/payload.test.ts src/lib/autosave/__tests__/autosaveController.test.ts src/lib/reading/__tests__/contrast.test.ts src/lib/reading/__tests__/renderSermon.test.tsx src/lib/export-client/__tests__/editAccent.test.ts src/lib/export-client/__tests__/exportError.test.ts src/lib/sermon/__tests__/pngLayout.test.ts",
+    "test": "node --import tsx --test src/lib/sermon/__tests__/schema.test.ts src/lib/sermon/__tests__/sanitize-store.test.ts src/lib/sermon/__tests__/export.test.ts src/lib/sermon/__tests__/exportFixes.test.ts src/lib/find/__tests__/collectMatches.test.ts src/lib/sermon/__tests__/sermonApiIds.test.ts src/lib/sermon/__tests__/seedBootstrapRace.test.ts src/lib/__tests__/cssText.test.ts src/lib/export-client/__tests__/flattenColors.test.ts src/lib/export-client/__tests__/payload.test.ts src/lib/autosave/__tests__/autosaveController.test.ts src/lib/reading/__tests__/contrast.test.ts src/lib/reading/__tests__/renderSermon.test.tsx src/lib/export-client/__tests__/editAccent.test.ts src/lib/export-client/__tests__/exportError.test.ts src/lib/sermon/__tests__/pngLayout.test.ts src/lib/sermon/__tests__/exportLayout.test.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {
@@ -23,6 +23,7 @@
     "@tiptap/react": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
     "docx": "^9.5.1",
+    "jszip": "^3.10.2",
     "next": "^15.5.9",
     "pdfkit": "^0.17.2",
     "pptxgenjs": "^4.0.1",

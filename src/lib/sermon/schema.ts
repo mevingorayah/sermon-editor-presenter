@@ -30,6 +30,7 @@ const presentationSettingsSchema = z.object({
   lineHeight: lineHeightSchema,
   bionic: z.boolean(),
   calibrationTarget: calibrationTargetSchema,
+  page: z.lazy(() => sermonPageSettingsSchema).optional(),
 });
 
 /** TipTap JSON — opaque; validated as non-null object then cast. */
@@ -50,6 +51,22 @@ const calibratedMarginsSchema = z.object({
   bottom: z.string().min(1).max(32),
   left: z.string().min(1).max(32),
   binderGutter: z.string().min(1).max(32).optional(),
+});
+
+const pageFormatSchema = z.enum(["a4", "letter", "half-letter", "tablet", "16:9", "16:10"]);
+const orientationSchema = z.enum(["portrait", "landscape"]);
+const textSizePtSchema = z.number().min(24).max(72);
+const lineSpacingSchema = z.number().min(1.2).max(2.0);
+const paragraphSpacingPtSchema = z.number().min(0).max(48);
+
+/** Per-sermon page settings: all optional, so older sermons still load. */
+const sermonPageSettingsSchema = z.object({
+  format: pageFormatSchema.optional(),
+  orientation: orientationSchema.optional(),
+  textSizePt: textSizePtSchema.optional(),
+  lineSpacing: lineSpacingSchema.optional(),
+  paragraphSpacingPt: paragraphSpacingPtSchema.optional(),
+  margins: calibratedMarginsSchema.optional(),
 });
 
 /** Sermon ids are UUID-only (matches store `assertSafeId`). */
@@ -207,8 +224,12 @@ const calibratedSnapshotFields = {
   target: z.union([calibrationTargetSchema, z.string().min(1).max(64)]),
   margins: calibratedMarginsSchema,
   typeScaleStep: z.number().int().min(-2).max(2),
-  lineHeight: lineHeightSchema,
+  lineHeight: z.union([lineHeightSchema, lineSpacingSchema]),
   theme: z.enum(["light", "dark"]),
+  pageFormat: pageFormatSchema.optional(),
+  orientation: orientationSchema.optional(),
+  textSizePt: textSizePtSchema.optional(),
+  paragraphSpacingPt: paragraphSpacingPtSchema.optional(),
   flattenGradient: z.literal(true),
   bionic: z.literal(false),
   semanticBlocks: z.array(semanticBlockSchema).max(2000),
@@ -233,6 +254,8 @@ const exportExtrasFields = {
   filenameStem: z.string().max(200).optional(),
   includeNotes: z.boolean().optional(),
   notes: z.string().max(100_000).optional(),
+  /** PDF/PNG/PPTX colours only; never changes layout. */
+  exportTheme: z.enum(["light", "dark"]).optional(),
   resolvedColors: z
     .object({
       accent: resolvedColorSchema,

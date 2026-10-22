@@ -1,50 +1,27 @@
 import type { CalibratedSnapshot } from "@/types/document";
 import { styledBlocksFromSnapshot, titleTextFromSnapshot, type StyledBlock } from "./contentWalk";
-import { resolveMargins } from "./margins";
+import { DEFAULT_MARGINS, resolveMargins } from "./margins";
+import { PAGE_LIMITS, clamp, pngFrameSize, pxPerInch, pxPerPt, resolvePage, type PageInput, type PageSpec } from "./frames";
+import type { FontFamilyId } from "./fonts";
+import { afmMeasurer, type MeasureStyle, type TextMeasurer } from "./textMeasure";
 
 /**
  * Shared, pure (client-safe, no sharp) page layout for PNG (and later PPTX)
  * export. UI UX ruling: these pages are the source of truth, not the PDF's
  * breaks. Backend's buildPngPages renders `layoutPngPages()`; the Export
  * button uses `countPngPages()` to say "Images (N pages, .zip)".
+ *
+ * Line breaks use real glyph widths (see textMeasure.ts): pure data, no DOM
+ * or Node APIs, so Preach can import this module in the browser and get the
+ * exact same breaks as the server.
  */
 
-/** Average glyph advance in ems used for wrapping; renderers must use this, not a copy. */
-export const CHAR_EM = 0.53;
-
-export function pngFrameSize(target: string): { width: number; height: number } {
-  switch (target) {
-    case "screen-16-10": return { width: 1600, height: 1000 };
-    case "tablet-portrait": return { width: 900, height: 1200 };
-    case "paper-letter": return { width: 1275, height: 1650 };
-    case "paper-a4": return { width: 1240, height: 1754 };
-    case "paper-half-letter": return { width: 825, height: 1275 };
-    case "screen-16-9":
-    default: return { width: 1920, height: 1080 };
-  }
-}
-
-/**
- * Frame width in inches (slide/paper geometry) used for pt → px:
- * 16:9 PPTX slide 13.333in (1920px → 1pt = 1920 / (13.333 × 72) = 2.00px),
- * 16:10 slide 10in, tablet 9.25in (Galaxy Tab S10 Lite), Letter 8.5in, A4 8.27in, half-Letter 5.5in.
- */
-export function pngFrameWidthInches(target: string): number {
-  switch (target) {
-    case "screen-16-10": return 10;
-    case "tablet-portrait": return 9.25; // Galaxy Tab S10 Lite
-    case "paper-letter": return 8.5;
-    case "paper-a4": return 8.27;
-    case "paper-half-letter": return 5.5;
-    case "screen-16-9":
-    default: return 13.333;
-  }
-}
-
-/** Frame px per typographic point (1/72 in). */
-export function pxPerPt(target: string): number {
-  return pngFrameSize(target).width / (pngFrameWidthInches(target) * 72);
-}
+export {
+  PAGE_FORMATS, PAGE_ORIENTATIONS, MIN_TEXT_PT, allPageSpecs, frameSizeInches, isPaperPage, pageSpecFromTarget,
+  pngFrameSize, pngFrameWidthInches, pxPerInch, pxPerPt, resolvePage,
+  type PageFormat, type PageInput, type PageOrientation, type PageSpec,
+} from "./frames";
+export { afmMeasurer, type MeasureStyle, type TextMeasurer } from "./textMeasure";
 
 /** UI UX: PNG/PPTX body text is at least 24 pt. */
 export const MIN_BODY_PT = 24;
@@ -54,8 +31,9 @@ const BASE_BODY_PX = 20;
  * Scale applied to every size, gap and line box so body text is ≥ 24 pt
  * (16:9: 24pt × 2px = 48px → ×2.4). Never shrinks.
  */
-export function pngTypeScale(target: string): number {
-  return Math.max(1, (MIN_BODY_PT * pxPerPt(target)) / BASE_BODY_PX);
+export function pngTypeScale(target: PageInput): number {
+  const pt = Math.max(MIN_BODY_PT, resolvePage(target).textSizePt);
+  return Math.max(1, (pt * pxPerPt(target)) / BASE_BODY_PX);
 }
 
 function roleSize(type: StyledBlock["type"]): { size: number; gap: number } {
@@ -74,6 +52,28 @@ export interface LayoutBlock {
   /** Plain text of the block (runs joined). */
   text: string;
   citation?: string;
+  /**
+   * Optional style runs whose texts concatenate to `text`; they set the font
+   * family / bold / italic used to measure each character. Without runs the
+   * whole block is measured in the role's default style (sans).
+   */
+  runs?: ReadonlyArray<{ text: string; fontFamily?: FontFamilyId; bold?: boolean; italic?: boolean }>;
+}
+
+/** Options shared by the layout entry points. */
+export interface LayoutOptions {
+  /** Text measurer; defaults to the pure `afmMeasurer`. */
+  measure?: TextMeasurer;
+  /**
+   * Space after each paragraph in points (0–48, default 20). When omitted
+   * the older role-proportional gaps are used (legacy snapshots).
+   */
+  paragraphSpacingPt?: number;
+}
+
+/** Headings are drawn bold, Scripture italic (same in every renderer). */
+export function roleStyle(type: StyledBlock["type"]): { bold: boolean; italic: boolean } {
+  return { bold: type === "Title" || type === "H1" || type === "H2", italic: type === "Scripture" };
 }
 
 /** One placed line. `start`/`end` are char offsets into the block's `text`. */
@@ -109,34 +109,101 @@ const CITATION_LH = 26;
 const HEADINGS = new Set<StyledBlock["type"]>(["Title", "H1", "H2"]);
 
 /** Frame geometry for a target (same numbers as png.ts). */
-export function pngFrame(target: string, margins?: CalibratedSnapshot["margins"]): PngFrame {
+export function pngFrame(target: PageInput, margins?: CalibratedSnapshot["margins"]): PngFrame {
   const { width, height } = pngFrameSize(target);
-  const m = margins ? resolveMargins(margins, target) : { left: 0, top: 0, binderGutter: 0 };
-  const scale = width / 13.3;
-  const mx = Math.max(24, Math.round(m.left * scale));
-  const my = Math.max(24, Math.round(m.top * scale));
-  const binder = Math.round(m.binderGutter * scale);
-  return { width, height, left: mx + binder, contentWidth: width - mx * 2 - binder, top: my + 8, bottom: height - my };
+  const m = resolveMargins(margins ?? DEFAULT_MARGINS, target);
+  const ppi = pxPerInch(target); // margins are real inches on the frame (not rounded)
+  const px = (inches: number) => inches * ppi;
+  const left = px(m.left) + px(m.binderGutter);
+  const right = px(m.right);
+  return { width, height, left, contentWidth: width - left - right, top: px(m.top), bottom: height - px(m.bottom) };
 }
 
-/** Wrap text into [start, end) line ranges by estimated width (as png.ts). */
-export function wrapLineRanges(text: string, size: number, maxWidth: number): Array<[number, number]> {
+/** A measured segment of a block: [start, end) in one style. */
+export interface StyleSegment {
+  start: number;
+  end: number;
+  style: MeasureStyle;
+}
+
+/** Style segments for a block (role style merged with each run). */
+export function blockSegments(b: LayoutBlock): StyleSegment[] {
+  const role = roleStyle(b.type);
+  if (!b.runs || b.runs.length === 0 || b.runs.map((r) => r.text).join("") !== b.text) {
+    return [{ start: 0, end: b.text.length, style: { font: "sans", ...role } }];
+  }
+  const out: StyleSegment[] = [];
+  let at = 0;
+  for (const r of b.runs) {
+    out.push({
+      start: at,
+      end: at + r.text.length,
+      style: { font: r.fontFamily ?? "sans", bold: role.bold || !!r.bold, italic: role.italic || !!r.italic },
+    });
+    at += r.text.length;
+  }
+  return out;
+}
+
+/** Width in px of text[start, end) across style segments. */
+export function measureRange(
+  text: string,
+  start: number,
+  end: number,
+  size: number,
+  segments: readonly StyleSegment[],
+  measure: TextMeasurer = afmMeasurer,
+): number {
+  let w = 0;
+  for (const seg of segments) {
+    const a = Math.max(start, seg.start);
+    const b = Math.min(end, seg.end);
+    if (a < b) w += measure(text.slice(a, b), size, seg.style);
+  }
+  return w;
+}
+
+/**
+ * Wrap text into [start, end) line ranges by measured width. Trailing spaces
+ * never count against the width; a single word wider than the line (long
+ * French compounds on half-Letter) is split between characters so nothing
+ * ever overflows the frame.
+ */
+export function wrapLineRanges(
+  text: string,
+  size: number,
+  maxWidth: number,
+  segments?: readonly StyleSegment[],
+  measure: TextMeasurer = afmMeasurer,
+): Array<[number, number]> {
+  const segs = segments ?? [{ start: 0, end: text.length, style: { font: "sans" as const } }];
+  const width = (a: number, b: number) => measureRange(text, a, b, size, segs, measure);
   const re = /\S+\s*|\s+/g;
   const out: Array<[number, number]> = [];
   let lineStart = 0;
   let open = false;
-  let w = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
-    const tok = m[0];
-    const tw = tok.trimEnd().length * size * CHAR_EM;
-    if (open && w + tw > maxWidth) {
-      out.push([lineStart, m.index]);
-      lineStart = m.index;
-      w = 0;
+    const tokStart = m.index;
+    const wordEnd = tokStart + m[0].trimEnd().length;
+    if (wordEnd === tokStart) continue; // pure whitespace: rides on the line
+    if (open && width(lineStart, wordEnd) > maxWidth) {
+      out.push([lineStart, tokStart]);
+      lineStart = tokStart;
     }
     open = true;
-    w += tok.length * size * CHAR_EM;
+    // Oversized word: break between characters (code points).
+    while (width(lineStart, wordEnd) > maxWidth) {
+      let cut = lineStart;
+      for (const ch of text.slice(lineStart, wordEnd)) {
+        const next = cut + ch.length;
+        if (next > lineStart && cut > lineStart && width(lineStart, next) > maxWidth) break;
+        cut = next;
+      }
+      if (cut >= wordEnd) break;
+      out.push([lineStart, cut]);
+      lineStart = cut;
+    }
   }
   out.push([lineStart, text.length]);
   return out;
@@ -157,11 +224,13 @@ export function wrapLineRanges(text: string, size: number, maxWidth: number): Ar
  */
 export function layoutPngPages(
   blocks: readonly LayoutBlock[],
-  target: string,
+  target: PageInput,
   lineHeight: number,
   margins?: CalibratedSnapshot["margins"],
+  opts: LayoutOptions = {},
 ): PngPage[] {
   const f = pngFrame(target, margins);
+  lineHeight = clamp(lineHeight, PAGE_LIMITS.lineSpacing);
   const avail = f.bottom - f.top;
   const pages: PngPage[] = [{ lines: [] }];
   let y = f.top;
@@ -176,13 +245,19 @@ export function layoutPngPages(
   };
 
   const k = pngTypeScale(target);
-  const citeSize = CITATION_SIZE * k;
-  const citeLh = CITATION_LH * k;
+  const minPx = MIN_BODY_PT * pxPerPt(target); // nothing on a page is smaller than 24 pt
+  const citeSize = Math.max(CITATION_SIZE * k, minPx);
+  const citeLh = Math.max(CITATION_LH * k, citeSize * (CITATION_LH / CITATION_SIZE));
   const prepared = blocks.map((b) => {
     const base = roleSize(b.type);
-    const r = { size: base.size * k, gap: base.gap * k };
+    const r = {
+      size: Math.max(base.size * k, minPx),
+      gap: opts.paragraphSpacingPt === undefined
+        ? base.gap * k
+        : clamp(opts.paragraphSpacingPt, PAGE_LIMITS.paragraphSpacingPt) * pxPerPt(target),
+    };
     const lh = r.size * lineHeight;
-    const ranges = wrapLineRanges(b.text, r.size, f.contentWidth);
+    const ranges = wrapLineRanges(b.text, r.size, f.contentWidth, blockSegments(b), opts.measure);
     const cite = b.citation ? citeLh : 0;
     return { b, r, lh, ranges, cite, height: ranges.length * lh + cite };
   });
@@ -238,28 +313,69 @@ export function layoutPngPages(
 /** Page count for blocks (Backend / label). */
 export function pngPageCount(
   blocks: readonly LayoutBlock[],
-  target: string,
+  target: PageInput,
   lineHeight: number,
   margins?: CalibratedSnapshot["margins"],
+  opts: LayoutOptions = {},
 ): number {
-  return layoutPngPages(blocks, target, lineHeight, margins).length;
+  return layoutPngPages(blocks, target, lineHeight, margins, opts).length;
 }
 
 /** StyledBlocks → LayoutBlocks (plain text per block). */
 export function toLayoutBlocks(blocks: readonly StyledBlock[]): LayoutBlock[] {
-  return blocks.map((b) => ({ type: b.type, citation: b.citation, text: b.runs.map((r) => r.text).join("") }));
+  return blocks.map((b) => ({
+    type: b.type,
+    citation: b.citation,
+    text: b.runs.map((r) => r.text).join(""),
+    runs: b.runs.map((r) => ({ text: r.text, fontFamily: r.fontFamily, bold: r.bold, italic: r.italic })),
+  }));
 }
 
 /** Page count for a calibrated snapshot (drives the Export label). */
-export function countPngPages(snapshot: CalibratedSnapshot): number {
-  const styled = styledBlocksFromSnapshot(snapshot);
-  const blocks: LayoutBlock[] = styled.length
-    ? toLayoutBlocks(styled)
-    : [{ type: "Title", text: titleTextFromSnapshot(snapshot) }];
-  return pngPageCount(blocks, String(snapshot.target), snapshot.lineHeight, snapshot.margins);
+export function countPngPages(snapshot: CalibratedSnapshot, opts: LayoutOptions = {}): number {
+  return layoutSnapshot(snapshot, opts).pages.length;
+}
+
+/** Everything a renderer (PNG, PPTX, PDF, Preach page view) needs for a snapshot. */
+export interface SnapshotLayout {
+  target: PageSpec;
+  frame: PngFrame;
+  styled: StyledBlock[];
+  blocks: LayoutBlock[];
+  pages: PngPage[];
+}
+
+/** Lay out a calibrated snapshot exactly as every export does. */
+export function layoutSnapshot(snapshot: CalibratedSnapshot, opts: LayoutOptions = {}): SnapshotLayout {
+  const target = pageSpecFromSnapshot(snapshot);
+  let styled = styledBlocksFromSnapshot(snapshot);
+  if (!styled.length) {
+    styled = [{ type: "Title", align: "left", runs: [{ text: titleTextFromSnapshot(snapshot), fontFamily: "serif" }] }];
+  }
+  const blocks = toLayoutBlocks(styled);
+  const pages = layoutPngPages(blocks, target, snapshot.lineHeight, snapshot.margins, {
+    paragraphSpacingPt: snapshot.paragraphSpacingPt,
+    ...opts,
+  });
+  return { target, frame: pngFrame(target, snapshot.margins), styled, blocks, pages };
 }
 
 /** Export button label for PNG: single image vs a zip of pages. */
 export function pngExportLabel(pages: number): string {
   return pages > 1 ? `Images (${pages} pages, .zip)` : "Image (.png)";
+}
+
+/**
+ * The page a snapshot asks for: its legacy `target` plus the optional
+ * per-sermon `format` / `orientation` / `textSizePt` overrides.
+ */
+export function pageSpecFromSnapshot(
+  snapshot: Pick<CalibratedSnapshot, "target"> & Partial<Pick<CalibratedSnapshot, "pageFormat" | "orientation" | "textSizePt">>,
+): PageSpec {
+  const base = resolvePage(String(snapshot.target));
+  return resolvePage({
+    format: snapshot.pageFormat ?? base.format,
+    orientation: snapshot.orientation ?? base.orientation,
+    textSizePt: snapshot.textSizePt ?? base.textSizePt,
+  });
 }
