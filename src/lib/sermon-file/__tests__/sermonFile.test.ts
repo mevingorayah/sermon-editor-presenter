@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { sanitizeFilenameStem } from "@/lib/sermon/export/filename";
 import {
   SERMON_FILE_SCHEMA_VERSION,
   SermonFileError,
@@ -329,4 +330,16 @@ describe("older server-shape files", () => {
     const old = { id: "a1", meta: { title: "t", updatedAt: "2026-10-01T09:00:00.000Z" }, content: { type: "doc" } };
     assert.equal("createdAt" in parseSermonFile(JSON.stringify(old)).sermon, false);
   });
+});
+
+it("sermonFileName drops full stops like commas", () => {
+  assert.equal(sermonFileName("Vivre pleinement. Rien de moins"), "Vivre-pleinement-Rien-de-moins.sermon");
+  assert.equal(sermonFileName("Fin..."), "Fin.sermon");
+});
+
+it("export and .sermon names share the apostrophe rule", () => {
+  for (const t of ["Qu'est-ce que l'amour ?", "Jusqu'à la fin", "l'été"]) {
+    assert.equal(sermonFileName(t), `${sanitizeFilenameStem(t)}.sermon`);
+  }
+  assert.equal(sanitizeFilenameStem("Qu'est-ce que l'amour ?"), "Qu-est-ce-que-l-amour");
 });
