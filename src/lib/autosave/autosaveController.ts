@@ -138,6 +138,7 @@ export function createInputFromDoc(doc: SermonDocument): CreateSermonInput {
     content: doc.content,
     presentation: doc.presentationSettings,
     notes: doc.notes ?? "",
+    ...(doc.globalStyles ? { globalStyles: doc.globalStyles } : {}),
   };
 }
 

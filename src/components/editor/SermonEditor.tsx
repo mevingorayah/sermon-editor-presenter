@@ -7,6 +7,9 @@ import {
   type JSONContent,
 } from "@tiptap/react";
 import { useEffect } from "react";
+import { BlockBuilder } from "../builder/BlockBuilder";
+import { stripDefaultBuilderAttrs, type GlobalStyles } from "@/lib/builder/blockAttrs";
+
 import { createSermonExtensions } from "@/extensions";
 import { FormatToolbar } from "./FormatToolbar";
 import styles from "./SermonEditor.module.css";
@@ -15,12 +18,18 @@ interface SermonEditorProps {
   content: JSONContent;
   onChange: (json: JSONContent) => void;
   onEditorReady?: (editor: Editor | null) => void;
+  /** sermon.globalStyles — saved with the sermon (server + .sermon file). */
+  globalStyles?: GlobalStyles;
+  onGlobalStylesChange?: (g: GlobalStyles) => void;
 }
+const NO_GLOBALS: GlobalStyles = {};
 
 export function SermonEditor({
   content,
   onChange,
   onEditorReady,
+  globalStyles = NO_GLOBALS,
+  onGlobalStylesChange,
 }: SermonEditorProps) {
   const editor = useEditor({
     immediatelyRender: false,
@@ -33,14 +42,14 @@ export function SermonEditor({
       },
     },
     onUpdate: ({ editor: ed }) => {
-      onChange(ed.getJSON());
+      onChange(stripDefaultBuilderAttrs(ed.getJSON()));
     },
   });
 
   // Sync external content (e.g. after load) without clobbering typing
   useEffect(() => {
     if (!editor) return;
-    const current = JSON.stringify(editor.getJSON());
+    const current = JSON.stringify(stripDefaultBuilderAttrs(editor.getJSON()));
     const next = JSON.stringify(content);
     if (current !== next) {
       editor.commands.setContent(content, { emitUpdate: false });
@@ -51,6 +60,8 @@ export function SermonEditor({
     onEditorReady?.(editor);
     return () => onEditorReady?.(null);
   }, [editor, onEditorReady]);
+
+  const saveGlobal = (g: GlobalStyles) => onGlobalStylesChange?.(g);
 
   if (!editor) {
     return <div className={styles.loading}>Loading editor…</div>;
@@ -116,7 +127,9 @@ export function SermonEditor({
         </div>
         <FormatToolbar editor={editor} />
       </div>
-      <EditorContent editor={editor} />
+      <BlockBuilder editor={editor} globalStyles={globalStyles} onGlobalStylesChange={saveGlobal}>
+        <EditorContent editor={editor} />
+      </BlockBuilder>
     </div>
   );
 }

@@ -57,6 +57,9 @@ export function sermonToDocument(
       sameLocal?.presentationSettings ??
       { ...DEFAULT_PRESENTATION_SETTINGS },
     notes: sermon.notes ?? sameLocal?.notes ?? "",
+    ...((sermon.globalStyles ?? sameLocal?.globalStyles)
+      ? { globalStyles: sermon.globalStyles ?? sameLocal?.globalStyles }
+      : {}),
   };
 }
 
@@ -227,6 +230,7 @@ async function createFromLocal(
     content: local.content,
     presentation: local.presentationSettings,
     notes: local.notes,
+    ...(local.globalStyles ? { globalStyles: local.globalStyles } : {}),
   });
   const doc = sermonToDocument(created, local);
   saveDocument(doc);
@@ -324,6 +328,7 @@ export async function promoteLocalDraftToServer(
     content: local.content,
     presentation: local.presentationSettings,
     notes: local.notes,
+    ...(local.globalStyles ? { globalStyles: local.globalStyles } : {}),
   });
   const doc = sermonToDocument(created, local);
   saveDocument(doc);

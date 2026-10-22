@@ -1,4 +1,7 @@
 /** @jsxRuntime automatic */
+import { FIELD, blockCss, sanitizeSpacing, sanitizeStyle, type BlockSpacing, type BlockStyle } from "../builder/blockAttrs";
+import { effectiveBlockSizePt } from "../sermon/blockStyle";
+import { cssTextToReactStyle } from "../cssText";
 import { Fragment, type CSSProperties, type ReactNode } from "react";
 import type { JSONContent } from "@tiptap/react";
 import { bionicParts } from "@/lib/bionic";
@@ -48,6 +51,8 @@ export const RENDERED_NODES = [
   "orderedList", "listItem", "hardBreak", "horizontalRule",
   // Disabled in the sermon schema but rendered if old docs contain them.
   "blockquote", "codeBlock",
+  // Block builder slice 1.
+  "quote", "illustration", "section", "column",
 ];
 export const RENDERED_MARKS = [
   "bold", "italic", "underline", "strike", "code", "link", "textStyle",
@@ -63,9 +68,23 @@ export function textAlignOf(node: JSONContent): CSSProperties["textAlign"] | und
     : undefined;
 }
 
+function builderStyle(node: JSONContent): CSSProperties | undefined {
+  const st = node.attrs?.[FIELD.style] as BlockStyle | null | undefined;
+  const sp = node.attrs?.[FIELD.spacing] as BlockSpacing | null | undefined;
+  if (!st && !sp) return undefined;
+  const style = sanitizeStyle(st);
+  // Preach/page view: rendered size is clamped to the 24 pt minimum (#30);
+  // the stored value is unchanged and still shown in the style panel.
+  const shown = style?.size !== undefined ? { ...style, size: effectiveBlockSizePt(style) } : style;
+  return cssTextToReactStyle(blockCss(shown, sanitizeSpacing(sp)));
+}
+
 function alignStyle(node: JSONContent): CSSProperties | undefined {
   const a = textAlignOf(node);
-  return a ? { textAlign: a } : undefined;
+  const base = a ? { textAlign: a } : undefined;
+  // Block builder: per-block overrides (absent on old sermons → unchanged).
+  const b = builderStyle(node);
+  return b ? { ...base, ...b } : base;
 }
 
 const SAFE_HREF = /^(https?:|mailto:|tel:|#|\/)/i;
@@ -225,6 +244,30 @@ export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode 
       return <br key={key} />;
     case "horizontalRule":
       return <hr key={key} className={c.rule} />;
+    case "quote":
+      return (
+        <blockquote key={key} className="sermon-quote" data-quote="" style={alignStyle(node)}>
+          {children(node, ctx)}
+        </blockquote>
+      );
+    case "illustration":
+      return (
+        <div key={key} className="sermon-illustration" data-illustration="" style={alignStyle(node)}>
+          {children(node, ctx)}
+        </div>
+      );
+    case "section":
+      return (
+        <section key={key} className="sermon-section" data-section="" data-columns={String(node.attrs?.columns ?? 1)} style={alignStyle(node)}>
+          {children(node, ctx)}
+        </section>
+      );
+    case "column":
+      return (
+        <div key={key} className="sermon-column" data-column="">
+          {children(node, ctx)}
+        </div>
+      );
     case "blockquote":
       return <blockquote key={key}>{children(node, ctx)}</blockquote>;
     case "codeBlock":
