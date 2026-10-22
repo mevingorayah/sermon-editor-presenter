@@ -1,3 +1,4 @@
+import { globalStylesSchema } from "@/lib/sermon/blockStyle";
 /**
  * `.sermon` file format + backup format (local-only storage).
  *
@@ -88,6 +89,8 @@ export const sermonDocumentSchema = z
     content: tiptapDocSchema,
     presentationSettings: presentationSettingsSchema,
     notes: z.string().max(1_000_000),
+    /** Block builder defaults; checked on open (bad values reject the file). */
+    globalStyles: globalStylesSchema.nullish(),
   })
   .passthrough();
 
@@ -151,6 +154,8 @@ function upgradeSermon(raw: unknown): unknown {
       content: o.content,
       presentationSettings: o.presentation ?? DEFAULT_PRESENTATION_SETTINGS,
       notes: typeof o.notes === "string" ? o.notes : "",
+      // Builder defaults: keep them (validated by sermonDocumentSchema).
+      ...(o.globalStyles !== undefined && o.globalStyles !== null ? { globalStyles: o.globalStyles } : {}),
     };
   }
   return {
