@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { test, expect, type Page, type Request } from "@playwright/test";
 
 /**
- * Slice 2: Edit "Export…" → Preach with Document setup (Calibration) open →
+ * Slice 2: Edit "Export (PDF, PNG, PowerPoint)" → export window in place →
  * Save-as filename stem → DOCX + PNG downloads with the expected filenames.
  */
 
@@ -26,7 +26,7 @@ async function exportAndDownload(page: Page, name: string | RegExp) {
   return download;
 }
 
-test("Edit Export… → Preach Calibration → DOCX + PNG downloads", async ({ page }) => {
+test("Edit Export (PDF, PNG, PowerPoint) → export window → DOCX + PNG downloads", async ({ page }) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (err) => pageErrors.push(`${err.message}\n${err.stack ?? ""}`));
   const exportBodies: Record<string, unknown>[] = [];
@@ -51,14 +51,15 @@ test("Edit Export… → Preach Calibration → DOCX + PNG downloads", async ({ 
   await expect(page.locator(".ProseMirror")).toBeVisible({ timeout: 20_000 });
   const editTitle = (await page.locator("header h1").first().innerText()).trim();
 
-  // Edit topbar entry is a keyboard-reachable link to the deep link.
-  const exportLink = page.getByRole("link", { name: "Export…" });
-  await expect(exportLink).toHaveAttribute("href", "/preach?calibrate=1");
-  await exportLink.click();
-
-  await page.waitForURL(/\/preach\?calibrate=1$/);
+  // Edit topbar opens the export choices in place (never navigates to Preach).
+  const exportBtn = page.getByRole("button", { name: "Export (PDF, PNG, PowerPoint)" });
+  await exportBtn.click();
+  await expect(page).toHaveURL(/\/edit$/);
   const panel = page.getByRole("complementary", { name: /Document setup/ });
   await expect(panel).toBeVisible({ timeout: 20_000 });
+  await expect(panel.getByRole("status")).toHaveText(
+    "DOCX prints in light ink. PDF, PNG and PowerPoint follow the page size and the light or dark choice above, one page per image or slide.",
+  );
   // Deep link moves focus into the panel.
   await expect(panel.getByRole("heading", { name: /Document setup/ })).toBeFocused();
 
@@ -86,11 +87,26 @@ test("Edit Export… → Preach Calibration → DOCX + PNG downloads", async ({ 
   expect(docxBytes.subarray(0, 2).toString("latin1")).toBe("PK");
   await expect(panel.getByRole("status")).toHaveText(`Downloaded ${STEM}.docx`);
 
+  // The PowerPoint font note appears exactly once (Backend's PPTX_FONT_NOTICE).
+  await expect(panel.getByTestId("pptx-font-note")).toHaveText(
+    "PowerPoint uses standard fonts, so line breaks may differ slightly",
+  );
+  await expect(panel.getByText(/PowerPoint uses standard fonts/)).toHaveCount(1);
+
+  // Light or dark: defaults to Light; Dark applies to PNG/PDF/PPTX.
+  const themeSel = panel.getByLabel("Light or dark (PDF, PNG, PowerPoint)");
+  await expect(themeSel).toHaveValue("light");
+  await themeSel.selectOption("dark");
+
+  // The sermon's own page size decides single PNG vs multi-frame .zip.
+  const pngLabel = await panel.getByRole("button", { name: /^Images? \(/ }).innerText();
+  const pngExt = /\.zip/.test(pngLabel) ? "zip" : "png";
   const png = await exportAndDownload(page, /^Images? \(/);
-  expect(png.suggestedFilename()).toBe(`${STEM}.png`);
+  expect(png.suggestedFilename()).toBe(`${STEM}.${pngExt}`);
   const pngBytes = await readFile((await png.path())!);
-  expect(pngBytes.subarray(1, 4).toString("latin1")).toBe("PNG");
-  await expect(panel.getByRole("status")).toHaveText(`Downloaded ${STEM}.png`);
+  if (pngExt === "png") expect(pngBytes.subarray(1, 4).toString("latin1")).toBe("PNG");
+  else expect(pngBytes.subarray(0, 2).toString("latin1")).toBe("PK");
+  await expect(panel.getByRole("status")).toHaveText(`Downloaded ${STEM}.${pngExt}`);
 
   // Request contract checks.
   expect(exportBodies.map((b) => b.format)).toEqual(["docx", "png"]);
@@ -107,7 +123,11 @@ test("Edit Export… → Preach Calibration → DOCX + PNG downloads", async ({ 
     expect((body.resolvedColors as { accent: string }).accent).toMatch(/^#[0-9a-f]{6}$/i);
     expect(JSON.stringify(body.content)).not.toMatch(/var\s*\(\s*--/i);
   }
-  expect(exportBodies[0].theme).toBe("light"); // DOCX prints light
+  expect(exportBodies[0].exportTheme).toBe("light"); // DOCX prints light
+  expect(exportBodies[1].exportTheme).toBe("dark"); // PNG follows the choice
+  // Colours only, never layout.
+  expect(exportBodies[1].target).toEqual(exportBodies[0].target);
+  expect(exportBodies[1].typeScaleStep).toEqual(exportBodies[0].typeScaleStep);
 
   expect(pageErrors, pageErrors.join("\n\n")).toEqual([]);
 });

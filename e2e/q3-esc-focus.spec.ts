@@ -17,8 +17,8 @@ test("Esc closes Document setup and returns focus to the Calibrate trigger", asy
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await freshEdit(page);
-  await page.getByRole("link", { name: "Export…" }).click();
-  await page.waitForURL(/\/preach\?calibrate=1$/);
+  // Preach's own deep link (Edit now opens export in place, see export-from-edit).
+  await page.goto("/preach?calibrate=1", { waitUntil: "networkidle" });
   const panel = page.getByRole("complementary", { name: /Document setup/ });
   await expect(panel).toBeVisible({ timeout: 20_000 });
   const calibrate = page.getByRole("button", { name: "Calibrate" });
