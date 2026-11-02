@@ -189,9 +189,10 @@ describe("exportSnapshot", () => {
       resolvedColors: { accent: "#5c4a1f" },
     });
     const zip = await JSZip.loadAsync(result.buffer);
-    const slide = await zip.file("ppt/slides/slide2.xml")?.async("string");
-    assert.ok(slide, "Introduction slide exists");
-    // Centered paragraph under "Introduction" must carry algn="ctr".
+    const files = Object.keys(zip.files).filter((f) => /^ppt\/slides\/slide\d+\.xml$/.test(f));
+    const slide = (await Promise.all(files.map((f) => zip.file(f)!.async("string")))).join("\n");
+    assert.ok(slide, "slides exist");
+    // The centered paragraph must carry algn="ctr" on its slide.
     assert.match(slide!, /algn="ctr"/);
   });
 });

@@ -14,6 +14,11 @@ RUN npm run build
 
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
+# Pull Debian security fixes (e.g. perl-base CVEs fixed in 5.36.0-7+deb12u4).
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends --only-upgrade perl-base \
+  && apt-get upgrade -y --no-install-recommends \
+  && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV ROLE=export
@@ -28,12 +33,20 @@ RUN apt-get update \
     fontconfig \
   && rm -rf /var/lib/apt/lists/* \
   && fc-cache -f \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-* \
+    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg \
   && useradd --system --uid 1001 nextjs \
   && mkdir -p /app/data/sermons \
   && chown -R nextjs:nextjs /app/data
 COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nextjs /app/public ./public
+# App's own OFL fonts (Literata, Inter, JetBrains Mono) for PDF/PNG, registered with fontconfig (mirrors shell image, bb7785a).
+COPY --chown=root:root assets/fonts /app/assets/fonts
+RUN printf '<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig><dir>/app/assets/fonts</dir></fontconfig>\n' > /etc/fonts/conf.d/50-app-fonts.conf \
+  && fc-cache -f
+# Writable per-user fontconfig cache for the non-root runtime user (system cache in /var/cache/fontconfig stays read-only).
+ENV XDG_CACHE_HOME=/tmp/.cache
 USER nextjs
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

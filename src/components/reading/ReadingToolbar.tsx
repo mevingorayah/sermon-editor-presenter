@@ -1,5 +1,6 @@
 "use client";
 
+import type { Ref } from "react";
 import Link from "next/link";
 import type {
   LineHeightOption,
@@ -18,7 +19,9 @@ interface ReadingToolbarProps {
   onTypeScaleChange: (s: TypeScaleStep) => void;
   onLineHeightChange: (lh: LineHeightOption) => void;
   onBionicChange: (v: boolean) => void;
-  onToggleCalibration: () => void;
+  /** Receives the toggle button so the shell can return focus to it on close. */
+  onToggleCalibration: (trigger: HTMLElement) => void;
+  calibrationToggleRef?: Ref<HTMLButtonElement>;
 }
 
 const STEPS: TypeScaleStep[] = [-2, -1, 0, 1, 2];
@@ -36,6 +39,7 @@ export function ReadingToolbar(props: ReadingToolbarProps) {
     onLineHeightChange,
     onBionicChange,
     onToggleCalibration,
+    calibrationToggleRef,
   } = props;
 
   return (
@@ -113,7 +117,8 @@ export function ReadingToolbar(props: ReadingToolbarProps) {
           type="button"
           className={calibrationOpen ? styles.active : styles.btn}
           aria-pressed={calibrationOpen}
-          onClick={onToggleCalibration}
+          ref={calibrationToggleRef}
+          onClick={(e) => onToggleCalibration(e.currentTarget)}
         >
           Calibrate
         </button>

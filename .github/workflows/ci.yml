@@ -112,3 +112,16 @@ jobs:
           exit-code: "1"
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+
+      - name: Verify fonts + runner hardening
+        if: steps.df.outputs.present == 'true'
+        run: |
+          docker run --rm --entrypoint sh ${{ matrix.tag }}:ci -c '
+            set -e
+            for b in npm npx yarn corepack; do if command -v $b; then echo "hardening broken: $b"; exit 1; fi; done
+            echo "== Hebrew"; fc-list :lang=he family | sort -u | head -5; test -n "$(fc-list :lang=he)"
+            echo "== Greek";  fc-list :lang=el family | sort -u | head -5; test -n "$(fc-list :lang=el)"
+            if [ -d /app/assets/fonts ]; then
+              echo "== App fonts"; fc-list : family file | grep /app/assets/fonts | sed "s/:.*: */ — /" | sort -u
+              n=$(fc-list : file | grep -c /app/assets/fonts); echo "count=$n"; test "$n" -ge 22
+            fi'

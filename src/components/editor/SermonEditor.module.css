@@ -286,16 +286,7 @@
   outline: 1px solid var(--edit-accent);
 }
 
-/* Soft amber highlight — readable on dark and light edit chrome */
-.prose :global(mark.sermon-highlight),
-.prose :global(.sermon-highlight) {
-  background: rgba(212, 168, 75, 0.42);
-  color: inherit;
-  border-radius: 2px;
-  padding: 0.05em 0.12em;
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
-}
+/* Highlight + mark styles live in src/styles/sermon-marks.css (shared with Preach). */
 
 @media (max-width: 640px) {
   .toolDivider {

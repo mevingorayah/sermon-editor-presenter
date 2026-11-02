@@ -8,15 +8,28 @@ import type { SermonContent } from "@/types/document";
  * for the request only; the live editor document is never rewritten.
  */
 
-/** Edit accent swatch — concrete value of `--edit-accent` (globals.css). */
-export const EDIT_ACCENT_HEX = "#5c4a1f";
+/** Custom property holding the Edit accent (defined on :root in globals.css). */
+export const EDIT_ACCENT_VAR = "--edit-accent";
+
+/**
+ * Fallback for `--edit-accent` when the token is missing / unresolvable or we
+ * are not in a browser. The live value is read at export time
+ * (`resolveEditAccentHex`).
+ */
+export const EDIT_ACCENT_FALLBACK_HEX = "#5c4a1f";
+
+/** @deprecated Use EDIT_ACCENT_FALLBACK_HEX (or resolveEditAccentHex()). */
+export const EDIT_ACCENT_HEX = EDIT_ACCENT_FALLBACK_HEX;
 
 /** Last-resort ink when a CSS var cannot be resolved (matches --edit-fg). */
 export const FALLBACK_TEXT_HEX = "#1a1814";
 
-/** Vars with a fixed export mapping; checked before any runtime lookup. */
+/**
+ * Fallback hex for known vars, used only when the runtime lookup yields
+ * nothing (SSR, tests, token missing).
+ */
 export const KNOWN_VAR_HEX: Readonly<Record<string, string>> = {
-  "--edit-accent": EDIT_ACCENT_HEX,
+  [EDIT_ACCENT_VAR]: EDIT_ACCENT_FALLBACK_HEX,
 };
 
 /** Resolve a custom property name (e.g. `--edit-fg`) to a color string. */
@@ -87,9 +100,6 @@ export function resolveCssVarColor(
     // resolver that understands full values can help; otherwise fall back.
     return fallback;
   }
-  const known = KNOWN_VAR_HEX[parsed.name];
-  if (known) return known;
-
   let runtime: string | null = null;
   try {
     runtime = toHex(opts.resolveVar?.(parsed.name) ?? null);
@@ -97,6 +107,9 @@ export function resolveCssVarColor(
     runtime = null;
   }
   if (runtime) return runtime;
+
+  const known = KNOWN_VAR_HEX[parsed.name];
+  if (known) return known;
 
   if (parsed.fallback) {
     if (containsCssVar(parsed.fallback)) {
@@ -169,7 +182,11 @@ export function flattenContentColors(
  */
 export function browserCssVarResolver(el?: Element): CssVarResolver {
   return (name) => {
-    if (typeof window === "undefined" || typeof document === "undefined") {
+    if (
+      typeof window === "undefined" ||
+      typeof document === "undefined" ||
+      typeof getComputedStyle !== "function"
+    ) {
       return null;
     }
     const scope = el ?? document.documentElement;
@@ -188,4 +205,22 @@ export function browserCssVarResolver(el?: Element): CssVarResolver {
       probe.remove();
     }
   };
+}
+
+/**
+ * Read `--edit-accent` at export time and return it as lowercase `#rrggbb`
+ * (hex or rgb()/rgba() tokens; other valid colors via the browser resolver's
+ * probe). Falls back to EDIT_ACCENT_FALLBACK_HEX when the token is missing or
+ * unresolvable, or outside the browser. Never returns a non-hex value.
+ */
+export function resolveEditAccentHex(
+  resolveVar: CssVarResolver = browserCssVarResolver(),
+): string {
+  try {
+    const hex = toHex(resolveVar(EDIT_ACCENT_VAR) ?? null);
+    if (hex) return hex;
+  } catch {
+    /* fall through */
+  }
+  return EDIT_ACCENT_FALLBACK_HEX;
 }
