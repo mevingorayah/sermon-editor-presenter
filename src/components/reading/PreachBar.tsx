@@ -204,7 +204,7 @@ export function PreachBar(props: PreachBarProps) {
       </Link>
 
       {props.title ? (
-        <span className={styles.title} data-bar-title="">
+        <span className={styles.title} data-bar-title="" data-testid="preach-title" title={props.title}>
           {props.title}
         </span>
       ) : null}
