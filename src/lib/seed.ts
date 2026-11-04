@@ -93,8 +93,8 @@ export const SEED_CONTENT: SermonContent = {
 };
 
 /**
- * Offline / SSR bootstrap document. Uses a local-* id so it is never sent
- * as `/api/sermons/:id`. Online first-load migrates via POST → UUID.
+ * Sample document for a brand-new browser with no sermons yet.
+ * Saved to the Sermons folder (or browser) like any other sermon.
  */
 export function createSeedDocument(): SermonDocument {
   return {

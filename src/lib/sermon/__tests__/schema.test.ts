@@ -253,9 +253,9 @@ describe("sanitizeFilenameStem", () => {
     assert.equal(sanitizeFilenameStem("Bondie ek nou lavi"), "Bondie-ek-nou-lavi");
   });
 
-  it("removes apostrophes and quotes without adding a dash", () => {
-    assert.equal(sanitizeFilenameStem("l'Évangile"), "lEvangile");
-    assert.equal(sanitizeFilenameStem("L’amour de Dieu"), "Lamour-de-Dieu");
+  it("turns apostrophes and quotes into one dash", () => {
+    assert.equal(sanitizeFilenameStem("l'Évangile"), "l-Evangile");
+    assert.equal(sanitizeFilenameStem("L’amour de Dieu"), "L-amour-de-Dieu");
     assert.equal(sanitizeFilenameStem("«Le Berger»"), "Le-Berger");
   });
 
@@ -268,8 +268,8 @@ describe("sanitizeFilenameStem", () => {
   it("drops one trailing export extension, any case", () => {
     assert.equal(sanitizeFilenameStem("notes.pdf"), "notes");
     assert.equal(sanitizeFilenameStem("Sermon.DOCX"), "Sermon");
-    assert.equal(sanitizeFilenameStem("slides.pptx.pptx"), "slides.pptx");
-    assert.equal(sanitizeFilenameStem("v1.2"), "v1.2");
+    assert.equal(sanitizeFilenameStem("slides.pptx.pptx"), "slides-pptx");
+    assert.equal(sanitizeFilenameStem("v1.2"), "v1-2");
   });
 
   it("caps at 80 chars, cutting at the last dash", () => {
