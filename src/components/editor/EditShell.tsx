@@ -48,7 +48,6 @@ import {
   isSaved,
   nextStatus,
   statusAction,
-  statusLabel,
   type SaveEvent,
   type SaveStatus,
 } from "@/lib/localStore/status";
@@ -65,7 +64,6 @@ import {
   parseRestoreFile,
 } from "@/lib/localStore/backup";
 import type { SermonDocument } from "@/types/document";
-import { DEFAULT_PRESENTATION_SETTINGS } from "@/types/document";
 import { SermonEditor } from "./SermonEditor";
 import { OutlineNav } from "./OutlineNav";
 import { FindBar } from "./FindBar";
@@ -82,6 +80,8 @@ import {
   RestorePreviewDialog,
 } from "./StoragePanels";
 import { saveTextToPc } from "@/lib/localStore/saveToPc";
+import { saveStatusView } from "@/lib/localStore/saveStatusView";
+import { blankSermon } from "@/lib/localStore/newSermon";
 import styles from "./EditShell.module.css";
 
 export const STORAGE_MODE_KEY = "sermon-editor-presenter:storage-mode:v1";
@@ -104,17 +104,6 @@ function lsSet(k: string, v: string) {
   }
 }
 
-function blankSermon(): SermonDocument {
-  return {
-    id: newSermonId(),
-    title: "Untitled sermon",
-    updatedAt: new Date().toISOString(),
-    content: { type: "doc", content: [{ type: "title", content: [] }] },
-    presentationSettings: { ...DEFAULT_PRESENTATION_SETTINGS },
-    notes: "",
-  };
-}
-
 function newest(lib: Library): SermonDocument | null {
   return (
     Object.values(lib)
@@ -132,6 +121,10 @@ export function EditShell() {
   const [editor, setEditor] = useState<Editor | null>(null);
   const [status, setStatus] = useState<SaveStatus>({ kind: "saving" });
   const [busy, setBusy] = useState(false);
+  /** "Saved HH:MM" stamp; null until the first real save since open. */
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  /** A save was started (edit or new sermon) since this sermon was opened. */
+  const [saveStarted, setSaveStarted] = useState(false);
   const [editorKey, setEditorKey] = useState("");
   const [conflict, setConflict] = useState<{ theirs: SermonDocument; savedAt: string } | null>(null);
   const [firstRunError, setFirstRunError] = useState<string | null>(null);
@@ -165,6 +158,13 @@ export function EditShell() {
   /** The open sermon had edits not yet written when Restore was started. */
   const restoreOpenDirty = useRef(false);
 
+  // Stamp "Saved HH:MM" only when a save started since open has completed.
+  useEffect(() => {
+    if (!saveStarted) return;
+    if (isSaved(status) || status.kind === "needs-permission") setSavedAt(new Date());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
   const apply = useCallback((ev: SaveEvent) => setStatus((s) => nextStatus(s, ev)), []);
   const broadcast = useCallback((m: Omit<SyncMessage, "tabId">) => {
     channel.current?.postMessage({ ...m, tabId: tabId.current } satisfies SyncMessage);
@@ -179,6 +179,8 @@ export function EditShell() {
     // Presence ping on open (ST9): a tab with the same sermon open warns and answers.
     channel.current?.postMessage({ type: "opened", id: d.id, tabId: tabId.current } satisfies SyncMessage);
     docRef.current = d;
+    setSaveStarted(false);
+    setSavedAt(null);
     loadedSavedAt.current = savedAt;
     savedSeq.current = editSeq.current;
     conflictRef.current = false;
@@ -433,7 +435,12 @@ export function EditShell() {
     }, SAVE_DELAY_MS);
   }, [persist]);
 
-  const flush = useCallback(async () => {
+  /**
+   * Write any pending edit now and wait for it. Resolves false when an edit
+   * is still unwritten because the write failed (callers that leave the
+   * sermon stay put so the edit is kept and "Not saved" shows).
+   */
+  const flush = useCallback(async (): Promise<boolean> => {
     if (timer.current) {
       clearTimeout(timer.current);
       timer.current = null;
@@ -441,6 +448,13 @@ export function EditShell() {
     } else if (writing.current) {
       await writing.current;
     }
+    // A newer edit queued during the write: save it too.
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+      await persist();
+    }
+    return editSeq.current === savedSeq.current || conflictRef.current;
   }, [persist]);
 
   const hasUnsavedEdits = () => editSeq.current !== savedSeq.current;
@@ -450,6 +464,7 @@ export function EditShell() {
       docRef.current = next;
       editSeq.current += 1;
       fileDirty.current = true;
+      setSaveStarted(true);
       apply({ type: "edit" });
       if (modeRef.current === "folder") {
         // Automatic browser backup on every keystroke (folder mode only, so a
@@ -503,11 +518,27 @@ export function EditShell() {
     const onUnload = () => {
       if (timer.current && modeRef.current === "browser") {
         clearTimeout(timer.current);
+        timer.current = null;
+        void persist();
+      }
+    };
+    // Tab hidden (switching apps, closing on a phone): start any waiting
+    // save now in every mode, so it doesn't sit in the debounce.
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden" && timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
         void persist();
       }
     };
     window.addEventListener("pagehide", onUnload);
-    return () => window.removeEventListener("pagehide", onUnload);
+    window.addEventListener("beforeunload", onUnload);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", onUnload);
+      window.removeEventListener("beforeunload", onUnload);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [persist]);
 
   /** Read the latest copy of a sermon from wherever it lives. */
@@ -664,7 +695,9 @@ export function EditShell() {
       if (docRef.current?.id === id) return;
       setBusy(true);
       try {
-        await flush();
+        // Save the current sermon's pending edit before leaving it; if that
+        // failed, stay so the edit is kept and "Not saved" shows.
+        if (!(await flush())) return;
         const latest = await readLatest(id);
         if (latest) {
           showDoc(latest.doc, latest.savedAt);
@@ -682,11 +715,11 @@ export function EditShell() {
   const onCreate = useCallback(async () => {
     setBusy(true);
     try {
-      await flush();
-      const d = blankSermon();
-      d.presentationSettings = docRef.current?.presentationSettings ?? d.presentationSettings;
+      if (!(await flush())) return;
+      const d = blankSermon(docRef.current?.presentationSettings);
       showDoc(d, null);
       editSeq.current += 1;
+      setSaveStarted(true);
       apply({ type: "edit" });
       await persist();
     } finally {
@@ -962,6 +995,7 @@ export function EditShell() {
   }
 
   const action = statusAction(status);
+  const view = saveStatusView(status, { started: saveStarted, savedAt });
   const onAction = () => {
     if (action === "choose-folder") void chooseFolder();
     else if (action === "allow-access") void allowAccess();
@@ -974,18 +1008,28 @@ export function EditShell() {
         <div className={styles.brand}>
           <span className={styles.modeBadge}>Editing</span>
           <h1 className={styles.docTitle}>{doc.title || "Untitled sermon"}</h1>
-        </div>
-        <div className={styles.actions}>
           <span
             className={styles.saved}
+            role="status"
             aria-live="polite"
+            aria-label={view.detail || undefined}
             data-testid="save-status"
             data-status={status.kind}
             data-saved={isSaved(status) ? "true" : "false"}
-            title={status.kind === "error" ? status.detail : undefined}
+            data-tone={view.tone}
+            data-empty={view.label ? undefined : ""}
+            title={
+              view.detail
+                ? status.kind === "error" && status.detail
+                  ? `${view.detail} (${status.detail})`
+                  : view.detail
+                : undefined
+            }
           >
-            {statusLabel(status)}
+            <span className={styles.savedText}>{view.label}</span>
           </span>
+        </div>
+        <div className={styles.actions}>
           {action ? (
             <button type="button" className={styles.retryBtn} onClick={onAction}>
               {ACTION_LABELS[action]}
@@ -1082,7 +1126,7 @@ export function EditShell() {
           >
             Export…
           </Link>
-          <Link href="/preach" className={styles.preachBtn}>
+          <Link href={`/preach?id=${encodeURIComponent(doc.id)}`} className={styles.preachBtn}>
             Enter Preaching
           </Link>
         </div>

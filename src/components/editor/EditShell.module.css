@@ -183,3 +183,67 @@
 .fileBtn { min-height: 44px; min-width: 44px; padding: 0.45rem 0.9rem; border-radius: 8px; border: 1px solid var(--edit-border); background: var(--edit-bg-elevated); color: var(--edit-fg); font-weight: 600; font-size: 0.875rem; cursor: pointer; }
 .fileBtn:hover { border-color: var(--edit-accent); }
 .fileBtn:focus-visible { border-color: var(--edit-accent); outline: 2px solid var(--edit-accent); outline-offset: 2px; }
+
+/* Save status (UI UX spec): plain text; red when not saved; hidden before
+   the first save. Below 600px: icon only right after the EDITING badge; the
+   full text stays in aria-label / title. */
+.saved {
+  flex: none;
+  white-space: nowrap;
+}
+
+.saved[data-tone="error"] {
+  color: #b42318;
+  font-weight: 600;
+}
+
+.saved[data-empty] {
+  display: none;
+}
+
+@media (max-width: 599px) {
+  .saved {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.1rem;
+    height: 1.1rem;
+  }
+  .savedText {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .saved::before {
+    content: "";
+    display: block;
+  }
+  .saved[data-tone="ok"]::before {
+    content: "\2713";
+    color: var(--edit-accent, #2f7d32);
+    font-weight: 700;
+    font-size: 0.95rem;
+  }
+  .saved[data-tone="neutral"]::before {
+    width: 0.8rem;
+    height: 0.8rem;
+    border: 2px solid var(--edit-fg-muted);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: saveSpin 0.8s linear infinite;
+  }
+  .saved[data-tone="error"]::before {
+    content: "\26A0";
+    color: #b42318;
+    font-size: 1rem;
+  }
+}
+
+@keyframes saveSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
