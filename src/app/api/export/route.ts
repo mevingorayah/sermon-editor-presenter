@@ -15,7 +15,15 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   try {
     const url = new URL(request.url);
-    const body = await request.json();
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return Response.json(
+        { error: "Request body must be valid JSON", code: "NOT_JSON" },
+        { status: 400 },
+      );
+    }
     const {
       snapshot,
       format,

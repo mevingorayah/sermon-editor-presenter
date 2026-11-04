@@ -1,7 +1,8 @@
+import JSZip from "jszip";
 import type { CalibratedSnapshot, ExportFormat } from "@/types/document";
 import { buildDocx } from "./docx";
 import { buildPdf } from "./pdf";
-import { buildPng } from "./png";
+import { buildPng, buildPngPages } from "./png";
 import { buildPptx } from "./pptx";
 import { filenameWithExt, sanitizeFilenameStem } from "./filename";
 import { titleTextFromSnapshot } from "./contentWalk";
@@ -63,13 +64,26 @@ export async function exportSnapshot(
 
   if (format === "png") {
     // includeNotes ignored for PNG (slice 2).
-    const buffer = await buildPng(snapshot, {
+    const pages = await buildPngPages(snapshot, {
       resolvedColors: options.resolvedColors,
     });
+    if (pages.length === 1) {
+      return {
+        buffer: pages[0],
+        contentType: "image/png",
+        filename: filenameWithExt(stem, "png"),
+      };
+    }
+    // Several frames: one PNG per page in a zip, named stem-01.png, stem-02.png…
+    const zip = new JSZip();
+    const clean = filenameWithExt(stem, "png").replace(/\.png$/, "");
+    pages.forEach((p, i) =>
+      zip.file(`${clean}-${String(i + 1).padStart(2, "0")}.png`, p),
+    );
     return {
-      buffer,
-      contentType: "image/png",
-      filename: filenameWithExt(stem, "png"),
+      buffer: await zip.generateAsync({ type: "nodebuffer" }),
+      contentType: "application/zip",
+      filename: filenameWithExt(stem, "zip"),
     };
   }
 

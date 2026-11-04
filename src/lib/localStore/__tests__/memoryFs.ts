@@ -12,6 +12,9 @@ export class MemoryDir implements DirHandleLike {
   files = new Map<string, string>();
   gone = false;
   failWrite: string | null = null;
+  /** Fail the Nth writable close (1-based) from now on, once. */
+  failCloseAt = 0;
+  closes = 0;
   permission: PermissionStateLike = "granted";
   constructor(public name = "Sermons") {}
 
@@ -44,11 +47,20 @@ export class MemoryDir implements DirHandleLike {
           },
           close: async () => {
             if (this.failWrite) throw domErr(this.failWrite);
+            this.closes += 1;
+            if (this.failCloseAt && this.closes === this.failCloseAt) throw domErr("QuotaExceededError");
             this.check();
             this.files.set(name, buf);
           },
           abort: async () => {},
         };
+      },
+      move: async (newName: string) => {
+        this.check();
+        const t = this.files.get(name);
+        if (t === undefined) throw domErr("NotFoundError");
+        this.files.delete(name);
+        this.files.set(newName, t);
       },
     };
   }

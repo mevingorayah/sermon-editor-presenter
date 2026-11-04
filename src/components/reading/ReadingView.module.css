@@ -100,3 +100,33 @@
 .quote :global(strong) {
   font-weight: 700;
 }
+
+/* Lists, rules: same structure as Edit's StarterKit output */
+.list {
+  margin: 0;
+  padding-inline-start: 1.5em;
+  font-size: calc(var(--rm-size-body) * var(--rm-scale));
+  line-height: var(--rm-lh-body);
+  color: var(--rm-fg);
+}
+
+.listItem > p {
+  margin: 0;
+}
+
+.listItem > p,
+.list .list {
+  font-size: inherit;
+}
+
+.rule {
+  width: 100%;
+  border: none;
+  border-top: 1px solid var(--rm-border);
+  margin: 0.5rem 0;
+}
+
+.body :global(u),
+.quote :global(u) {
+  text-decoration-line: underline;
+}

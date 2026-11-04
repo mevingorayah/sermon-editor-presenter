@@ -9,8 +9,10 @@ import {
 } from "@/lib/sermon-file";
 import type { SermonDocument } from "@/types/document";
 import { DEFAULT_PRESENTATION_SETTINGS, STORAGE_KEY } from "@/types/document";
-import { listFolder, readFolderFile, uniqueFileName, writeSermonFile } from "../folder";
-import { decideWrite, isStaleFor } from "../conflict";
+import { isConflictCopyId, listFolder, RestoreWriteError, writeSermonFilesAtomically, readFolderFile, uniqueFileName, writeSermonFile } from "../folder";
+import { decideWrite, isStaleFor, OPEN_ELSEWHERE_TEXT, presenceAction } from "../conflict";
+import { browserModeBanner, BROWSER_ONLY_TEXT } from "../status";
+import { parseRestoreFile, replaceConfirmText, resolveReplaceConfirm } from "../backup";
 import { classifyWriteError, isSaved, nextStatus, statusAction, statusLabel, type SaveStatus } from "../status";
 import {
   backupFileName,
@@ -269,5 +271,152 @@ describe("browser cache + first-run migration", () => {
     assert.equal(Object.keys(r.library).length, 4);
     assert.equal(r.copies.length, 1);
     assert.ok(kv.getItem(LIBRARY_KEY));
+  });
+});
+
+describe("Drive conflict copies (two files, same sermon id)", () => {
+  function driveDir() {
+    const dir = new MemoryDir();
+    dir.files.set("Grace.sermon", serializeSermonFile(sermon("s1", "Grace", "2026-10-10T10:00:00.000Z", "orig"), new Date("2026-10-10T10:00:00.000Z")));
+    dir.files.set("Grace (1).sermon", serializeSermonFile(sermon("s1", "Grace", "2026-10-11T10:00:00.000Z", "other device"), new Date("2026-10-11T10:00:00.000Z")));
+    return dir;
+  }
+
+  test("listFolder keeps both; the renamed file gets its own stable id and is flagged", async () => {
+    const a = await listFolder(driveDir());
+    assert.equal(a.entries.length, 2);
+    const orig = a.entries.find((e) => e.fileName === "Grace.sermon")!;
+    const copy = a.entries.find((e) => e.fileName === "Grace (1).sermon")!;
+    assert.equal(orig.file.sermon.id, "s1");
+    assert.equal(orig.conflictCopyOf, undefined);
+    assert.equal(copy.conflictCopyOf, "s1");
+    assert.notEqual(copy.file.sermon.id, "s1");
+    assert.ok(isConflictCopyId(copy.file.sermon.id));
+    assert.ok(!isConflictCopyId("s1"));
+    const b = await listFolder(driveDir());
+    assert.equal(b.entries.find((e) => e.fileName === "Grace (1).sermon")!.file.sermon.id, copy.file.sermon.id, "stable across reloads");
+  });
+
+  test("without a renamed file, the newer save is the flagged copy", async () => {
+    const dir = new MemoryDir();
+    dir.files.set("A.sermon", serializeSermonFile(sermon("s1", "A"), new Date("2026-10-12T10:00:00.000Z")));
+    dir.files.set("B.sermon", serializeSermonFile(sermon("s1", "B"), new Date("2026-10-10T10:00:00.000Z")));
+    const l = await listFolder(dir);
+    assert.equal(l.entries.find((e) => e.fileName === "B.sermon")!.file.sermon.id, "s1");
+    assert.equal(l.entries.find((e) => e.fileName === "A.sermon")!.conflictCopyOf, "s1");
+  });
+
+  test("sync lists both in the library and writes neither file", async () => {
+    const dir = driveDir();
+    const before = new Map(dir.files);
+    const r = await syncFolderAndCache(dir, {}, nextId);
+    assert.equal(Object.keys(r.library).length, 2);
+    assert.deepEqual(Object.values(r.library).map((e) => e.fileName).sort(), ["Grace (1).sermon", "Grace.sermon"]);
+    assert.deepEqual(r.written, []);
+    assert.deepEqual(dir.files, before);
+  });
+
+  test("re-reading the copy by its library id keeps that id (edits never route to the original)", async () => {
+    const dir = driveDir();
+    const r = await syncFolderAndCache(dir, {}, nextId);
+    const copy = Object.values(r.library).find((e) => e.fileName === "Grace (1).sermon")!;
+    const f = await readFolderFile(dir, "Grace (1).sermon", copy.doc.id);
+    assert.equal(f!.sermon.id, copy.doc.id);
+    assert.equal((await readFolderFile(dir, "Grace.sermon", "s1"))!.sermon.id, "s1");
+  });
+
+  test("saving either one writes only its own file", async () => {
+    const dir = driveDir();
+    const r = await syncFolderAndCache(dir, {}, nextId);
+    const copy = Object.values(r.library).find((e) => e.fileName === "Grace (1).sermon")!;
+    const origText = dir.files.get("Grace.sermon");
+    const w = await writeSermonFile(dir, copy.fileName!, { ...copy.doc, notes: "edited copy" }, { loadedSavedAt: copy.savedAt });
+    assert.equal(w.status, "ok");
+    assert.equal(dir.files.get("Grace.sermon"), origText, "original untouched");
+    assert.equal(parseSermonFile(dir.files.get("Grace (1).sermon")!).sermon.notes, "edited copy");
+    // After the copy is saved the two files no longer share an id, and the copy stays tagged.
+    const l = await listFolder(dir);
+    assert.equal(l.entries.length, 2);
+    assert.ok(isConflictCopyId(l.entries.find((e) => e.fileName === "Grace (1).sermon")!.file.sermon.id));
+    const orig = r.library["s1"]!;
+    const copyText = dir.files.get("Grace (1).sermon");
+    await writeSermonFile(dir, orig.fileName!, { ...orig.doc, notes: "edited orig" }, { loadedSavedAt: orig.savedAt });
+    assert.equal(dir.files.get("Grace (1).sermon"), copyText, "copy untouched");
+    assert.equal(parseSermonFile(dir.files.get("Grace.sermon")!).sermon.notes, "edited orig");
+  });
+});
+
+describe("ST9 presence on open", () => {
+  test("a tab with the same sermon open warns and replies; others ignore", () => {
+    const m = (type: "opened" | "here" | "closed" | "saved", id = "s1", tabId = "B") => ({ type, id, tabId });
+    assert.equal(presenceAction(m("opened"), "A", "s1"), "warn-and-reply");
+    assert.equal(presenceAction(m("here"), "A", "s1"), "warn");
+    assert.equal(presenceAction(m("closed"), "A", "s1"), "clear");
+    assert.equal(presenceAction(m("opened", "s2"), "A", "s1"), null);
+    assert.equal(presenceAction(m("opened", "s1", "A"), "A", "s1"), null);
+    assert.equal(presenceAction(m("saved"), "A", "s1"), null);
+    assert.equal(isStaleFor(m("opened"), "A", "s1", "2026-10-10T10:00:00.000Z"), false);
+    assert.equal(OPEN_ELSEWHERE_TEXT, "This sermon is open in another tab");
+  });
+});
+
+describe("ST18 replace confirmation text", () => {
+  test("names the sermon", () => {
+    assert.equal(replaceConfirmText("Grace"), "Replace your copy of Grace? Your current version will be lost.");
+    assert.equal(replaceConfirmText(""), "Replace your copy of Untitled sermon? Your current version will be lost.");
+  });
+  test("only an explicit Replace switches the choice; Cancel/Escape keeps both", () => {
+    assert.equal(resolveReplaceConfirm(true), "replace");
+    assert.equal(resolveReplaceConfirm(false), "keep-both");
+  });
+});
+
+describe("ST20 restore is all-or-nothing", () => {
+  const items = () => [
+    { fileName: "A.sermon", doc: sermon("a", "A") },
+    { fileName: "B.sermon", doc: sermon("b", "B") },
+    { fileName: "C.sermon", doc: sermon("c", "C") },
+  ];
+  test("all succeed: files in place, no temp files left", async () => {
+    const dir = new MemoryDir();
+    const r = await writeSermonFilesAtomically(dir, items());
+    assert.deepEqual([...dir.files.keys()].sort(), ["A.sermon", "B.sermon", "C.sermon"]);
+    assert.equal(Object.keys(r).length, 3);
+    assert.equal(parseSermonFile(dir.files.get("B.sermon")!).sermon.id, "b");
+  });
+  test("2nd of 3 writes fails: nothing written, existing file untouched, error names the sermon", async () => {
+    const dir = new MemoryDir();
+    dir.files.set("A.sermon", "ORIGINAL");
+    dir.failCloseAt = 2;
+    await assert.rejects(writeSermonFilesAtomically(dir, items()), (e: unknown) => {
+      assert.ok(e instanceof RestoreWriteError);
+      assert.equal((e as RestoreWriteError).title, "B");
+      return true;
+    });
+    assert.deepEqual([...dir.files.entries()], [["A.sermon", "ORIGINAL"]]);
+  });
+  test("temp files are never listed as sermons", async () => {
+    const dir = new MemoryDir();
+    dir.files.set(".X.sermon.abc-0.tmp", serializeSermonFile(sermon("x", "X")));
+    assert.equal((await listFolder(dir)).entries.length, 0);
+  });
+});
+
+describe("ST2/ST15 browser-only banner", () => {
+  test("plain text, stronger when persist() refused", () => {
+    assert.deepEqual(browserModeBanner(true), { text: BROWSER_ONLY_TEXT, strong: false });
+    assert.equal(BROWSER_ONLY_TEXT, "Saved in this browser only. Back up regularly.");
+    const w = browserModeBanner(false);
+    assert.equal(w.strong, true);
+    assert.ok(w.text.startsWith(BROWSER_ONLY_TEXT) && w.text.length > BROWSER_ONLY_TEXT.length);
+  });
+});
+
+describe("restore accepts a single .sermon file", () => {
+  test("treated as a one-sermon backup; junk still refused", () => {
+    const b = parseRestoreFile(serializeSermonFile(sermon("one", "One")));
+    assert.equal(b.sermons.length, 1);
+    assert.equal(b.sermons[0].id, "one");
+    assert.throws(() => parseRestoreFile(JSON.stringify({ kind: "other" })));
   });
 });

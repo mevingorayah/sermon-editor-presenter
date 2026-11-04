@@ -5,8 +5,9 @@ import type {
 } from "@/types/document";
 import { sanitizeFilenameStem } from "@/lib/sermon/export/filename";
 import {
-  EDIT_ACCENT_HEX,
   flattenContentColors,
+  resolveEditAccentHex,
+  toHex,
   type CssVarResolver,
 } from "./flattenColors";
 
@@ -50,6 +51,7 @@ export interface BuildExportPayloadInput {
   includeNotes: boolean;
   notes: string;
   resolveVar?: CssVarResolver;
+  /** Explicit accent override (normalized to hex; ignored if not a color). */
   accentHex?: string;
 }
 
@@ -73,10 +75,33 @@ export function buildExportPayload(input: BuildExportPayloadInput): ExportPayloa
     format: input.format,
     filenameStem: input.filenameStem,
     includeNotes: withNotes,
-    resolvedColors: { accent: input.accentHex ?? EDIT_ACCENT_HEX },
+    // Read --edit-accent at export time; always hex (fallback #5c4a1f).
+    resolvedColors: {
+      accent: toHex(input.accentHex) ?? resolveEditAccentHex(input.resolveVar),
+    },
   };
   if (withNotes) payload.notes = input.notes;
   return payload;
+}
+
+/**
+ * Download filename: Content-Disposition wins; otherwise the extension comes
+ * from Content-Type, so a multi-page PNG export (application/zip) is never
+ * saved as .png.
+ */
+export function downloadFilename(
+  contentDisposition: string | null,
+  contentType: string | null,
+  stem: string,
+  format: ExportFormat,
+): string {
+  const fromHeader = filenameFromContentDisposition(contentDisposition);
+  if (fromHeader) return fromHeader;
+  const mime = (contentType ?? "").split(";")[0].trim().toLowerCase();
+  if (mime === "application/zip" || mime === "application/x-zip-compressed") {
+    return `${sanitizeFilenameStem(stem)}.zip`;
+  }
+  return fallbackFilename(stem, format);
 }
 
 /** Parse `Content-Disposition` (RFC 5987 `filename*` wins over `filename`). */

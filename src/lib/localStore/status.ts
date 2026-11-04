@@ -115,3 +115,14 @@ function errName(err: unknown): string | undefined {
   }
   return undefined;
 }
+
+export const BROWSER_ONLY_TEXT = "Saved in this browser only. Back up regularly.";
+export const NOT_PERSISTED_TEXT =
+  "This browser has not agreed to keep your sermons permanently and may clear them when space runs low. Back up now.";
+
+/** Banner for browser-only mode. persisted=false means navigator.storage.persist() was refused. */
+export function browserModeBanner(persisted: boolean | null): { text: string; strong: boolean } {
+  return persisted === false
+    ? { text: `${BROWSER_ONLY_TEXT} ${NOT_PERSISTED_TEXT}`, strong: true }
+    : { text: BROWSER_ONLY_TEXT, strong: false };
+}

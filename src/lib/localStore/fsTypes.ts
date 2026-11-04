@@ -17,6 +17,8 @@ export interface FileHandleLike {
   name: string;
   getFile(): Promise<{ text(): Promise<string> }>;
   createWritable(): Promise<WritableLike>;
+  /** Rename in place (Chromium). Optional: callers fall back to copy + delete. */
+  move?(newName: string): Promise<void>;
 }
 
 export interface DirHandleLike {
