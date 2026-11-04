@@ -31,6 +31,23 @@ function alignOf(node: JSONContent): TextAlign {
   return "left";
 }
 
+const OPENING_BRACKET = /[([{«‹“‘„¿¡]$/u;
+
+/**
+ * "( Galates 1.8)": a styled run that starts with whitespace right after an
+ * opening bracket (in the previous run) is drawn without that leading gap.
+ * Mutates `runs`; runs left empty are removed.
+ */
+export function trimAfterOpeningBracket(runs: StyledRun[]): void {
+  for (let i = 1; i < runs.length; i++) {
+    let p = i - 1;
+    while (p >= 0 && !runs[p].text) p--;
+    if (p < 0 || !OPENING_BRACKET.test(runs[p].text)) continue;
+    runs[i].text = runs[i].text.replace(/^[\s\u00A0\u202F\u2009\u2007]+/u, "");
+  }
+  for (let i = runs.length - 1; i >= 0; i--) if (!runs[i].text) runs.splice(i, 1);
+}
+
 function runsFromNode(node: JSONContent): StyledRun[] {
   const runs: StyledRun[] = [];
 
@@ -87,6 +104,7 @@ function runsFromNode(node: JSONContent): StyledRun[] {
   }
 
   walk(node);
+  trimAfterOpeningBracket(runs);
   if (runs.length === 0) {
     // Fallback: plain text extraction
     const plain = plainText(node);

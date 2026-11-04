@@ -39,8 +39,9 @@ test("verse ranges keep the exact dash through editor schema, save and preach", 
     title: HYPHEN,
     updatedAt: "2026-10-22T08:00:00.000Z",
     content: edited,
-    presentation: DEFAULT_PRESENTATION_SETTINGS,
-  } as SermonDocument;
+    presentationSettings: DEFAULT_PRESENTATION_SETTINGS,
+    notes: "",
+  };
   const saved = parseSermonFile(serializeSermonFile(sermon, new Date("2026-10-22T08:00:00Z"))).sermon;
   assert.equal(saved.title, HYPHEN);
   assert.deepEqual(saved.content, edited);

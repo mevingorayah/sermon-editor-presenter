@@ -126,3 +126,44 @@ export function browserModeBanner(persisted: boolean | null): { text: string; st
     ? { text: `${BROWSER_ONLY_TEXT} ${NOT_PERSISTED_TEXT}`, strong: true }
     : { text: BROWSER_ONLY_TEXT, strong: false };
 }
+
+/** "21:14": 24-hour local time, as the save status shows it. */
+export function clockHHMM(d: Date): string {
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+export interface StatusDisplay {
+  /** Visible words: "Saving…", "Saved 21:14" or "Not saved, retrying". Empty = show nothing. */
+  text: string;
+  /** Where/why, for the title tooltip and aria-label (location never in the visible words). */
+  label: string;
+  tone: "muted" | "error";
+}
+
+/**
+ * Top-bar save status (UI UX spec): short visible words, location only in
+ * title + aria-label, nothing until the first save of this session.
+ */
+export function statusDisplay(s: SaveStatus, opts: { shown: boolean; savedAt: Date | null }): StatusDisplay {
+  if (!opts.shown) return { text: "", label: "", tone: "muted" };
+  const at = opts.savedAt ? clockHHMM(opts.savedAt) : null;
+  switch (s.kind) {
+    case "saving":
+      return { text: "Saving…", label: "Saving…", tone: "muted" };
+    case "saved-folder":
+    case "saved-browser":
+    case "needs-permission": {
+      const where = s.kind === "saved-folder" ? "Saved to the Sermons folder" : "Saved in this browser";
+      const extra = s.kind === "needs-permission" ? ". Allow access to your Sermons folder to save there." : "";
+      return {
+        text: at ? `Saved ${at}` : "Saved",
+        label: `${where}${at ? ` at ${at}` : ""}${extra}`,
+        tone: "muted",
+      };
+    }
+    case "conflict":
+      return { text: "Not saved", label: statusLabel(s), tone: "error" };
+    case "error":
+      return { text: "Not saved, retrying", label: `${statusLabel(s)} Retrying automatically.`, tone: "error" };
+  }
+}

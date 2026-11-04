@@ -23,7 +23,9 @@ export type ReadingClassNames = Partial<
     | "scripture"
     | "quoteBlock"
     | "quote"
-    | "citation",
+    | "citation"
+    | "cue"
+    | "titleSub",
     string
   >
 >;
@@ -53,6 +55,32 @@ export const RENDERED_MARKS = [
   "bold", "italic", "underline", "strike", "code", "link", "textStyle",
   "highlight",
 ];
+
+/** Stage-cue colour: cues like [Pause.] are italic text in this grey (Edit's grey swatch). */
+export const CUE_COLOR = "#5c5c5c";
+
+/** A text run is a stage cue when it is italic and coloured CUE_COLOR. */
+export function isCueRun(node: JSONContent): boolean {
+  const marks = node.marks ?? [];
+  const italic = marks.some((m) => m.type === "italic");
+  const grey = marks.some(
+    (m) =>
+      m.type === "textStyle" &&
+      typeof m.attrs?.color === "string" &&
+      m.attrs.color.trim().toLowerCase() === CUE_COLOR,
+  );
+  return italic && grey;
+}
+
+/**
+ * The line right under the title (e.g. "Éphésiens 1.3–7 …") when it is a short
+ * paragraph: Preach shows it as the title block's Scripture line.
+ */
+export function isTitleSubline(prev: JSONContent | undefined, node: JSONContent): boolean {
+  if (prev?.type !== "title" || node.type !== "paragraph") return false;
+  const text = (node.content ?? []).map((c) => c.text ?? "").join("");
+  return text.trim().length > 0 && text.length <= 160;
+}
 
 const TEXT_ALIGNS = new Set(["left", "center", "right", "justify"]);
 
@@ -100,6 +128,14 @@ function renderText(node: JSONContent, ctx: Ctx, key: string): ReactNode {
   // Wrap innermost-last so marks[0] is the outermost element, like ProseMirror.
   for (let i = marks.length - 1; i >= 0; i--) {
     out = wrapMark(marks[i], out, ctx, i);
+  }
+  if (isCueRun(node)) {
+    // Stays inline, exactly where it was written; only its look changes.
+    return (
+      <span key={key} className={ctx.classes.cue} data-cue="">
+        {out}
+      </span>
+    );
   }
   return <Fragment key={key}>{out}</Fragment>;
 }
@@ -259,5 +295,15 @@ export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode 
 /** Render the blocks of a sermon document for Preach. */
 export function renderSermon(content: JSONContent, opts: RenderOptions): ReactNode {
   const ctx: Ctx = { ...opts, classes: opts.classes ?? {}, plain: false };
-  return (content.content ?? []).map((n, i) => renderNode(n, ctx, `${n.type}-${i}`));
+  const blocks = content.content ?? [];
+  return blocks.map((n, i) => {
+    if (isTitleSubline(blocks[i - 1], n)) {
+      return (
+        <p key={`${n.type}-${i}`} className={ctx.classes.titleSub} data-title-sub="" style={alignStyle(n)}>
+          {children(n, ctx)}
+        </p>
+      );
+    }
+    return renderNode(n, ctx, `${n.type}-${i}`);
+  });
 }

@@ -1,11 +1,33 @@
 import { test, expect } from "@playwright/test";
 
 test("Find/Replace resets when switching sermons; Replace All shows count and undoes", async ({ page }) => {
-  await page.addInitScript(() => {
-    if (sessionStorage.getItem("__e2e_seeded")) return;
-    sessionStorage.setItem("__e2e_seeded", "1");
-    localStorage.clear();
+  // Storage is browser-only: seed a two-sermon library (made-up text).
+  const mk = (id: string, title: string, text: string) => ({
+    doc: {
+      id,
+      title,
+      notes: "",
+      updatedAt: new Date().toISOString(),
+      content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text }] }] },
+      presentationSettings: { theme: "light", bionic: false, typeScaleStep: 0, lineHeight: 1.55, calibrationTarget: "paper-a4" },
+    },
+    savedAt: null,
+    dirty: true,
   });
+  const a = "11111111-aaaa-4aaa-8aaa-111111111111";
+  const b = "22222222-bbbb-4bbb-8bbb-222222222222";
+  const lib = JSON.stringify({ [a]: mk(a, "Test Sermon A", "Alpha text."), [b]: mk(b, "Test Sermon B", "Beta text.") });
+  await page.addInitScript(
+    ([lib, a]) => {
+      if (sessionStorage.getItem("__e2e_seeded")) return;
+      sessionStorage.setItem("__e2e_seeded", "1");
+      localStorage.clear();
+      localStorage.setItem("sermon-editor-presenter:storage-mode:v1", "browser");
+      localStorage.setItem("sermon-editor-presenter:library:v1", lib);
+      localStorage.setItem("sermon-editor-presenter:active-id:v1", a);
+    },
+    [lib, a] as const,
+  );
   await page.goto("/edit", { waitUntil: "networkidle" });
   const pm = page.locator(".ProseMirror");
   await expect(pm).toBeVisible({ timeout: 20_000 });

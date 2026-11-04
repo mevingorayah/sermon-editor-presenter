@@ -32,8 +32,11 @@ import type {
   ReadingTheme,
   TypeScaleStep,
 } from "@/types/document";
-import { countPngPages, pngExportLabel } from "@/lib/sermon/export/pngLayout";
+import { PPTX_FONT_NOTICE } from "@/lib/sermon/export/textMeasure";
+import { countPngPages, pngExportLabel, pngFrame, pngFrameSize } from "@/lib/sermon/export/pngLayout";
 import { ReadingView } from "./ReadingView";
+import { fitLabel, fromSettings, withPage } from "@/lib/reading/pageSettings";
+import type { SermonPageSettings } from "@/types/document";
 import styles from "./CalibrationPanel.module.css";
 
 /** Backend schema cap for `filenameStem`. */
@@ -50,6 +53,8 @@ interface CalibrationPanelProps {
   lineHeight: LineHeightOption;
   /** Live reading theme; print targets default preview to light. */
   theme: ReadingTheme;
+  /** Sermon page settings (Preach); exports then match page view. */
+  page?: SermonPageSettings;
   /** Move focus into the panel on mount (deep link `?calibrate=1`). */
   autoFocus?: boolean;
   onTargetChange: (t: CalibrationTarget) => void;
@@ -68,6 +73,7 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
     typeScaleStep,
     lineHeight,
     theme,
+    page,
     autoFocus = false,
     onTargetChange,
     onTypeScaleChange,
@@ -86,6 +92,11 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
 
   const meta = CALIBRATION_TARGETS.find((t) => t.id === target)!;
   const margins = marginsFor(target);
+  // Preview is the export frame scaled down: margins in preview px (real
+  // inches on a 300px-wide A4 preview used to eat the whole page).
+  const previewFrame = pngFrame(target, margins);
+  const previewPx = (framePx: number) => `${((framePx * meta.previewWidth) / previewFrame.width).toFixed(2)}px`;
+  const previewSize = pngFrameSize(target);
   const previewTheme: ReadingTheme =
     meta.kind === "paper" ? "light" : theme;
   const scale = typeScaleMultiplier(typeScaleStep);
@@ -99,14 +110,18 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
 
   const snapshot = useMemo(
     () =>
-      buildCalibratedSnapshot({
+    {
+      const base = buildCalibratedSnapshot({
         target,
         typeScaleStep,
         lineHeight,
         theme: meta.kind === "paper" ? "light" : theme,
         content,
-      }),
-    [target, typeScaleStep, lineHeight, theme, content, meta.kind],
+      });
+      // Preach passes the sermon's page settings so exports match page view.
+      return page ? withPage(base, { calibrationTarget: target, page }) : base;
+    },
+    [target, typeScaleStep, lineHeight, theme, content, meta.kind, page],
   );
 
   // Same layout as the server's PNG paging: >1 page comes back as a .zip.
@@ -327,13 +342,12 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
           className={styles.frame}
           style={{
             width: meta.previewWidth,
-            aspectRatio: meta.aspect,
-            paddingTop: margins.top,
-            paddingRight: margins.right,
-            paddingBottom: margins.bottom,
-            paddingLeft: margins.binderGutter
-              ? `calc(${margins.left} + ${margins.binderGutter})`
-              : margins.left,
+            aspectRatio: `${previewSize.width} / ${previewSize.height}`,
+            boxSizing: "border-box",
+            paddingTop: previewPx(previewFrame.top),
+            paddingRight: previewPx(previewFrame.width - previewFrame.left - previewFrame.contentWidth),
+            paddingBottom: previewPx(previewFrame.height - previewFrame.bottom),
+            paddingLeft: previewPx(previewFrame.left),
           }}
           data-reading-mode=""
           data-theme={previewTheme}
@@ -357,6 +371,10 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
         </div>
       </div>
 
+      {page && fitLabel(fromSettings({ calibrationTarget: target, page })) ? (
+        // Fit sermons export at the last measured size (PDF, PNG and PowerPoint).
+        <p className={styles.hint} data-fit-label="">{fitLabel(fromSettings({ calibrationTarget: target, page }))}</p>
+      ) : null}
       <div
         className={styles.exportRow}
         role="group"
@@ -377,6 +395,9 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
           </button>
         ))}
       </div>
+      <p className={styles.hint} data-testid="pptx-font-notice">
+        {PPTX_FONT_NOTICE}
+      </p>
       {/* Single persistent live region: hint until an export runs, then status. */}
       <p
         className={exportStatus ? styles.status : styles.hint}

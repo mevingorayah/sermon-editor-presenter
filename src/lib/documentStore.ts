@@ -87,7 +87,19 @@ export function updatePresentationSettings(
   return next;
 }
 
-/** Preach entry point: active sermon from local storage only. */
-export async function resolveActiveDocument(): Promise<{ doc: SermonDocument }> {
+/**
+ * Preach entry point: local storage only, read-only (never re-stamps or
+ * changes the chosen sermon). An explicit id (/preach?id=…) wins when that
+ * sermon exists here; an unknown id is ignored and the last chosen sermon
+ * opens instead — never "newest updated" while a valid choice exists.
+ */
+export async function resolveActiveDocument(options?: {
+  requestedId?: string | null;
+}): Promise<{ doc: SermonDocument }> {
+  const requested = options?.requestedId;
+  if (requested && typeof window !== "undefined") {
+    const hit = readLibrary()[requested]?.doc;
+    if (hit) return { doc: hit };
+  }
   return { doc: loadDocument() };
 }

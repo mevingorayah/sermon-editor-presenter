@@ -1,4 +1,8 @@
 import type { CalibratedMargins, CalibrationTarget } from "@/types/document";
+import { PAGE_LIMITS, clamp, frameSizeInches, isPaperPage, pngFrameWidthInches, type PageInput } from "./frames";
+
+/** Smallest text box (inches, each way) margins may leave on a page. */
+export const MIN_CONTENT_IN = 1.5;
 
 export interface ResolvedMarginsInches {
   top: number;
@@ -31,42 +35,64 @@ export function parseLengthToInches(
   return 0.75;
 }
 
-export function pageWidthInchesFor(target: string): number {
-  switch (target) {
-    case "paper-a4":
-      return 8.27;
-    case "paper-letter":
-      return 8.5;
-    case "paper-half-letter":
-      return 5.5;
-    case "tablet-portrait":
-      return 8;
-    case "screen-16-10":
-      return 13.3;
-    case "screen-16-9":
-    default:
-      return 13.3;
-  }
+/** Page width in inches: the shared frame geometry (frames.ts). */
+export function pageWidthInchesFor(target: PageInput): number {
+  return pngFrameWidthInches(target);
+}
+
+/** Default margins: 0.8 in on every side, every format (no percentages). */
+export const DEFAULT_MARGINS: CalibratedMargins = { top: "0.8in", right: "0.8in", bottom: "0.8in", left: "0.8in" };
+
+/**
+ * UX ruling: a margin is at most min(2 in, 20 % of the page's shorter side),
+ * in 0.05 in steps (half-Letter: 1.1 in). Preach clamps saved margins to it (pageSettings.fromSettings).
+ */
+export function marginMaxIn(target: PageInput): number {
+  const { width, height } = frameSizeInches(target);
+  const cap = Math.floor((0.2 * Math.min(width, height) + 1e-9) * 20) / 20;
+  return Math.max(PAGE_LIMITS.marginIn.min, Math.min(PAGE_LIMITS.marginIn.max, cap));
 }
 
 export function resolveMargins(
   margins: CalibratedMargins,
-  target: string,
+  target: PageInput,
 ): ResolvedMarginsInches {
   const width = pageWidthInchesFor(target);
-  return {
-    top: parseLengthToInches(margins.top, width),
-    right: parseLengthToInches(margins.right, width),
-    bottom: parseLengthToInches(margins.bottom, width),
-    left: parseLengthToInches(margins.left, width),
+  // Every side is 0.25–2 in on every format (PM limits); legacy % values are
+  // converted against the page width, then clamped.
+  // Stored margins above marginMaxIn(page) (min(2 in, 20% of the shorter
+  // side)) are clamped at export, never rejected.
+  const lim = { ...PAGE_LIMITS.marginIn, max: marginMaxIn(target) };
+  const side = (raw: string) => clamp(parseLengthToInches(raw, width), lim);
+  const out = {
+    top: side(margins.top),
+    right: side(margins.right),
+    bottom: side(margins.bottom),
+    left: side(margins.left),
     binderGutter: margins.binderGutter
       ? parseLengthToInches(margins.binderGutter, width)
       : 0,
   };
+  // Small custom pages: shrink margins (never under 0.25 in) so the text box
+  // keeps at least MIN_CONTENT_IN each way. Presets are never affected.
+  const fit = (a: number, b: number, extra: number, total: number): [number, number] => {
+    const room = total - MIN_CONTENT_IN - extra;
+    if (a + b <= room) return [a, b];
+    const lo = PAGE_LIMITS.marginIn.min;
+    const k = Math.max(0, room - 2 * lo) / Math.max(1e-9, a + b - 2 * lo);
+    return [lo + (a - lo) * k, lo + (b - lo) * k];
+  };
+  const height = frameSizeInches(target).height;
+  [out.left, out.right] = fit(out.left, out.right, out.binderGutter, width);
+  [out.top, out.bottom] = fit(out.top, out.bottom, 0, height);
+  return out;
 }
 
-export function isPaperTarget(target: string): boolean {
-  return target.startsWith("paper-");
+export function isPaperTarget(target: PageInput): boolean {
+  return isPaperPage(target);
 }
 
 export type { CalibrationTarget };
+
+/** Alias of `marginMaxIn` under the UI UX ruling's name (Frontend slider max). */
+export const maxMarginIn = marginMaxIn;

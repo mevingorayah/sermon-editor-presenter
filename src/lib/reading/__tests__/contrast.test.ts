@@ -91,7 +91,7 @@ test("every text preset reaches 4.5:1 on every dark highlight, keeping its hue",
 });
 
 test("effective background: highlight colour, default highlight, else the page", () => {
-  assert.equal(effectiveDarkBackground(null, false), "#12110f");
+  assert.equal(effectiveDarkBackground(null, false), "#141210");
   assert.equal(effectiveDarkBackground(null, true), "#655F33");
   assert.equal(effectiveDarkBackground("#93c5fd", true), hlDark("#93c5fd", "dark"));
   assert.equal(textOn("#9a948a", "light", "#655F33"), "#9a948a");
@@ -101,7 +101,7 @@ test("dark highlights: #17 yellow preset is exact; others darken until body text
   assert.equal(hlDark("#FFF176", "dark"), "#655F33");
   assert.equal(hlDark("#123456", "dark", "yellow"), "#655F33");
   assert.equal(hlDark("#fde68a", "light"), "#fde68a");
-  const fg = rgbOf("#ede8df")!;
+  const fg = rgbOf("#ece6da")!;
   for (const c of ["#fde68a", "#fef08a", "#86efac", "#ffffff", "#00ffff", "#d4a84b"]) {
     const d = hlDark(c, "dark");
     assert.ok(ratioOf(fg, rgbOf(d)!) >= 4.5, `${c} -> ${d}`);
@@ -117,7 +117,7 @@ test("plain highlight = yellow preset: every text preset reaches 4.5:1 on it", (
     const out = textOn(c, "dark", plain);
     assert.ok(ratioOf(rgbOf(out)!, rgbOf(plain)!) >= 4.5, `${c} -> ${out}`);
   }
-  assert.ok(ratioOf(rgbOf("#ede8df")!, rgbOf(plain)!) >= 4.5, "body text");
+  assert.ok(ratioOf(rgbOf("#ece6da")!, rgbOf(plain)!) >= 4.5, "body text");
 });
 
 test("sermon-marks.css: dark plain highlight is #655F33, no #3d2e0e", () => {
@@ -130,7 +130,7 @@ test("sermon-marks.css: dark plain highlight is #655F33, no #3d2e0e", () => {
 });
 
 test("Muted gray #5c5c5c: dark Preach lifts it to >= 4.5:1 on the page and every dark highlight; light keeps it", () => {
-  for (const bg of ["#12110f", ...DARK_HIGHLIGHTS]) {
+  for (const bg of ["#141210", ...DARK_HIGHLIGHTS]) {
     const out = textOn("#5c5c5c", "dark", bg);
     assert.ok(ratioOf(rgbOf(out)!, rgbOf(bg)!) >= 4.5, `on ${bg} -> ${out}`);
   }

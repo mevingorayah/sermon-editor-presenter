@@ -12,6 +12,8 @@ interface ReadingViewProps {
   theme?: ReadingTheme;
   /** When true (export preview), omit atmosphere gradient under the column. */
   flattenGradient?: boolean;
+  /** Preach stage: screen-scaled pulpit type (not the Calibrate preview). */
+  pulpit?: boolean;
 }
 
 const classes = {
@@ -26,6 +28,8 @@ const classes = {
   quoteBlock: styles.quoteBlock,
   quote: styles.quote,
   citation: styles.citation,
+  cue: styles.cue,
+  titleSub: styles.titleSub,
 };
 
 export function ReadingView({
@@ -33,9 +37,10 @@ export function ReadingView({
   bionic,
   theme = "light",
   flattenGradient = false,
+  pulpit = false,
 }: ReadingViewProps) {
   return (
-    <div className={styles.stage}>
+    <div className={styles.stage} data-pulpit={pulpit ? "" : undefined}>
       {!flattenGradient ? (
         <div className={styles.atmosphere} aria-hidden="true" />
       ) : null}

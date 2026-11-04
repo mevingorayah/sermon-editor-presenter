@@ -31,6 +31,7 @@ export async function POST(request: Request) {
       includeNotes,
       notes,
       resolvedColors,
+      exportTheme,
     } = parseExportRequest(body, url.searchParams);
 
     // Defense: refuse bionic true even if schema somehow bypassed.
@@ -43,6 +44,7 @@ export async function POST(request: Request) {
       includeNotes,
       notes,
       resolvedColors,
+      exportTheme,
     });
 
     return new Response(new Uint8Array(result.buffer), {

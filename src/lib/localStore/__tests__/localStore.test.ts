@@ -420,3 +420,21 @@ describe("restore accepts a single .sermon file", () => {
     assert.throws(() => parseRestoreFile(JSON.stringify({ kind: "other" })));
   });
 });
+
+test("save status display: short words, location only in the label, nothing before first save", async () => {
+  const { statusDisplay, clockHHMM } = await import("../status");
+  const at = new Date(2026, 9, 22, 21, 4);
+  assert.equal(clockHHMM(at), "21:04");
+  assert.deepEqual(statusDisplay({ kind: "saved-folder" }, { shown: false, savedAt: at }), { text: "", label: "", tone: "muted" });
+  assert.equal(statusDisplay({ kind: "saving" }, { shown: true, savedAt: null }).text, "Saving…");
+  const f = statusDisplay({ kind: "saved-folder" }, { shown: true, savedAt: at });
+  assert.equal(f.text, "Saved 21:04");
+  assert.equal(f.label, "Saved to the Sermons folder at 21:04");
+  const b = statusDisplay({ kind: "saved-browser" }, { shown: true, savedAt: new Date(2026, 9, 22, 9, 14) });
+  assert.equal(b.text, "Saved 09:14");
+  assert.equal(b.label, "Saved in this browser at 09:14");
+  const e = statusDisplay({ kind: "error", reason: "disk-full" }, { shown: true, savedAt: at });
+  assert.equal(e.text, "Not saved, retrying");
+  assert.equal(e.tone, "error");
+  assert.match(e.label, /^Couldn't save\. The disk is full/);
+});

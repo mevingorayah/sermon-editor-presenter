@@ -1,0 +1,81 @@
+.host {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.counter {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  font-family: var(--rm-font-ui);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  color: var(--rm-fg-muted);
+  opacity: 0.8;
+}
+
+.pageBox {
+  position: relative;
+  overflow: hidden;
+  background: var(--rm-bg);
+  box-shadow: 0 0 0 1px var(--rm-border);
+}
+
+.host[data-fill="true"] .pageBox {
+  box-shadow: none;
+}
+
+.page {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  color: var(--rm-fg);
+  font-family: var(--rm-font-body);
+}
+
+.page::before {
+  /* Accent edge, as on the exported pages. */
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 8px;
+  background: var(--rm-accent);
+}
+
+.line {
+  position: absolute;
+  white-space: pre;
+  overflow: visible;
+}
+
+.line[data-block="Title"] {
+  font-weight: 700;
+  color: var(--rm-accent);
+}
+
+.line[data-block="H1"],
+.line[data-block="H2"] {
+  font-weight: 700;
+}
+
+.line[data-block="Scripture"] {
+  font-style: italic;
+}
+
+.line[data-kind="citation"],
+.line[data-block="Caption"] {
+  color: var(--rm-fg-muted);
+}
+
+.cue {
+  font-style: italic;
+  color: var(--rm-fg-muted);
+}

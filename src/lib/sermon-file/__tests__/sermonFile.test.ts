@@ -343,3 +343,24 @@ it("export and .sermon names share the apostrophe rule", () => {
   }
   assert.equal(sanitizeFilenameStem("Qu'est-ce que l'amour ?"), "Qu-est-ce-que-l-amour");
 });
+
+describe(".sermon round-trip: fit-screen pageSpec", () => {
+  it("keeps format, measured width/height, orientation and dpr through save/open", () => {
+    const page = {
+      format: "fit-screen" as const,
+      orientation: "landscape" as const,
+      pageSpec: { kind: "fit" as const, width: 1280, height: 800, orientation: "landscape" as const, dpr: 2 },
+    };
+    const doc: SermonDocument = {
+      ...sermon,
+      title: "Made-up fit test",
+      presentationSettings: { ...DEFAULT_PRESENTATION_SETTINGS, page },
+    };
+    const text = serializeSermonFile(doc, new Date("2026-10-22T10:00:00.000Z"));
+    const opened = parseSermonFile(text).sermon;
+    assert.deepEqual(opened.presentationSettings.page, page);
+    assert.deepEqual(opened, doc);
+    // and a second save of the opened sermon is byte-identical
+    assert.equal(serializeSermonFile(opened, new Date("2026-10-22T10:00:00.000Z")), text);
+  });
+});

@@ -11,6 +11,7 @@ export interface ParsedExportRequest {
   includeNotes: boolean;
   notes?: string;
   resolvedColors?: { accent: string };
+  exportTheme?: "light" | "dark";
 }
 
 /**
@@ -47,6 +48,7 @@ export function parseExportRequest(
       includeNotes: parsed.includeNotes === true,
       notes: parsed.notes,
       resolvedColors: parsed.resolvedColors,
+      exportTheme: parsed.exportTheme,
     };
   }
 
@@ -56,6 +58,7 @@ export function parseExportRequest(
     includeNotes,
     notes,
     resolvedColors,
+    exportTheme,
     ...rest
   } = parsed;
 
@@ -66,5 +69,6 @@ export function parseExportRequest(
     includeNotes: includeNotes === true,
     notes,
     resolvedColors,
+    exportTheme,
   };
 }
