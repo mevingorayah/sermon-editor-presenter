@@ -39,6 +39,7 @@ export function FindBar({ editor }: FindBarProps) {
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [matchCount, setMatchCount] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(-1);
+  const [lastReplaced, setLastReplaced] = useState(0);
 
   const syncFromEditor = useCallback(() => {
     const storage = readFindStorage(editor);
@@ -200,11 +201,33 @@ export function FindBar({ editor }: FindBarProps) {
           type="button"
           className={styles.btn}
           disabled={!editor || matchCount === 0}
-          onClick={() => editor?.commands.replaceAllFind(replaceWith)}
+          onClick={() => {
+            const n = matchCount;
+            if (editor?.commands.replaceAllFind(replaceWith)) setLastReplaced(n);
+          }}
+          aria-label={`Replace all ${matchCount} matches`}
+          data-testid="find-replace-all"
         >
-          All
+          {matchCount > 0 ? `All (${matchCount})` : "All"}
         </button>
       </div>
+
+      {lastReplaced > 0 && (
+        <p className={styles.hint} role="status" data-testid="find-replaced">
+          Replaced {lastReplaced}.{" "}
+          <button
+            type="button"
+            className={styles.btn}
+            aria-label="Undo replace all"
+            onClick={() => {
+              editor?.chain().focus().undo().run();
+              setLastReplaced(0);
+            }}
+          >
+            Undo
+          </button>
+        </p>
+      )}
 
       <p className={styles.hint}>
         ⌘/Ctrl+F · Enter next · Shift+Enter prev · Esc clear. Searches document
