@@ -190,64 +190,9 @@ Frontend should show a clear status (and may keep the button disabled + “Comin
 
 ---
 
-## Sermon CRUD / server autosave
+## Sermon storage
 
-Complements Frontend `localStorage` autosave with durable server persistence
-(`data/sermons/` JSON files; swap for DB in prod via `SERMON_DATA_DIR` / store module).
-
-### `GET /api/sermons` → `{ sermons: Sermon[] }`
-
-### `POST /api/sermons`
-
-```json
-{
-  "id": "optional UUID (same-id restore)",
-  "title": "Untitled sermon",
-  "content": { "type": "doc", "content": [] },
-  "presentation": { /* PresentationSettings */ },
-  "notes": ""
-}
-```
-
-→ `201 { sermon }`
-
-- `id` is optional. Omit it and the server generates a UUID. Send one (UUID only, stored lowercase) to restore a sermon under the same id after a server-side loss.
-- If a sermon with that `id` already exists → **`409 { error: "Sermon already exists" }`** and the stored copy is untouched. Client should `GET /api/sermons/:id`, then `PATCH` its pending content.
-- A non-UUID `id` (e.g. `seed-…`) → **400** with `details[0].path = ["id"]`.
-
-### `GET /api/sermons/:id` → `{ sermon }`
-
-### `PATCH /api/sermons/:id`
-
-Partial update of `title`, `content`, `presentation` (`null` clears), `notes`.
-
-### `DELETE /api/sermons/:id` → `{ ok: true }`
-
-### `PATCH /api/sermons/:id/content` (autosave)
-
-```json
-{
-  "content": { "type": "doc", "content": [ /* TipTap */ ] },
-  "document": { /* alias for content */ },
-  "title": "optional"
-}
-```
-
-At least one of `content` or `document` required. TipTap JSON is sanitized on write.
-
-### Persisted `Sermon` shape
-
-```ts
-{
-  id: string,
-  meta: { title: string, createdAt: string, updatedAt: string },
-  content: SermonContent,
-  presentation?: PresentationSettings,
-  notes?: string
-}
-```
-
-**IDs:** sermon route params remain **UUID-only** (seed-* blocked on first paint / API).
+The server stores no sermons. Sermons live in `.sermon` files on the user's PC (see `docs/sermon-file-format.md`). `/api/sermons*` was removed; `POST /api/export` is the only server route and keeps nothing.
 
 ---
 
@@ -255,7 +200,6 @@ At least one of `content` or `document` required. TipTap JSON is sanitized on wr
 
 - `src/types/document.ts` — `CalibratedSnapshot`, `ExportFormat`, `ExportRequestOptions`, semantic blocks, presentation
 - `src/lib/sermon/schema.ts` — Zod validators (incl. CSS var rejection)
-- `src/lib/sermon/store.ts` — file persistence
 - `src/lib/sermon/export/` — DOCX (`docx`), PDF (`pdfkit`), PNG (`sharp`+SVG), PPTX (`pptxgenjs`)
 
 ## Frontend follow-ups (slice 2)

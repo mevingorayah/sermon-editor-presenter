@@ -20,6 +20,8 @@
 }
 
 .newBtn {
+  min-height: 44px;
+  min-width: 44px;
   font: inherit;
   font-size: 0.75rem;
   font-weight: 600;
@@ -70,6 +72,7 @@
 .link,
 .linkActive {
   flex: 1;
+  min-height: 44px;
   min-width: 0;
   display: block;
   text-align: left;
@@ -113,6 +116,8 @@
 .deleteBtn {
   flex-shrink: 0;
   width: 1.75rem;
+  min-width: 44px;
+  min-height: 44px;
   border: none;
   border-radius: 4px;
   background: transparent;
@@ -133,4 +138,15 @@
 .deleteBtn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.tag {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0 0.35rem;
+  border-radius: 0.25rem;
+  font-size: 0.75em;
+  background: #fff3cd;
+  color: #664d03;
+  white-space: nowrap;
 }
