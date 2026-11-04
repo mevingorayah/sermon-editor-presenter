@@ -59,6 +59,8 @@
 }
 
 .btn {
+  min-height: 44px;
+  min-width: 44px;
   font: inherit;
   font-size: 0.75rem;
   padding: 0.3rem 0.55rem;

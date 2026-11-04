@@ -41,6 +41,7 @@
 }
 
 .link {
+  min-height: 44px;
   display: block;
   width: 100%;
   text-align: left;
