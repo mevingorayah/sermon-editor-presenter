@@ -1,9 +1,10 @@
 import { readFile } from "node:fs/promises";
+import JSZip from "jszip";
 import { test, expect, type Page, type Request } from "@playwright/test";
 
 /**
  * Slice 2: Edit "Export…" → Preach with Document setup (Calibration) open →
- * Save-as filename stem → DOCX + PNG downloads with the expected filenames.
+ * Save-as filename stem → DOCX + PNG (or multi-page .zip of PNGs) downloads with the expected filenames.
  */
 
 const ACTIVE_ID_KEY = "sermon-editor-presenter:active-id:v1";
@@ -86,11 +87,32 @@ test("Edit Export… → Preach Calibration → DOCX + PNG downloads", async ({ 
   expect(docxBytes.subarray(0, 2).toString("latin1")).toBe("PK");
   await expect(panel.getByRole("status")).toHaveText(`Downloaded ${STEM}.docx`);
 
+  // Multi-page PNG export yields a .zip of numbered pages; a single page stays a bare .png.
+  const pngButton = panel.getByRole("button", { name: /^Images? \(/ });
+  const label = ((await pngButton.getAttribute("aria-label")) ?? (await pngButton.innerText())).trim();
+  const pageCount = Number(/(\d+) pages, \.zip/.exec(label)?.[1] ?? 1);
   const png = await exportAndDownload(page, /^Images? \(/);
-  expect(png.suggestedFilename()).toBe(`${STEM}.png`);
   const pngBytes = await readFile((await png.path())!);
-  expect(pngBytes.subarray(1, 4).toString("latin1")).toBe("PNG");
-  await expect(panel.getByRole("status")).toHaveText(`Downloaded ${STEM}.png`);
+  if (pageCount > 1) {
+    expect(png.suggestedFilename()).toBe(`${STEM}.zip`);
+    expect(pngBytes.subarray(0, 2).toString("latin1")).toBe("PK");
+    const zip = await JSZip.loadAsync(pngBytes);
+    const names = Object.keys(zip.files).filter((n) => !zip.files[n].dir).sort();
+    expect(names).toHaveLength(pageCount);
+    const pad = Math.max(2, String(pageCount).length);
+    expect(names).toEqual(
+      Array.from({ length: pageCount }, (_, i) => `${STEM}-${String(i + 1).padStart(pad, "0")}.png`),
+    );
+    for (const n of names) {
+      const buf = await zip.files[n].async("nodebuffer");
+      expect(buf.subarray(1, 4).toString("latin1"), n).toBe("PNG");
+    }
+    await expect(panel.getByRole("status")).toHaveText(`Downloaded ${STEM}.zip`);
+  } else {
+    expect(png.suggestedFilename()).toBe(`${STEM}.png`);
+    expect(pngBytes.subarray(1, 4).toString("latin1")).toBe("PNG");
+    await expect(panel.getByRole("status")).toHaveText(`Downloaded ${STEM}.png`);
+  }
 
   // Request contract checks.
   expect(exportBodies.map((b) => b.format)).toEqual(["docx", "png"]);
