@@ -79,24 +79,29 @@ const contrast = (a: string, b: string) => {
 };
 
 async function seed(page: Page, theme: "light" | "dark", bionic: boolean) {
-  const res = await page.request.post("/api/sermons", {
-    data: {
-      title: "Fidelity Sermon",
-      content,
-      presentation: { theme, bionic, typeScaleStep: 0, lineHeight: 1.7, calibrationTarget: "screen-16-9" },
-    },
-  });
-  expect(res.ok(), await res.text()).toBeTruthy();
-  const { sermon } = await res.json();
+  // Storage is browser-only (#16): seed the localStore library, never /api/sermons.
+  const id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const sermon = {
+    id,
+    updatedAt: new Date().toISOString(),
+    notes: "",
+    title: "Fidelity Sermon",
+    content,
+    presentationSettings: { theme, bionic, typeScaleStep: 0, lineHeight: 1.7, calibrationTarget: "screen-16-9" },
+  };
   await page.addInitScript(
-    ([k, id]) => {
+    ([k, id, doc]) => {
+      if (sessionStorage.getItem("__e2e_seeded")) return;
+      sessionStorage.setItem("__e2e_seeded", "1");
       localStorage.clear();
+      localStorage.setItem("sermon-editor-presenter:storage-mode:v1", "browser");
+      localStorage.setItem("sermon-editor-presenter:library:v1", doc);
       localStorage.setItem(k, id);
       localStorage.setItem("sermon-editor-presenter:preach-view:v1", "flow");
     },
-    [ACTIVE_ID_KEY, sermon.id] as const,
+    [ACTIVE_ID_KEY, id, JSON.stringify({ [id]: { doc: sermon, savedAt: null, dirty: true } })] as const,
   );
-  return sermon.id as string;
+  return id;
 }
 
 for (const theme of ["light", "dark"] as const) {
