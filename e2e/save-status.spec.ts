@@ -25,9 +25,9 @@ test("save status: nothing on open, Saving…, then Saved HH:MM; where only in t
   await page.keyboard.type(" x");
   await expect(status).toHaveText("Saving…");
   await expect(status).toHaveText(/^Saved \d{2}:\d{2}$/, { timeout: 15_000 });
-  await expect(status).toHaveAttribute("title", /Saved in this browser/);
-  await expect(status).toHaveAttribute("aria-label", /^Saved \d{2}:\d{2}\. Saved in this browser/);
-  await expect(status).toHaveAttribute("data-tone", "ok");
+  await expect(status).toHaveAttribute("title", /^Saved in this browser at \d{2}:\d{2}$/);
+  await expect(status).toHaveAttribute("aria-label", /^Saved in this browser at \d{2}:\d{2}$/);
+  await expect(status).toHaveAttribute("data-tone", "muted");
 });
 
 test("failed write shows red Not saved, retrying", async ({ page }) => {
@@ -56,7 +56,7 @@ test.describe("390px phone, en-US", () => {
     await pm.click();
     await page.keyboard.press("End");
     await page.keyboard.type(" z");
-    await expect(status).toHaveAttribute("aria-label", /^Saved \d{2}:\d{2}\./, { timeout: 15_000 });
+    await expect(status).toHaveAttribute("aria-label", /^Saved in this browser at \d{2}:\d{2}$/, { timeout: 15_000 });
     expect(await status.getAttribute("aria-label")).not.toMatch(/AM|PM/i);
     const badge = page.locator("header").getByText("Editing", { exact: true });
     const [b, st] = await Promise.all([badge.boundingBox(), status.boundingBox()]);

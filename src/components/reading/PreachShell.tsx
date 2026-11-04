@@ -117,13 +117,10 @@ export function PreachShell() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // ?id=<uuid> (merges with the "which sermon Preach opens" PR).
-      const urlId = new URLSearchParams(window.location.search).get("id");
-      if (urlId) {
-        const hit = readLibrary()[urlId];
-        if (hit) setActiveDoc(hit.doc);
-      }
-      const resolved = await resolveActiveDocument();
+      // Open exactly the sermon chosen in Edit (?id=…), else the last chosen one.
+      // An explicit ?id does not change the stored choice; an unknown one is ignored.
+      const requestedId = new URLSearchParams(window.location.search).get("id");
+      const resolved = await resolveActiveDocument({ requestedId });
       if (cancelled) return;
       setDoc(resolved.doc);
     })();
