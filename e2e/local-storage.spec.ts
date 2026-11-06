@@ -69,7 +69,7 @@ async function freshStart(page: Page) {
   await page.goto("/edit");
   // Let the app finish booting first, or its async folder load can re-write
   // localStorage after the wipe below (test race, not app behaviour).
-  await expect(page.getByTestId("first-run").or(page.getByTestId("save-status"))).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("first-run").or(page.getByTestId("save-status")).first()).toBeAttached({ timeout: 20_000 });
   if (await page.getByTestId("save-status").count()) {
     await expect(page.getByTestId("save-status")).toHaveAttribute("data-saved", "true", { timeout: 20_000 });
   }
@@ -104,7 +104,7 @@ async function pickFolder(page: Page) {
   await expect(page.getByText("Choosing a folder inside Google Drive or OneDrive also gives you a free backup.")).toBeVisible();
   await page.getByRole("button", { name: "Choose folder" }).click();
   await expect(page.locator(".ProseMirror")).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByTestId("save-status")).toHaveText("Saved to Sermons folder");
+  await expect(page.getByTestId("save-status")).toHaveAttribute("data-status", "saved-folder");
 }
 
 async function typeAtEnd(page: Page, text: string) {
@@ -144,20 +144,44 @@ test.describe("local-only storage", () => {
     const files = await folderFiles(page);
     expect(Object.keys(files).some((n) => n.endsWith(".sermon"))).toBe(true);
 
+    // Nothing before the first save of this session.
+    await expect(page.getByTestId("save-status")).toHaveAttribute("data-empty", "");
     await typeAtEnd(page, ACCENTED);
     await expect(page.getByTestId("save-status")).toHaveText("Saving…");
-    await expect(page.getByTestId("save-status")).toHaveText("Saved to Sermons folder");
+    await expect(page.getByTestId("save-status")).toHaveText(/^Saved \d{2}:\d{2}$/);
+    await expect(page.getByTestId("save-status")).toHaveAttribute("aria-label", /^Saved to the Sermons folder at \d{2}:\d{2}$/);
+    await expect(page.getByTestId("save-status")).toHaveAttribute("title", /^Saved to the Sermons folder at \d{2}:\d{2}$/);
+    // Under 600px: icon only (words stay in aria-label).
+    const vp = page.viewportSize()!;
+    await page.setViewportSize({ width: 480, height: vp.height });
+    const words = page.getByTestId("save-status").locator("span");
+    expect((await words.boundingBox())!.width).toBeLessThanOrEqual(1);
+    expect((await page.getByTestId("save-status").boundingBox())!.width).toBeGreaterThan(4);
+    await page.setViewportSize(vp);
     const after = Object.values(await folderFiles(page)).join("\n");
     expect(after).toContain(ACCENTED);
     expect(JSON.parse(Object.values(await folderFiles(page))[0])).toMatchObject({ schemaVersion: 1 });
 
     await page.reload();
     await expect(page.locator(".ProseMirror")).toContainText(ACCENTED, { timeout: 20_000 });
-    await expect(page.getByTestId("save-status")).toHaveText("Saved to Sermons folder");
+    await expect(page.getByTestId("save-status")).toHaveAttribute("data-status", "saved-folder");
+    await expect(page.getByTestId("save-status")).toHaveAttribute("data-empty", "");
 
-    // Preach shows the same sermon from local storage.
+    // Preach shows the same sermon from local storage. The text was typed at
+    // the end, so in the page view it is on the last page: turn there by key.
     await page.goto("/preach");
-    await expect(page.getByText(ACCENTED)).toBeVisible({ timeout: 20_000 });
+    const pv = page.locator("[data-page-view]");
+    const flow = page.locator("[data-page-view]").or(page.locator(".ProseMirror, main"));
+    await expect(flow.first()).toBeVisible({ timeout: 20_000 });
+    if (await pv.count()) {
+      const count = Number(await pv.getAttribute("data-page-count"));
+      for (let i = 1; i < count; i++) await page.keyboard.press("ArrowRight");
+      await expect(pv).toHaveAttribute("data-page-index", String(count - 1));
+      const lines = (await pv.locator("[data-line]").allTextContents()).join(" ").replace(/\s+/g, " ");
+      expect(lines).toContain(ACCENTED);
+    } else {
+      await expect(page.getByText(ACCENTED)).toBeVisible({ timeout: 20_000 });
+    }
     expect(hits).toEqual([]);
   });
 
@@ -188,7 +212,7 @@ test.describe("local-only storage", () => {
     await nav.getByRole("button", { name: /DRIVECOPY possible conflict copy/ }).click();
     await expect(page.locator(".ProseMirror")).toBeVisible();
     await typeAtEnd(page, "edited the drive copy");
-    await expect(page.getByTestId("save-status")).toHaveText("Saved to Sermons folder", { timeout: 20_000 });
+    await expect(page.getByTestId("save-status")).toHaveAttribute("data-status", "saved-folder", { timeout: 20_000 });
     const files = await folderFiles(page);
     expect(Object.keys(files).filter((n) => n.endsWith(".sermon")).sort()).toEqual([origName, copyName].sort());
     // The original may be re-saved by its own tab (editor normalisation), but never with the copy's content.
@@ -208,10 +232,12 @@ test.describe("local-only storage", () => {
       await root.removeEntry("Sermons", { recursive: true });
     });
     await typeAtEnd(page, "after move");
-    await expect(page.getByTestId("save-status")).toHaveText("Couldn't save. Folder not found.");
+    await expect(page.getByTestId("save-status")).toHaveText("Not saved, retrying");
+    await expect(page.getByTestId("save-status")).toHaveAttribute("title", /^Couldn't save\. Folder not found\./);
+    await expect(page.getByTestId("save-status")).toHaveAttribute("data-tone", "error");
     await expect(page.getByRole("button", { name: "Choose folder" })).toBeVisible();
     await page.getByRole("button", { name: "Choose folder" }).click();
-    await expect(page.getByTestId("save-status")).toHaveText("Saved to Sermons folder");
+    await expect(page.getByTestId("save-status")).toHaveAttribute("data-status", "saved-folder");
     expect(Object.values(await folderFiles(page)).join("")).toContain("after move");
     expect(hits).toEqual([]);
   });
@@ -221,7 +247,7 @@ test.describe("local-only storage", () => {
     await freshStart(page);
     await pickFolder(page);
     await typeAtEnd(page, ACCENTED);
-    await expect(page.getByTestId("save-status")).toHaveText("Saved to Sermons folder");
+    await expect(page.getByTestId("save-status")).toHaveAttribute("data-status", "saved-folder");
     const backup = await backupTo(page, testInfo);
     expect(readFileSync(backup, "utf8")).toContain(ACCENTED);
 
@@ -267,12 +293,12 @@ test.describe("local-only storage", () => {
     await freshStart(page);
     await pickFolder(page);
     await typeAtEnd(page, "version one");
-    await expect(page.getByTestId("save-status")).toHaveText("Saved to Sermons folder");
+    await expect(page.getByTestId("save-status")).toHaveAttribute("data-status", "saved-folder");
     const backup = await backupTo(page, testInfo);
     const backupId = JSON.parse(readFileSync(backup, "utf8")).sermons[0].id as string;
 
     await typeAtEnd(page, "version two");
-    await expect(page.getByTestId("save-status")).toHaveText("Saved to Sermons folder");
+    await expect(page.getByTestId("save-status")).toHaveAttribute("data-status", "saved-folder");
 
     // Keep both (default).
     await restoreFrom(page, backup);
@@ -327,7 +353,7 @@ test.describe("local-only storage", () => {
     const backup = await backupTo(page, testInfo);
     const title = JSON.parse(readFileSync(backup, "utf8")).sermons[0].title as string;
     await typeAtEnd(page, "changed after backup");
-    await expect(page.getByTestId("save-status")).toHaveText("Saved to Sermons folder");
+    await expect(page.getByTestId("save-status")).toHaveAttribute("data-status", "saved-folder");
     const before = await folderFiles(page);
     await restoreFrom(page, backup);
     const dialog = page.getByRole("dialog", { name: "Restore from backup" });
@@ -455,18 +481,18 @@ test.describe("local-only storage", () => {
     await typeAtEnd(page, "mine A");
     await expect(page.getByRole("alertdialog", { name: "Sermon changed elsewhere" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Keep mine" })).toBeFocused();
-    await expect(page.getByTestId("save-status")).not.toHaveText("Saved to Sermons folder");
+    await expect(page.getByTestId("save-status")).not.toHaveAttribute("data-status", "saved-folder");
     expect(Object.values(await folderFiles(page)).join("")).not.toContain("mine A");
     await page.getByRole("button", { name: "Keep mine" }).click();
-    await expect(page.getByTestId("save-status")).toHaveText("Saved to Sermons folder");
+    await expect(page.getByTestId("save-status")).toHaveAttribute("data-status", "saved-folder");
     expect(Object.values(await folderFiles(page)).join("")).toContain("mine A");
 
     // A second tab saves; this tab (clean) picks it up via BroadcastChannel.
     const other = await context.newPage();
     await other.goto("/edit");
-    await expect(other.getByTestId("save-status")).toHaveText("Saved to Sermons folder", { timeout: 20_000 });
+    await expect(other.getByTestId("save-status")).toHaveAttribute("data-status", "saved-folder", { timeout: 20_000 });
     await typeAtEnd(other, "from tab B");
-    await expect(other.getByTestId("save-status")).toHaveText("Saved to Sermons folder");
+    await expect(other.getByTestId("save-status")).toHaveAttribute("data-status", "saved-folder");
     await expect(page.locator(".ProseMirror")).toContainText("from tab B");
     await expect(page.locator(".ProseMirror")).toContainText("mine A");
 
@@ -486,7 +512,7 @@ test.describe("local-only storage", () => {
     await typeAtEnd(page, "mine D");
     await page.getByRole("button", { name: "Load theirs" }).click();
     await expect(page.locator(".ProseMirror")).toContainText("theirs C");
-    await expect(page.getByTestId("save-status")).toHaveText("Saved to Sermons folder");
+    await expect(page.getByTestId("save-status")).toHaveAttribute("data-status", "saved-folder");
     await other.close();
   });
 });
@@ -503,10 +529,12 @@ test("browser-only fallback when the folder API is absent", async ({ page }, tes
   await page.reload();
   await expect(page.getByTestId("browser-only-note")).toContainText("kept in this browser");
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByTestId("save-status")).toHaveText("Saved in this browser", { timeout: 20_000 });
+  await expect(page.getByTestId("save-status")).toHaveAttribute("data-status", "saved-browser", { timeout: 20_000 });
   await expect(page.getByTestId("browser-only-banner")).toContainText("Saved in this browser only. Back up regularly.");
   await typeAtEnd(page, ACCENTED);
-  await expect(page.getByTestId("save-status")).toHaveText("Saved in this browser");
+  await expect(page.getByTestId("save-status")).toHaveAttribute("data-status", "saved-browser");
+  await expect(page.getByTestId("save-status")).toHaveText(/^Saved \d{2}:\d{2}$/);
+  await expect(page.getByTestId("save-status")).toHaveAttribute("aria-label", /^Saved in this browser at \d{2}:\d{2}$/);
   await page.reload();
   await expect(page.locator(".ProseMirror")).toContainText(ACCENTED, { timeout: 20_000 });
   const backup = await backupTo(page, testInfo);

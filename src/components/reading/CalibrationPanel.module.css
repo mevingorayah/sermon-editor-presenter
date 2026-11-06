@@ -1,4 +1,6 @@
 .panel {
+  position: relative;
+  z-index: 45; /* above the floating Preach bar */
   width: min(100%, 22rem);
   border-left: 1px solid var(--rm-border);
   background: var(--rm-bg-elevated);

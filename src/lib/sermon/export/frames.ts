@@ -195,6 +195,15 @@ export function snapshotLineSpacing(s: { lineSpacing?: number; lineHeight?: numb
 }
 
 /** Normalize any PageInput into a complete spec (text size clamped). */
+/**
+ * Largest text size a page allows (UX rule): 48 pt on the small papers
+ * (A5, half-letter), 72 pt on everything else (A4, Letter, legal, screen
+ * shapes, fit-screen and custom). Text sizes are clamped to it everywhere.
+ */
+export function maxTextSizePt(format: string | undefined): number {
+  return format === "a5" || format === "half-letter" ? 48 : PAGE_LIMITS.textSizePt.max;
+}
+
 export function resolvePage(input: PageInput): ResolvedPage {
   const s0 = typeof input === "string" ? pageSpecFromTarget(input) : input;
   const s: PageSpec = "kind" in s0
@@ -210,7 +219,7 @@ export function resolvePage(input: PageInput): ResolvedPage {
   const orientation: PageOrientation = s.orientation === "portrait" || s.orientation === "landscape"
     ? s.orientation
     : natural;
-  const textSizePt = clamp(s.textSizePt, PAGE_LIMITS.textSizePt);
+  const textSizePt = clamp(s.textSizePt, { ...PAGE_LIMITS.textSizePt, max: maxTextSizePt(format) });
   return format === "custom"
     ? { format, orientation, textSizePt, custom: { ...s.custom! } }
     : { format, orientation, textSizePt };
@@ -319,7 +328,7 @@ export function pageSnapshotFields(page: {
     ...(page.pageSpec?.kind === "fit"
       ? { pageFormat: "fit-screen", pageSpec: { ...page.pageSpec }, ...(page.pageSpec.orientation ? { orientation: page.pageSpec.orientation } : {}) }
       : {}),
-    textSizePt: clamp(page.textSizePt, PAGE_LIMITS.textSizePt),
+    textSizePt: clamp(page.textSizePt, { ...PAGE_LIMITS.textSizePt, max: maxTextSizePt(page.pageSpec?.kind === "fit" ? "fit-screen" : page.format) }),
     paragraphSpacingPt: clamp(page.paragraphSpacingPt, PAGE_LIMITS.paragraphSpacingPt),
     lineSpacing,
     lineHeight: lineSpacing,

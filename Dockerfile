@@ -23,7 +23,6 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=8080
 ENV HOSTNAME=0.0.0.0
-ENV SERMON_DATA_DIR=/app/data/sermons
 # nextjs has no home dir; give fontconfig a writable per-user cache (system cache is prebuilt).
 ENV XDG_CACHE_HOME=/tmp/.cache
 # Runtime only needs node; drop the bundled npm/yarn/corepack CLIs (Trivy HIGHs live there).
@@ -37,9 +36,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --system --uid 1001 nextjs \
   && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-* \
-    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg \
-  && mkdir -p /app/data/sermons \
-  && chown -R nextjs:nextjs /app/data
+    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg
 COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nextjs /app/public ./public
