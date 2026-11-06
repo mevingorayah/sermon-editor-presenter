@@ -64,3 +64,28 @@ test.describe("390px phone, en-US", () => {
     expect(st!.width).toBeLessThan(30);
   });
 });
+
+test("New sermon: save status stays empty until this sermon is first saved", async ({ page }) => {
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem("__e2e_seeded")) return;
+    sessionStorage.setItem("__e2e_seeded", "1");
+    localStorage.clear();
+    localStorage.setItem("sermon-editor-presenter:storage-mode:v1", "browser");
+  });
+  await page.goto("/edit", { waitUntil: "networkidle" });
+  const pm = page.locator(".ProseMirror");
+  await expect(pm).toBeVisible({ timeout: 20_000 });
+  // Save something on the first sermon so a "Saved HH:MM" would exist to leak.
+  await pm.click();
+  await page.keyboard.type("first-sermon-marker");
+  const status = page.getByTestId("save-status");
+  await expect(status).toHaveText(/^Saved \d{2}:\d{2}$/, { timeout: 15_000 });
+  await page.getByRole("button", { name: "New", exact: true }).click();
+  // After New: nothing shown (same #28 rule as on switch).
+  await expect(status).toHaveAttribute("data-empty", "", { timeout: 10_000 });
+  await expect(status).toHaveText("");
+  await pm.click();
+  await page.keyboard.type("second-sermon-marker");
+  await expect(status).toHaveText("Saving…");
+  await expect(status).toHaveText(/^Saved \d{2}:\d{2}$/, { timeout: 15_000 });
+});

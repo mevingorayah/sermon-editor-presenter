@@ -4,6 +4,7 @@ import type {
   ExportRequestOptions,
 } from "@/types/document";
 import { sanitizeFilenameStem } from "@/lib/sermon/export/filename";
+import { exportThemeFields, type ExportTheme } from "./theme";
 import {
   flattenContentColors,
   resolveEditAccentHex,
@@ -53,6 +54,8 @@ export interface BuildExportPayloadInput {
   resolveVar?: CssVarResolver;
   /** Explicit accent override (normalized to hex; ignored if not a color). */
   accentHex?: string;
+  /** Export window "Light or dark" (PDF/PNG/PowerPoint). Omit → legacy rule. */
+  exportTheme?: ExportTheme;
 }
 
 /**
@@ -81,6 +84,9 @@ export function buildExportPayload(input: BuildExportPayloadInput): ExportPayloa
     },
   };
   if (withNotes) payload.notes = input.notes;
+  if (input.exportTheme) {
+    Object.assign(payload, exportThemeFields(input.format, input.exportTheme));
+  }
   return payload;
 }
 
