@@ -9,7 +9,7 @@ import {
 } from "./colors";
 import { citationDisplay, type StyledBlock, type StyledRun } from "./contentWalk";
 import { layoutSnapshot, roleStyle, type PngPage, type SnapshotLayout } from "./pngLayout";
-import { lookAlign, lookRole } from "./blockLook";
+import { lookAlign, lookRole, type BlockShadowPaint } from "./blockLook";
 import { afmMeasurer, FALLBACK_FAMILY, letterSpacingEm, metricCompatibleCss, splitByCoverage } from "./textMeasure";
 import { displayHighlightColor, displayTextColor, ensureContrast } from "@/lib/reading/contrast";
 
@@ -105,15 +105,35 @@ export function blockColor(type: StyledBlock["type"], p: Palette): string {
   return p.fg;
 }
 
+/** SVG filter + caster for a CSS box-shadow (sharp rasterises this). */
+export function svgBoxShadow(id: string, box: { x: number; y: number; w: number; h: number }, sh: BlockShadowPaint): string {
+  const std = (sh.blur / 2).toFixed(2);
+  const pad = sh.blur * 3 + Math.abs(sh.offsetX) + Math.abs(sh.offsetY);
+  const fx = (box.x + Math.min(0, sh.offsetX) - pad).toFixed(2);
+  const fy = (box.y + Math.min(0, sh.offsetY) - pad).toFixed(2);
+  const fw = (box.w + Math.abs(sh.offsetX) + pad * 2).toFixed(2);
+  const fh = (box.h + Math.abs(sh.offsetY) + pad * 2).toFixed(2);
+  return (
+    `<filter id="${escapeXml(id)}" x="${fx}" y="${fy}" width="${fw}" height="${fh}" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">` +
+    `<feGaussianBlur in="SourceAlpha" stdDeviation="${std}" result="blur"/>` +
+    `<feOffset in="blur" dx="${sh.offsetX}" dy="${sh.offsetY}" result="off"/>` +
+    `<feFlood flood-color="${escapeXml(sh.color)}" flood-opacity="${sh.opacity}" result="tint"/>` +
+    `<feComposite in="tint" in2="off" operator="in" result="shadow"/>` +
+    `</filter>` +
+    `<rect data-block-shadow="${escapeXml(id)}" x="${box.x.toFixed(2)}" y="${box.y.toFixed(2)}" width="${box.w.toFixed(2)}" height="${box.h.toFixed(2)}" fill="#000000" filter="url(#${escapeXml(id)})"/>`
+  );
+}
+
 function pageSvg(layout: SnapshotLayout, page: PngPage, p: Palette): string {
   const { frame: f, styled } = layout;
   const parts: string[] = [
     `<rect x="0" y="0" width="8" height="${f.height}" fill="${escapeXml(p.accent)}" />`,
   ];
-  for (const b of page.boxes ?? []) {
+  (page.boxes ?? []).forEach((b, i) => {
+    if (b.shadow) parts.push(svgBoxShadow(`bsh-${i}`, b, b.shadow));
     if (b.fill) parts.push(`<rect x="${b.x.toFixed(2)}" y="${b.y.toFixed(2)}" width="${b.w.toFixed(2)}" height="${b.h.toFixed(2)}" fill="${escapeXml(b.fill)}" />`);
     if (b.border) parts.push(`<rect x="${b.x.toFixed(2)}" y="${b.y.toFixed(2)}" width="${b.borderWidth.toFixed(2)}" height="${b.h.toFixed(2)}" fill="${escapeXml(b.border)}" />`);
-  }
+  });
   for (const line of page.lines) {
     const block = styled[line.blockIndex];
     const lx = line.x ?? f.left;

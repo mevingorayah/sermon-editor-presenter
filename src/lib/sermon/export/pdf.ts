@@ -38,7 +38,7 @@ function registerExportFonts(doc: PDFKit.PDFDocument): (id: FontFamilyId, st: { 
 }
 import { frameSizeInches, pxPerPt, type PageInput } from "./frames";
 import { layoutSnapshot, roleStyle } from "./pngLayout";
-import { lookAlign, lookRole } from "./blockLook";
+import { lookAlign, lookRole, type BlockShadowPaint } from "./blockLook";
 import { blockColor, paletteFor, sliceRuns, splitRunsByGlyph, trimRunsEnd, type GlyphRun } from "./png";
 
 export interface PdfBuildOptions {
@@ -210,6 +210,34 @@ function writeBlock(
 }
 
 /**
+ * Approximate a CSS box-shadow in PDF: offset + colour/opacity are exact;
+ * blur is a stack of expanding translucent rects (PDF has no Gaussian blur).
+ * Does not move text or change page breaks.
+ */
+export function drawPdfBoxShadow(
+  doc: PDFKit.PDFDocument,
+  box: { x: number; y: number; w: number; h: number },
+  sh: BlockShadowPaint,
+  pxToPt: (px: number) => number,
+): void {
+  const x = pxToPt(box.x + sh.offsetX);
+  const y = pxToPt(box.y + sh.offsetY);
+  const w = pxToPt(box.w);
+  const h = pxToPt(box.h);
+  const blur = pxToPt(sh.blur);
+  const steps = Math.max(1, Math.min(12, Math.round(sh.blur) || 1));
+  for (let i = steps; i >= 0; i--) {
+    const t = i / steps;
+    const expand = blur * t;
+    const alpha = sh.opacity / (steps + 1);
+    doc.save().fillColor(sh.color).fillOpacity(alpha)
+      .rect(x - expand, y - expand, w + 2 * expand, h + 2 * expand)
+      .fill()
+      .restore();
+  }
+}
+
+/**
  * PDF: the same pages as PNG/PPTX (`layoutPngPages`), drawn line by line at
  * the frame's size in points, so line and page breaks match exactly
  * (pdfkit's built-in fonts are the metrics the layout measures with).
@@ -259,6 +287,7 @@ export async function buildPdf(
       doc.addPage();
       paint();
       for (const b of page.boxes ?? []) {
+        if (b.shadow) drawPdfBoxShadow(doc, b, b.shadow, P);
         if (b.fill) doc.save().rect(P(b.x), P(b.y), P(b.w), P(b.h)).fill(b.fill).restore();
         if (b.border) doc.save().rect(P(b.x), P(b.y), P(b.borderWidth), P(b.h)).fill(b.border).restore();
       }

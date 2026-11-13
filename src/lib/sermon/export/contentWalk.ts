@@ -197,7 +197,7 @@ function withLook(b: StyledBlock, look?: BlockLook): StyledBlock {
 }
 
 function blockFromTipTap(node: JSONContent, globals?: GlobalStyles): StyledBlock | null {
-  const look = (t: BlockType) => resolveBlockLook(t, node.attrs, globals);
+  const look = (t: BlockType | "verseSnippet") => resolveBlockLook(t, node.attrs, globals);
   switch (node.type) {
     case "title": {
       const l = look("title");
@@ -237,7 +237,8 @@ function blockFromTipTap(node: JSONContent, globals?: GlobalStyles): StyledBlock
       const citation = [attrs.ref, translationLabel(attrs.translation)]
         .filter(Boolean)
         .join(" · ");
-      return {
+      const l = look("verseSnippet");
+      return withLook({
         type: "Scripture",
         align: alignOf(node),
         ...spacingOf(node),
@@ -246,7 +247,7 @@ function blockFromTipTap(node: JSONContent, globals?: GlobalStyles): StyledBlock
           : [],
         citation: citation || undefined,
         verseBar: true,
-      };
+      }, l);
     }
     default:
       return null;
