@@ -8,6 +8,8 @@ import {
 } from "@tiptap/react";
 import { useEffect } from "react";
 import { createSermonExtensions } from "@/extensions";
+import { BlockBuilder } from "../builder/BlockBuilder";
+import { stripDefaultBuilderAttrs, type GlobalStyles } from "@/lib/builder/blockAttrs";
 import { FormatToolbar } from "./FormatToolbar";
 import styles from "./SermonEditor.module.css";
 
@@ -15,12 +17,18 @@ interface SermonEditorProps {
   content: JSONContent;
   onChange: (json: JSONContent) => void;
   onEditorReady?: (editor: Editor | null) => void;
+  /** sermon.globalStyles — saved with the sermon. */
+  globalStyles?: GlobalStyles;
+  onGlobalStylesChange?: (g: GlobalStyles) => void;
 }
+const NO_GLOBALS: GlobalStyles = {};
 
 export function SermonEditor({
   content,
   onChange,
   onEditorReady,
+  globalStyles = NO_GLOBALS,
+  onGlobalStylesChange,
 }: SermonEditorProps) {
   const editor = useEditor({
     immediatelyRender: false,
@@ -33,14 +41,14 @@ export function SermonEditor({
       },
     },
     onUpdate: ({ editor: ed }) => {
-      onChange(ed.getJSON());
+      onChange(stripDefaultBuilderAttrs(ed.getJSON()));
     },
   });
 
   // Sync external content (e.g. after load) without clobbering typing
   useEffect(() => {
     if (!editor) return;
-    const current = JSON.stringify(editor.getJSON());
+    const current = JSON.stringify(stripDefaultBuilderAttrs(editor.getJSON()));
     const next = JSON.stringify(content);
     if (current !== next) {
       editor.commands.setContent(content, { emitUpdate: false });
@@ -116,7 +124,9 @@ export function SermonEditor({
         </div>
         <FormatToolbar editor={editor} />
       </div>
-      <EditorContent editor={editor} />
+      <BlockBuilder editor={editor} globalStyles={globalStyles} onGlobalStylesChange={(g) => onGlobalStylesChange?.(g)}>
+        <EditorContent editor={editor} />
+      </BlockBuilder>
     </div>
   );
 }

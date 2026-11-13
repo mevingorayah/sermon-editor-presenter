@@ -80,7 +80,7 @@ async function smallControls(page: Page, root: string) {
 test("tap targets are at least 44x44 on /edit and /preach", async ({ page }) => {
   await openEdit(page);
   await expectTap(page.getByRole("button", { name: "Document", exact: true }), "Document");
-  await expectTap(page.getByRole("link", { name: "Export…" }), "Export");
+  await expectTap(page.getByRole("button", { name: "Export (PDF, PNG, PowerPoint)" }), "Export");
   await expectTap(page.getByRole("link", { name: "Enter Preaching" }), "Enter Preaching");
   await expectTap(page.getByRole("button", { name: "New", exact: true }), "New");
   const sermons = page.getByRole("navigation", { name: "Sermons" });

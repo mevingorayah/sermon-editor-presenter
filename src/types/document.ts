@@ -88,7 +88,13 @@ export interface SermonDocument {
   presentationSettings: PresentationSettings;
   /** Free-form study notes (edit chrome only) */
   notes: string;
+  /**
+   * Block builder: per-block-type default style/spacing
+   * (see `src/lib/sermon/blockStyle.ts`). Missing = app defaults.
+   */
+  globalStyles?: import("@/lib/sermon/blockStyle").GlobalStyles;
 }
+
 
 export type SemanticBlockType =
   | "Title"
@@ -135,6 +141,8 @@ export interface CalibratedSnapshot {
   pageSpec?: FitPageSpecSettings;
   textSizePt?: number;
   paragraphSpacingPt?: number;
+  /** Block builder defaults per block type (sermon.globalStyles); missing = app defaults. */
+  globalStyles?: import("@/lib/sermon/blockStyle").GlobalStyles;
   flattenGradient: true;
   bionic: false; // never in export
   semanticBlocks: SemanticBlock[];

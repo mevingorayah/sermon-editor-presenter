@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { SermonContent } from "@/types/document";
+import { findBlockLayoutIssues, globalStylesSchema } from "./blockStyle";
 import { DEFAULT_PAGE, customPageError, frameSizeInches, type PageInput, type PageSpec } from "@/lib/sermon/export/frames";
 import { marginMaxIn, parseLengthToInches } from "@/lib/sermon/export/margins";
 
@@ -44,6 +45,23 @@ const sermonContentSchema: z.ZodType<SermonContent> = z.custom<SermonContent>(
   (val) => typeof val === "object" && val !== null,
   { message: "Invalid TipTap document JSON" },
 );
+
+/**
+ * Stored sermon content: TipTap JSON plus validation of the optional
+ * block-builder attrs (`style`, `spacing`, `section`/`column`). Documents
+ * without those attrs pass unchanged.
+ */
+const storedContentSchema: z.ZodType<SermonContent> = sermonContentSchema.superRefine(
+  (val, ctx) => {
+    for (const issue of findBlockLayoutIssues(val)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["content"],
+        message: `${issue.path}: ${issue.message}`,
+      });
+    }
+  },
+) as unknown as z.ZodType<SermonContent>;
 
 const semanticBlockSchema = z.object({
   type: z.enum(["Title", "H1", "H2", "Body", "Scripture", "Caption"]),
@@ -307,6 +325,7 @@ const calibratedSnapshotFields = {
   pageSpec: fitPageSpecSchema.optional(),
   textSizePt: textSizePtSchema.optional(),
   paragraphSpacingPt: paragraphSpacingPtSchema.optional(),
+  globalStyles: globalStylesSchema.optional(),
   flattenGradient: z.literal(true),
   bionic: z.literal(false),
   semanticBlocks: z.array(semanticBlockSchema).max(2000),
@@ -379,22 +398,24 @@ export const createSermonSchema = z.object({
     .regex(SERMON_ID_RE, { message: "id must be a UUID" })
     .optional(),
   title: z.string().max(500).optional(),
-  content: sermonContentSchema.optional(),
+  content: storedContentSchema.optional(),
   presentation: presentationSettingsSchema.optional(),
   notes: z.string().max(100_000).optional(),
+  globalStyles: globalStylesSchema.optional(),
 });
 
 export const updateSermonSchema = z.object({
   title: z.string().max(500).optional(),
-  content: sermonContentSchema.optional(),
+  content: storedContentSchema.optional(),
   presentation: presentationSettingsSchema.nullable().optional(),
   notes: z.string().max(100_000).nullable().optional(),
+  globalStyles: globalStylesSchema.nullable().optional(),
 });
 
 export const updateContentSchema = z
   .object({
-    content: sermonContentSchema.optional(),
-    document: sermonContentSchema.optional(),
+    content: storedContentSchema.optional(),
+    document: storedContentSchema.optional(),
     title: z.string().max(500).optional(),
   })
   .refine((v) => v.content !== undefined || v.document !== undefined, {
