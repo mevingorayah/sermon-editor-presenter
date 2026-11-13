@@ -55,7 +55,8 @@ export interface CustomPageSettings {
 /** The sermon's own page: Preach and every export use it. */
 export interface SermonPageSettings {
   /**
-   * Print: a4, a5, letter, half-letter, legal. Screen shapes: 4:3, 16:10, 16:9.
+   * Print group (theme 'print'): a4, a5, letter (also half-letter, legal).
+   * Screen group (theme 'screen-dark'): 4:3, 16:10, 16:9, fit-screen.
    * "custom" uses `custom`; "fit-screen" uses `pageSpec`. Old saves with
    * "tablet" (or tablet-* targets) load as 4:3 landscape.
    */
