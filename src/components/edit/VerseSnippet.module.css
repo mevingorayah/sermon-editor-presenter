@@ -1,0 +1,132 @@
+.wrap {
+  margin: 0.6rem 0;
+  padding: 0;
+  border: 1px solid var(--edit-border, #d9d2c5);
+  border-radius: 10px;
+  background: var(--edit-bg-elevated, #fffcf7);
+  color: var(--edit-fg, inherit);
+}
+
+.wrap[data-selected="true"] {
+  outline: 2px solid var(--edit-accent, #8b6914);
+  outline-offset: 1px;
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--edit-border, #d9d2c5);
+  background: var(--edit-bg, #f7f3eb);
+  border-radius: 10px 10px 0 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  gap: 0;
+}
+
+.control,
+.refresh,
+.gateway,
+.paste {
+  box-sizing: border-box;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 0.7rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: inherit;
+  background: var(--edit-bg-elevated, #fff);
+  border: 1px solid var(--edit-border, #c8c1b3);
+  border-radius: 8px;
+}
+
+.control:focus-visible,
+.refresh:focus-visible,
+.gateway:focus-visible,
+.paste:focus-visible {
+  outline: 2px solid var(--edit-accent, #8b6914);
+  outline-offset: 2px;
+}
+
+.refInput {
+  composes: control;
+  width: min(18rem, 70vw);
+}
+
+.translationSelect {
+  composes: control;
+  width: min(12rem, 60vw);
+}
+
+.refresh {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.refresh:hover,
+.gateway:hover {
+  border-color: var(--edit-accent, #8b6914);
+}
+
+.body {
+  padding: 0.85rem 1rem 1rem;
+  font-family: var(--font-literata), Literata, var(--edit-font-body), Georgia, "Times New Roman", serif;
+  font-size: 1.05rem;
+  line-height: 1.55;
+}
+
+.quote {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.pasteTools {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.gateway {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  color: inherit;
+}
+
+.paste {
+  display: block;
+  width: 100%;
+  min-height: 6.5rem;
+  padding: 0.6rem 0.7rem;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.45;
+}
+
+.status {
+  margin: 0.35rem 0 0;
+  font-family: var(--edit-font-ui, system-ui, sans-serif);
+  font-size: 0.8125rem;
+  color: var(--edit-fg-muted, #6b6560);
+}
+
+.empty {
+  margin: 0;
+  font-family: var(--edit-font-ui, system-ui, sans-serif);
+  font-size: 0.875rem;
+  color: var(--edit-fg-muted, #6b6560);
+}

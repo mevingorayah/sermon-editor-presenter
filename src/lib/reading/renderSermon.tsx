@@ -3,6 +3,12 @@ import { Fragment, type CSSProperties, type ReactNode } from "react";
 import type { JSONContent } from "@tiptap/react";
 import { bionicParts } from "@/lib/bionic";
 import { effectiveDarkBackground, readingHighlightColor, readingTextColor } from "./contrast";
+import {
+  VERSE_SNIPPET_FONT_FAMILY,
+  currentPassageText,
+  normalizeAttrs,
+  translationLabel,
+} from "@/lib/sermon/verseSnippet";
 
 /**
  * Preach renderer: walks the sermon's ProseMirror JSON (the shared schema in
@@ -46,7 +52,7 @@ interface Ctx extends RenderOptions {
 
 /** Every node/mark type this renderer handles explicitly (see drift test). */
 export const RENDERED_NODES = [
-  "doc", "paragraph", "text", "title", "heading", "scripture", "bulletList",
+  "doc", "paragraph", "text", "title", "heading", "scripture", "verseSnippet", "bulletList",
   "orderedList", "listItem", "hardBreak", "horizontalRule",
   // Disabled in the sermon schema but rendered if old docs contain them.
   "blockquote", "codeBlock",
@@ -292,6 +298,28 @@ export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode 
         <figure key={key} className={c.scripture} data-scripture="" style={alignStyle(node)}>
           <blockquote className={c.quoteBlock}>
             <p className={c.quote}>{children(node, { ...ctx, plain: true })}</p>
+          </blockquote>
+          {citation ? (
+            <figcaption className={c.citation}>
+              <cite>{citation}</cite>
+            </figcaption>
+          ) : null}
+        </figure>
+      );
+    }
+    case "verseSnippet": {
+      const attrs = normalizeAttrs(node.attrs);
+      const text = currentPassageText(attrs);
+      const citation = [attrs.ref, translationLabel(attrs.translation)]
+        .filter(Boolean)
+        .join(" · ");
+      const style = { ...alignStyle(node), fontFamily: VERSE_SNIPPET_FONT_FAMILY };
+      return (
+        <figure key={key} className={c.scripture} data-verse-snippet="" style={style}>
+          <blockquote className={c.quoteBlock}>
+            <p className={c.quote} style={{ fontFamily: VERSE_SNIPPET_FONT_FAMILY }}>
+              {text}
+            </p>
           </blockquote>
           {citation ? (
             <figcaption className={c.citation}>

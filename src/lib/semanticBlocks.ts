@@ -1,5 +1,6 @@
 import type { JSONContent } from "@tiptap/react";
 import type { SemanticBlock } from "@/types/document";
+import { currentPassageText, normalizeAttrs, translationLabel } from "@/lib/sermon/verseSnippet";
 
 function textOf(node: JSONContent | undefined): string {
   if (!node) return "";
@@ -32,6 +33,18 @@ export function toSemanticBlocks(doc: JSONContent | null | undefined): SemanticB
           type: "Scripture",
           text: textOf(node),
           citation,
+        });
+        break;
+      }
+      case "verseSnippet": {
+        const attrs = normalizeAttrs(node.attrs);
+        const citation = [attrs.ref, translationLabel(attrs.translation)]
+          .filter(Boolean)
+          .join(" · ");
+        blocks.push({
+          type: "Scripture",
+          text: currentPassageText(attrs),
+          citation: citation || undefined,
         });
         break;
       }
