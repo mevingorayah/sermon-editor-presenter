@@ -142,4 +142,21 @@ test("toolbar writing controls are at least 44px", async ({ page }) => {
   expect(font!.height).toBeGreaterThanOrEqual(44);
   const letter = await page.getByTestId("letter-spacing").boundingBox();
   expect(letter!.height).toBeGreaterThanOrEqual(44);
+
+  await page.getByRole("button", { name: "Text color" }).click();
+  const palette = page.getByRole("listbox", { name: "Color palette" });
+  await expect(palette).toBeVisible();
+  const presetNames = ["Ink", "Crimson", "Royal blue", "Forest", "Gold", "Purple"];
+  for (const name of presetNames) {
+    const opt = palette.getByRole("option", { name, exact: true });
+    await expect(opt).toBeVisible();
+    const box = await opt.boundingBox();
+    expect(box, name).toBeTruthy();
+    expect(box!.height, name).toBeGreaterThanOrEqual(44);
+    expect(box!.width, name).toBeGreaterThanOrEqual(44);
+  }
+  const def = palette.getByRole("option", { name: "Default" });
+  const defBox = await def.boundingBox();
+  expect(defBox!.height).toBeGreaterThanOrEqual(44);
+  expect(defBox!.width).toBeGreaterThanOrEqual(44);
 });

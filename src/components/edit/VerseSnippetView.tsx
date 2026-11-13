@@ -16,6 +16,8 @@ import {
   normalizeAttrs,
   withTranslationText,
 } from "@/lib/sermon/verseSnippet";
+import { FIELD, blockCss, sanitizeSpacing, sanitizeStyle } from "@/lib/builder/blockAttrs";
+import { cssTextToReactStyle } from "@/lib/cssText";
 import styles from "./VerseSnippet.module.css";
 
 /**
@@ -29,6 +31,56 @@ export function VerseSnippetView({ node, updateAttributes, selected, editor, get
   const attrs = normalizeAttrs(node.attrs);
   const { ref, translation, texts } = attrs;
   const passage = currentPassageText(attrs);
+  const built = cssTextToReactStyle(
+    blockCss(
+      sanitizeStyle(node.attrs?.[FIELD.style]),
+      sanitizeSpacing(node.attrs?.[FIELD.spacing]),
+    ),
+  ) ?? {};
+  const {
+    fontFamily,
+    fontSize,
+    fontWeight,
+    fontStyle,
+    color,
+    backgroundImage,
+    backgroundColor,
+    borderLeft,
+    boxShadow,
+    opacity,
+    transform,
+    outline,
+    textAlign,
+    marginTop,
+    marginBottom,
+    paddingTop,
+    paddingRight,
+    paddingBottom,
+    paddingLeft,
+  } = built;
+  const boxStyle = {
+    backgroundColor,
+    borderLeft,
+    boxShadow,
+    opacity,
+    transform,
+    outline,
+    textAlign,
+    marginTop,
+    marginBottom,
+    paddingTop,
+    paddingRight,
+    paddingBottom,
+    paddingLeft,
+  };
+  const textStyle = {
+    fontFamily: fontFamily ?? VERSE_SNIPPET_FONT_FAMILY,
+    fontSize,
+    fontWeight,
+    fontStyle,
+    color,
+    backgroundImage,
+  };
   const [pendingRef, setPendingRef] = useState(ref);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
@@ -146,6 +198,7 @@ export function VerseSnippetView({ node, updateAttributes, selected, editor, get
       data-ref={ref}
       data-translation={translation}
       data-selected={selected ? "true" : "false"}
+      style={boxStyle}
       contentEditable={false}
       onMouseDown={(event: MouseEvent<HTMLElement>) => {
         const t = event.target as HTMLElement | null;
@@ -213,7 +266,7 @@ export function VerseSnippetView({ node, updateAttributes, selected, editor, get
           Refresh
         </button>
       </div>
-      <div className={styles.body} style={{ fontFamily: VERSE_SNIPPET_FONT_FAMILY }}>
+      <div className={styles.body} style={textStyle}>
         {isPasteTranslation(translation) ? (
           <div className={styles.pasteTools}>
             {gateway ? (

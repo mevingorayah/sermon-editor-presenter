@@ -8,10 +8,22 @@ import {
   RECENT_COLORS_MAX,
 } from "@/lib/writing/colors";
 
-test("text colour palette keeps 5 named presets (6 including Default in the UI)", () => {
-  assert.equal(TEXT_COLORS.length, 5);
+test("text colour palette has the 6 specified presets with light and dark hex", () => {
+  assert.equal(TEXT_COLORS.length, 6);
+  assert.deepEqual(
+    TEXT_COLORS.map((c) => [c.id, c.label, c.value, c.dark]),
+    [
+      ["ink", "Ink", "#1a1814", "#f2eee6"],
+      ["crimson", "Crimson", "#a8201a", "#ff8a80"],
+      ["royal-blue", "Royal blue", "#1d4e89", "#8ab4f8"],
+      ["forest", "Forest", "#2e6b3a", "#81c995"],
+      ["gold", "Gold", "#8a5a00", "#f6c453"],
+      ["purple", "Purple", "#5b2a86", "#c58af9"],
+    ],
+  );
   for (const c of TEXT_COLORS) {
     assert.equal(normalizeHex(c.value), c.value.toUpperCase());
+    assert.equal(normalizeHex(c.dark), c.dark.toUpperCase());
   }
 });
 

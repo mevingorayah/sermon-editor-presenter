@@ -48,7 +48,7 @@ test("Esc on the text-colour popover closes it and returns focus to its button",
   await trigger.click();
   const palette = page.getByRole("listbox", { name: "Color palette" });
   await expect(palette).toBeVisible();
-  await page.getByRole("option", { name: "Soft blue" }).focus();
+  await page.getByRole("option", { name: "Royal blue" }).focus();
   await page.keyboard.press("Escape");
   await expect(palette).toBeHidden();
   await expect(trigger).toBeFocused();
