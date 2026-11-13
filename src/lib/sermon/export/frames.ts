@@ -15,6 +15,23 @@ export const PRESET_PAGE_FORMATS = ["a4", "a5", "letter", "half-letter", "legal"
 export const PAPER_PAGE_FORMATS = ["a4", "a5", "letter", "half-letter", "legal"] as const;
 export type PresetPageFormat = (typeof PRESET_PAGE_FORMATS)[number];
 export type PageFormat = (typeof PAGE_FORMATS)[number];
+
+/**
+ * ⚙ format groups (Phase 2). Print is a white page with dark text; Screen
+ * (including "Fit this screen") is the dark stage. half-letter and legal are
+ * not in the default Print picker but still use the print theme.
+ */
+export const PRINT_FORMATS = ["a4", "a5", "letter"] as const;
+export const SCREEN_FORMATS = ["4:3", "16:10", "16:9", "fit-screen"] as const;
+export type PrintFormat = (typeof PRINT_FORMATS)[number];
+export type ScreenFormat = (typeof SCREEN_FORMATS)[number];
+/** Derived from the chosen format — not a stored colour, and not the reading light/dark pref. */
+export type FormatTheme = "print" | "screen-dark";
+
+export const FORMAT_THEME = {
+  print: { id: "print" as const, pageBackground: "#ffffff", text: "#141210" },
+  "screen-dark": { id: "screen-dark" as const, pageBackground: "#141210", text: "#ece6da" },
+} as const;
 export const PAGE_ORIENTATIONS = ["portrait", "landscape"] as const;
 export type PageOrientation = (typeof PAGE_ORIENTATIONS)[number];
 
@@ -256,6 +273,20 @@ export function isPaperPage(input: PageInput): boolean {
   const f = p.format;
   if (f === "custom") return p.custom!.unit !== "px";
   return (PAPER_PAGE_FORMATS as readonly string[]).includes(f);
+}
+
+
+/** Theme that goes with a format group: Print → 'print', Screen / fit → 'screen-dark'. */
+export function formatTheme(input: PageInput | PageFormat): FormatTheme {
+  if (typeof input === "string" && (PRINT_FORMATS as readonly string[]).includes(input)) return "print";
+  if (typeof input === "string" && (SCREEN_FORMATS as readonly string[]).includes(input)) return "screen-dark";
+  if (typeof input === "string" && (PAPER_PAGE_FORMATS as readonly string[]).includes(input)) return "print";
+  if (typeof input === "string" && (PAGE_FORMATS as readonly string[]).includes(input) && input !== "custom") {
+    return "screen-dark";
+  }
+  return isPaperPage(typeof input === "string" && !(PAGE_FORMATS as readonly string[]).includes(input) ? pageSpecFromTarget(input) : (input as PageInput))
+    ? "print"
+    : "screen-dark";
 }
 
 /** Frame size in px (PNG pixels; also the layout coordinate space). */

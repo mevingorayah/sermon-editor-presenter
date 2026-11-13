@@ -1,5 +1,6 @@
 import { parseSermonFile } from "@/lib/sermon-file";
-import type { SermonDocument } from "@/types/document";
+import type { PresentationSettings, SermonDocument } from "@/types/document";
+import { sanitizePresentationSettings } from "./sanitizeSettings";
 import { STORAGE_KEY } from "@/types/document";
 
 /**
@@ -65,6 +66,14 @@ export function readLibrary(store?: KV): Library {
     }
   } catch {
     /* corrupt legacy entry: ignore, library still intact */
+  }
+  for (const entry of Object.values(lib)) {
+    if (entry?.doc) {
+      entry.doc = {
+        ...entry.doc,
+        presentationSettings: sanitizePresentationSettings(entry.doc.presentationSettings) as PresentationSettings,
+      };
+    }
   }
   return lib;
 }

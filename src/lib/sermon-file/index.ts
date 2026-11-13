@@ -13,6 +13,7 @@ import { z } from "zod";
 import type { SermonDocument } from "@/types/document";
 import { DEFAULT_PRESENTATION_SETTINGS } from "@/types/document";
 import { presentationSettingsSchema } from "@/lib/sermon/schema";
+import { sanitizePresentationSettings } from "@/lib/localStore/sanitizeSettings";
 import { getSchema } from "@tiptap/core";
 import { Node as PMNode, type Schema } from "@tiptap/pm/model";
 import { createSchemaExtensions } from "@/extensions/schema";
@@ -149,13 +150,13 @@ function upgradeSermon(raw: unknown): unknown {
       // Keep the original creation date; never replace it with "now".
       ...(typeof meta.createdAt === "string" ? { createdAt: meta.createdAt } : {}),
       content: o.content,
-      presentationSettings: o.presentation ?? DEFAULT_PRESENTATION_SETTINGS,
+      presentationSettings: sanitizePresentationSettings(o.presentation ?? DEFAULT_PRESENTATION_SETTINGS),
       notes: typeof o.notes === "string" ? o.notes : "",
     };
   }
   return {
     ...o,
-    presentationSettings: o.presentationSettings ?? DEFAULT_PRESENTATION_SETTINGS,
+    presentationSettings: sanitizePresentationSettings(o.presentationSettings ?? DEFAULT_PRESENTATION_SETTINGS),
     notes: typeof o.notes === "string" ? o.notes : "",
   };
 }
