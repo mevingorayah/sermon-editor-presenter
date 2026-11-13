@@ -7,7 +7,7 @@
  * legacy path, so sermons without styles export byte-identically.
  * Pure data, browser-safe.
  */
-import type { BlockAlign, BlockFontId, BlockSpacing, BlockStyle, BlockType, GlobalStyles } from "../blockStyle";
+import type { BlockAlign, BlockEffect, BlockFontId, BlockShadow, BlockSpacing, BlockStyle, BlockType, GlobalStyles } from "../blockStyle";
 
 export interface BlockLook {
   font?: BlockFontId;
@@ -23,8 +23,49 @@ export interface BlockLook {
   /** Left rule colour; null = explicitly none. */
   borderLeft?: string | null;
   align?: BlockAlign;
+  shadow?: BlockShadow;
+  effect?: BlockEffect;
   /** CSS px as in Edit (96 per inch). */
   spacing: BlockSpacing;
+}
+
+/** CSS box-shadow as Edit draws it (`blockCss`): offset, blur, colour, opacity. */
+export interface BlockShadowPaint {
+  offsetX: number;
+  offsetY: number;
+  blur: number;
+  color: string;
+  opacity: number;
+}
+
+/** Matches the named presets in the builder style panel / `blockCss`. */
+export const BLOCK_SHADOW_PAINT: Record<Exclude<BlockShadow, "none">, BlockShadowPaint> = {
+  soft: { offsetX: 0, offsetY: 1, blur: 3, color: "#000000", opacity: 0.16 },
+  medium: { offsetX: 0, offsetY: 4, blur: 12, color: "#000000", opacity: 0.18 },
+  strong: { offsetX: 0, offsetY: 8, blur: 24, color: "#000000", opacity: 0.22 },
+};
+
+export function blockShadowPaint(shadow?: BlockShadow | null): BlockShadowPaint | undefined {
+  if (!shadow || shadow === "none") return undefined;
+  return BLOCK_SHADOW_PAINT[shadow];
+}
+
+/** pptxgenjs shape shadow: type outer, blur/offset in points, angle 0° = right, 90° = down. */
+export function pptxShadowOptions(
+  paint: BlockShadowPaint,
+  pxToPt: (px: number) => number,
+): { type: "outer"; blur: number; offset: number; angle: number; color: string; opacity: number } {
+  const dist = Math.hypot(paint.offsetX, paint.offsetY);
+  const deg = dist === 0 ? 0 : (Math.atan2(paint.offsetY, paint.offsetX) * 180) / Math.PI;
+  const angle = ((deg % 360) + 360) % 360;
+  return {
+    type: "outer",
+    blur: pxToPt(paint.blur),
+    offset: pxToPt(dist),
+    angle,
+    color: paint.color.replace(/^#/, "").toUpperCase(),
+    opacity: paint.opacity,
+  };
 }
 
 /** Edit's left rule width (globals.css / blockCss: 3px solid). */
@@ -48,12 +89,12 @@ function clean<T extends object>(o: T | null | undefined): Partial<T> {
 
 /** Merge the three layers; undefined when nothing at all is set. */
 export function resolveBlockLook(
-  type: BlockType,
+  type: BlockType | "verseSnippet",
   attrs: { style?: unknown; spacing?: unknown } | null | undefined,
   globals?: GlobalStyles | null,
 ): BlockLook | undefined {
-  const b = BUILTIN[type];
-  const g = globals?.[type];
+  const b = type === "verseSnippet" ? undefined : BUILTIN[type];
+  const g = type === "verseSnippet" ? undefined : globals?.[type];
   const style: BlockStyle = { ...clean(b?.style), ...clean(g?.style), ...clean(attrs?.style as BlockStyle) };
   const spacing: BlockSpacing = { ...clean(b?.spacing), ...clean(g?.spacing), ...clean(attrs?.spacing as BlockSpacing) };
   if (!Object.keys(style).length && !Object.keys(spacing).length) return undefined;

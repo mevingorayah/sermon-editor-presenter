@@ -4,7 +4,7 @@ import { citationDisplay, titleTextFromSnapshot } from "./contentWalk";
 import { blockColor, paletteFor, sliceRuns, splitRunsByGlyph, trimRunsEnd, type GlyphRun } from "./png";
 import { frameSizeInches, pxPerInch, pxPerPt, type PageInput } from "./frames";
 import { layoutSnapshot, roleStyle } from "./pngLayout";
-import { lookAlign, lookRole } from "./blockLook";
+import { lookAlign, lookRole, pptxShadowOptions } from "./blockLook";
 import { FALLBACK_OFFICE_FACE, letterSpacingEm, metricCompatibleOffice } from "./textMeasure";
 import { displayHighlightColor, displayTextColor } from "@/lib/reading/contrast";
 
@@ -97,10 +97,13 @@ export async function buildPptx(
       fill: { color: hex(p.accent) }, line: { color: hex(p.accent), width: 0 },
     });
     for (const b of page.boxes ?? []) {
-      if (b.fill) {
+      const shadow = b.shadow ? pptxShadowOptions(b.shadow, pt) : undefined;
+      if (b.fill || shadow) {
         slide.addShape(pptx.ShapeType.rect, {
           x: inch(b.x), y: inch(b.y), w: inch(b.w), h: inch(b.h),
-          fill: { color: hex(b.fill) }, line: { color: hex(b.fill), width: 0 },
+          fill: b.fill ? { color: hex(b.fill) } : { color: "FFFFFF", transparency: 100 },
+          line: { color: b.fill ? hex(b.fill) : "FFFFFF", width: 0 },
+          ...(shadow ? { shadow } : {}),
         });
       }
       if (b.border) {

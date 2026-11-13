@@ -2,7 +2,7 @@ import { snapshotLineSpacing } from "./frames";
 import type { CalibratedSnapshot } from "@/types/document";
 import { citationDisplay, styledBlocksFromSnapshot, titleTextFromSnapshot, type BlockColumn, type StyledBlock } from "./contentWalk";
 import { effectiveBlockSizePt } from "../blockStyle";
-import { BORDER_LEFT_CSS_PX, SECTION_GAP_CSS_PX, lookRole, type BlockLook } from "./blockLook";
+import { BORDER_LEFT_CSS_PX, SECTION_GAP_CSS_PX, blockShadowPaint, lookRole, type BlockLook, type BlockShadowPaint } from "./blockLook";
 import { DEFAULT_MARGINS, resolveMargins } from "./margins";
 import { PAGE_LIMITS, clamp, pngFrameSize, pxPerInch, pxPerPt, resolvePage, type PageInput, type PageSpec } from "./frames";
 import type { FontFamilyId } from "./fonts";
@@ -115,6 +115,8 @@ export interface PngBox {
   fill?: string;
   border?: string;
   borderWidth: number;
+  /** Drawn around the box; does not change line breaks or pagination. */
+  shadow?: BlockShadowPaint;
 }
 
 export interface PngPage {
@@ -609,10 +611,11 @@ export function layoutPngPages(
         if (!q.b.verseBar) emitCite();
         cy.set(ci, at + q.pb + q.r.gap);
       }
-      if (sl?.background || sl?.borderLeft) {
+      const sectionShadow = blockShadowPaint(sl?.shadow);
+      if (sl?.background || sl?.borderLeft || sectionShadow) {
         sectionBoxes.push({
           page: pages.length - 1,
-          box: { x: f.left, y: top, w: f.contentWidth, h, fill: sl.background, border: sl.borderLeft ?? undefined, borderWidth: sl.borderLeft ? BORDER_LEFT_CSS_PX * cssPx : 0 },
+          box: { x: f.left, y: top, w: f.contentWidth, h, fill: sl?.background, border: sl?.borderLeft ?? undefined, borderWidth: sl?.borderLeft ? BORDER_LEFT_CSS_PX * cssPx : 0, ...(sectionShadow ? { shadow: sectionShadow } : {}) },
         });
       }
       y = top + h + smb;
@@ -674,7 +677,7 @@ export function layoutPngPages(
     const spans = new Map<number, { y0: number; y1: number; first: boolean; last: boolean }>();
     for (const l of pg.lines) {
       const q = prepared[l.blockIndex];
-      if (!q.b.look?.background && !q.b.look?.borderLeft) continue;
+      if (!q.b.look?.background && !q.b.look?.borderLeft && !blockShadowPaint(q.b.look?.shadow)) continue;
       const isFirst = q.b.verseBar
         ? (q.b.citation ? l.kind === "citation" : l.kind === "text" && l.lineIndex === 0)
         : l.kind === "text" && l.lineIndex === 0;
@@ -692,9 +695,11 @@ export function layoutPngPages(
       const q = prepared[i];
       const y0 = Math.max(0, sp.y0 - (sp.first ? q.pt : 0));
       const y1 = Math.min(f.height, sp.y1 + (sp.last ? q.pb : 0));
+      const shadow = blockShadowPaint(q.b.look?.shadow);
       boxes.push({
         x: q.boxX, y: y0, w: q.boxW, h: y1 - y0,
         fill: q.b.look!.background, border: q.b.look!.borderLeft ?? undefined, borderWidth: q.borderW,
+        ...(shadow ? { shadow } : {}),
       });
     }
     if (boxes.length) pg.boxes = boxes;
