@@ -2,7 +2,7 @@
 
 import type { PageChoice, PageOrientation } from "@/lib/reading/pageSettings";
 import { useState } from "react";
-import { FIT_BUTTON, FORMAT_GROUPS, customError, extraButton, LIMITS, marginMax, naturalOrientation, resetSpacing, stepTextSize, textSizeLimits } from "@/lib/reading/pageSettings";
+import { FORMAT_GROUPS, customError, extraButton, LIMITS, marginMax, naturalOrientation, resetSpacing, stepTextSize, textSizeLimits } from "@/lib/reading/pageSettings";
 import styles from "./PreachBar.module.css";
 
 interface Props {
@@ -29,7 +29,10 @@ export function PageControls({ choice, followDevice, onChange, onFit, onFollowDe
     <section className={styles.section} aria-label="Page" data-page-controls="">
       <h2 className={styles.sectionTitle}>Page</h2>
       {customError(choice) ? <p role="alert" data-custom-error="">{customError(choice)}</p> : null}
-      {[{ label: "", items: [FIT_BUTTON] }, ...FORMAT_GROUPS.map((g) => (g.label === "Print" && extraButton(choice) ? { ...g, items: [...g.items, extraButton(choice)!] } : g))].map((g) => (
+      {FORMAT_GROUPS.map((g) => {
+        const extra = extraButton(choice);
+        return extra && g.label === "Print" ? { ...g, items: [...g.items, extra] } : g;
+      }).map((g) => (
         <div key={g.label || "fit"} className={styles.formatGrid} role="group" aria-label={g.label || "Fit"}>
           {g.label ? <h3 className={styles.rowLabel}>{g.label}</h3> : null}
           {g.items.map((f) => {
@@ -45,7 +48,7 @@ export function PageControls({ choice, followDevice, onChange, onFit, onFollowDe
                 title={f.pending ? "Coming with the next export update" : undefined}
                 onClick={() =>
                   f.key === "fit"
-                    ? onFit()
+                    ? (onFollowDeviceChange(true), onFit())
                     : f.format &&
                   onChange({ ...choice, format: f.format, textSizePt: Math.min(choice.textSizePt, textSizeLimits(f.format).max), orientation: followDevice ? choice.orientation : naturalOrientation(f.format) })
                 }

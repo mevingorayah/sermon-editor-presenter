@@ -7,6 +7,8 @@ export interface MeasureStyle {
   font: FontFamilyId;
   bold?: boolean;
   italic?: boolean;
+  /** CSS letter-spacing in em (e.g. "0.05em"); included in the measured width. */
+  letterSpacing?: string | number | null;
 }
 
 /**
@@ -163,9 +165,19 @@ export const afmMeasurer: TextMeasurer = (text, sizePx, style) => {
     }
     units += charWidth(ch, widths, memo);
   }
-  return (units / 1000) * sizePx;
+  let w = (units / 1000) * sizePx;
+  const em = letterSpacingEm(style.letterSpacing);
+  // Count spacing on every character so wrapped width never under-measures (avoids clip).
+  if (em && text.length) w += em * sizePx * [...text].length;
+  return w;
 };
 export const appFontMeasurer = afmMeasurer;
+
+export function letterSpacingEm(raw: string | number | null | undefined): number {
+  if (raw == null || raw === "") return 0;
+  const n = typeof raw === "number" ? raw : parseFloat(String(raw).replace(/em$/i, ""));
+  return Number.isFinite(n) ? n : 0;
+}
 
 /**
  * CSS families for the PNG renderer: the export instances first (registered

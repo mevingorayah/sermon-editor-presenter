@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { JSONContent } from "@tiptap/react";
-import type { PresentationSettings, ReadingTheme } from "@/types/document";
+import type { PresentationSettings } from "@/types/document";
 import { metricCompatibleCss } from "@/lib/sermon/export/textMeasure";
 import {
   buildPageView,
@@ -14,7 +14,9 @@ import {
   pageOfBlock,
   type PageViewLine,
 } from "@/lib/reading/pageView";
-import { readingHighlightColor, readingTextColor } from "@/lib/reading/contrast";
+import { displayHighlightColor, displayTextColor } from "@/lib/reading/contrast";
+import { FORMAT_THEME, formatTheme } from "@/lib/sermon/export/frames";
+import { letterSpacingEm } from "@/lib/sermon/export/textMeasure";
 import { CUE_COLOR } from "@/lib/reading/renderSermon";
 import styles from "./PageView.module.css";
 
@@ -39,7 +41,7 @@ function typingInControl(t: EventTarget | null): boolean {
 }
 
 export function PageView({ content, settings, fill = false }: PageViewProps) {
-  const theme = settings.theme;
+  const fmtTheme = formatTheme(settings.page?.format ?? settings.calibrationTarget);
   const model = useMemo(() => buildPageView({ content, settings }), [content, settings]);
   const hostRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
@@ -127,7 +129,7 @@ export function PageView({ content, settings, fill = false }: PageViewProps) {
           style={{ width: frame.width, height: frame.height, transform: `scale(${scale})` }}
         >
           {lines.map((l) => (
-            <Line key={l.key} l={l} frame={frame} theme={theme} />
+            <Line key={l.key} l={l} frame={frame} formatTheme={fmtTheme} />
           ))}
         </div>
       </section>
@@ -141,11 +143,11 @@ export function PageView({ content, settings, fill = false }: PageViewProps) {
 function Line({
   l,
   frame,
-  theme,
+  formatTheme: fmt,
 }: {
   l: PageViewLine;
   frame: { left: number; contentWidth: number };
-  theme: ReadingTheme;
+  formatTheme: "print" | "screen-dark";
 }) {
   return (
     <div
@@ -176,8 +178,14 @@ function Line({
         if (r.italic || l.role.italic) style.fontStyle = "italic";
         const deco = [r.underline && "underline", r.strike && "line-through"].filter(Boolean).join(" ");
         if (deco) style.textDecorationLine = deco;
-        if (r.color && !cue) style.color = readingTextColor(r.color, theme);
-        if (r.highlight) style.backgroundColor = readingHighlightColor("#fff176", theme, "yellow");
+        const ls = letterSpacingEm(r.letterSpacing);
+        if (ls) style.letterSpacing = `${ls}em`;
+        if (r.color && !cue) {
+          style.color = displayTextColor(r.color, FORMAT_THEME[fmt].pageBackground, fmt, { highlight: !!r.highlight });
+        } else if (r.highlight && fmt === "screen-dark" && !cue) {
+          style.color = FORMAT_THEME.print.text;
+        }
+        if (r.highlight) style.backgroundColor = displayHighlightColor(r.highlightColor || "#FFF176", fmt);
         return (
           <span key={ti} style={style} className={cue ? styles.cue : undefined} data-cue={cue ? "" : undefined}>
             {t.text}

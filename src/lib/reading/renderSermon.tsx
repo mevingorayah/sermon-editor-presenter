@@ -2,7 +2,8 @@
 import { Fragment, type CSSProperties, type ReactNode } from "react";
 import type { JSONContent } from "@tiptap/react";
 import { bionicParts } from "@/lib/bionic";
-import { effectiveDarkBackground, readingHighlightColor, readingTextColor } from "./contrast";
+import { displayHighlightColor, displayTextColor } from "./contrast";
+import { FORMAT_THEME, type FormatTheme } from "@/lib/sermon/export/frames";
 
 /**
  * Preach renderer: walks the sermon's ProseMirror JSON (the shared schema in
@@ -33,6 +34,8 @@ export type ReadingClassNames = Partial<
 export interface RenderOptions {
   bionic: boolean;
   theme: "light" | "dark";
+  /** #43 format group: print vs screen-dark. Overrides theme when set. */
+  formatTheme?: FormatTheme;
   classes?: ReadingClassNames;
 }
 
@@ -40,8 +43,9 @@ interface Ctx extends RenderOptions {
   classes: ReadingClassNames;
   /** Bionic disabled for this subtree (Scripture). */
   plain: boolean;
-  /** Dark-theme background behind the current text run (highlight or page). */
+  /** Background behind the current text run (highlight or page). */
   textBg?: string;
+  formatTheme: FormatTheme;
 }
 
 /** Every node/mark type this renderer handles explicitly (see drift test). */
@@ -136,7 +140,14 @@ function renderText(node: JSONContent, ctx: Ctx, key: string): ReactNode {
   const hl = marks.find((m) => m.type === "highlight");
   const hlColor = typeof hl?.attrs?.color === "string" && hl.attrs.color ? hl.attrs.color : null;
   const hlPreset = typeof hl?.attrs?.preset === "string" ? hl.attrs.preset : null;
-  ctx = { ...ctx, textBg: effectiveDarkBackground(hlColor, Boolean(hl), hlPreset) };
+  const fmt = ctx.formatTheme;
+  const pageBg = FORMAT_THEME[fmt].pageBackground;
+  ctx = {
+    ...ctx,
+    textBg: hl
+      ? displayHighlightColor(hlColor || "#FFF176", fmt)
+      : pageBg,
+  };
   let out: ReactNode =
     ctx.bionic && !ctx.plain ? bionicLeaf(text, inBold) : text;
   // Wrap innermost-last so marks[0] is the outermost element, like ProseMirror.
@@ -185,7 +196,12 @@ function wrapMark(
     case "textStyle": {
       const style: CSSProperties = {};
       if (typeof attrs.color === "string" && attrs.color) {
-        style.color = readingTextColor(attrs.color, ctx.theme, ctx.textBg);
+        style.color = displayTextColor(
+          attrs.color,
+          ctx.textBg ?? FORMAT_THEME[ctx.formatTheme].pageBackground,
+          ctx.formatTheme,
+          { highlight: !!ctx.textBg && ctx.textBg !== FORMAT_THEME[ctx.formatTheme].pageBackground },
+        );
       }
       if (typeof attrs.fontFamily === "string" && attrs.fontFamily) {
         style.fontFamily = attrs.fontFamily;
@@ -208,7 +224,10 @@ function wrapMark(
           key={i}
           className="sermon-highlight"
           data-color={color ?? undefined}
-          style={color ? { backgroundColor: readingHighlightColor(color, ctx.theme, preset) } : undefined}
+          style={{
+            ...(color ? { backgroundColor: displayHighlightColor(color, ctx.formatTheme) } : {}),
+            ...(ctx.formatTheme === "screen-dark" ? { color: FORMAT_THEME.print.text } : {}),
+          }}
         >
           {children}
         </mark>
@@ -291,7 +310,7 @@ export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode 
       return (
         <figure key={key} className={c.scripture} data-scripture="" style={alignStyle(node)}>
           <blockquote className={c.quoteBlock}>
-            <p className={c.quote}>{children(node, { ...ctx, plain: true })}</p>
+            <p className={c.quote}>{children(node, { ...ctx, plain: false })}</p>
           </blockquote>
           {citation ? (
             <figcaption className={c.citation}>
@@ -309,7 +328,8 @@ export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode 
 
 /** Render the blocks of a sermon document for Preach. */
 export function renderSermon(content: JSONContent, opts: RenderOptions): ReactNode {
-  const ctx: Ctx = { ...opts, classes: opts.classes ?? {}, plain: false };
+  const formatTheme = opts.formatTheme ?? (opts.theme === "dark" ? "screen-dark" : "print");
+  const ctx: Ctx = { ...opts, formatTheme, classes: opts.classes ?? {}, plain: false };
   const blocks = content.content ?? [];
   return blocks.map((n, i) => {
     if (isTitleSubline(blocks[i - 1], n)) {

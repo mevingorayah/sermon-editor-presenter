@@ -33,9 +33,19 @@ export const LEGACY_EXPORT_FONT: Record<"sans" | "serif" | "mono", ApprovedFontI
 export const EXPORT_COVERED_FONTS: ReadonlySet<ApprovedFontId> = new Set(APPROVED_FONT_IDS);
 
 /** The bundled font that measures and renders `id`. */
+/**
+ * Faces without a bundled export file map to the same category:
+ * - EB Garamond, Crimson Pro, Noto Serif → Literata (serif)
+ * - Source Sans 3, Noto Sans, IBM Plex Sans → Inter (sans)
+ * The ten approved faces still use their bundled OFL files.
+ */
 export function exportFontId(id: FontFamilyId | string | undefined): ApprovedFontId {
   if (id === "sans" || id === "serif" || id === "mono") return LEGACY_EXPORT_FONT[id];
-  return EXPORT_COVERED_FONTS.has(id as ApprovedFontId) ? (id as ApprovedFontId) : "literata";
+  if (EXPORT_COVERED_FONTS.has(id as ApprovedFontId)) return id as ApprovedFontId;
+  const cat = fontCategory(id);
+  if (cat === "sans") return "inter";
+  if (cat === "mono") return "jetbrains-mono";
+  return "literata";
 }
 
 const SANS_IDS = new Set<string>(["sans", "inter", "open-sans", "lato", "montserrat", "nunito-sans", "source-sans-3", "noto-sans", "ibm-plex-sans"]);

@@ -60,7 +60,9 @@ export interface LayoutBlock {
    * family / bold / italic used to measure each character. Without runs the
    * whole block is measured in the role's default style (sans).
    */
-  runs?: ReadonlyArray<{ text: string; fontFamily?: FontFamilyId; bold?: boolean; italic?: boolean }>;
+  runs?: ReadonlyArray<{ text: string; fontFamily?: FontFamilyId; bold?: boolean; italic?: boolean; letterSpacing?: string; lineSpacing?: string }>;
+  letterSpacing?: string;
+  lineSpacing?: string;
 }
 
 /** Options shared by the layout entry points. */
@@ -254,6 +256,20 @@ export function wrapLineRanges(
  * Sizes: body ≥ 24 pt via pngTypeScale(); renderers must draw each line with
  * its `size` / `lineHeight` from here, never their own constants.
  */
+
+function parseLineSpacing(raw: string | number | undefined): number | null {
+  if (raw == null || raw === "") return null;
+  const n = typeof raw === "number" ? raw : parseFloat(String(raw));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Block or run line-spacing, else the document value (already clamped by the caller). */
+function blockLineHeight(b: LayoutBlock, fallback: number): number {
+  const fromRuns = (b.runs ?? []).map((r) => parseLineSpacing(r.lineSpacing)).find((n) => n != null);
+  const n = fromRuns ?? parseLineSpacing(b.lineSpacing) ?? fallback;
+  return n;
+}
+
 export function layoutPngPages(
   blocks: readonly LayoutBlock[],
   target: PageInput,
@@ -302,7 +318,8 @@ export function layoutPngPages(
       }
       if (widest > f.contentWidth) r.size = Math.max(minPx, r.size * (f.contentWidth / widest) * 0.999);
     }
-    const lh = r.size * lineHeight;
+    const blockLh = blockLineHeight(b, lineHeight);
+    const lh = r.size * blockLh;
     // Body breaks only between words; a lone word wider than the column
     // shrinks just its own line to fit. Headings split a word only if it is
     // still wider than the column at 24 pt.
@@ -507,7 +524,16 @@ export function toLayoutBlocks(blocks: readonly StyledBlock[]): LayoutBlock[] {
     type: b.type,
     citation: b.citation,
     text: b.runs.map((r) => r.text).join(""),
-    runs: b.runs.map((r) => ({ text: r.text, fontFamily: r.fontFamily, bold: r.bold, italic: r.italic })),
+    runs: b.runs.map((r) => ({
+      text: r.text,
+      fontFamily: r.fontFamily,
+      bold: r.bold,
+      italic: r.italic,
+      letterSpacing: r.letterSpacing,
+      lineSpacing: r.lineSpacing,
+    })),
+    letterSpacing: b.letterSpacing,
+    lineSpacing: b.lineSpacing,
   }));
 }
 
@@ -528,13 +554,16 @@ export interface SnapshotLayout {
 /** Lay out a calibrated snapshot exactly as every export does. */
 export function layoutSnapshot(snapshot: CalibratedSnapshot, opts: LayoutOptions = {}): SnapshotLayout {
   const target = pageSpecFromSnapshot(snapshot);
-  // Body text is serif (as in Edit) unless the writer picked a font.
+  // Preach role fonts: sermon text defaults to sans, Scripture to Literata.
+  // A stored font mark (fontExplicit) is kept. Exports use the same mapping.
   let styled = styledBlocksFromSnapshot(snapshot).map((b) => ({
     ...b,
-    runs: b.runs.map((r) => (r.fontExplicit ? r : { ...r, fontFamily: "serif" as const })),
+    runs: b.runs.map((r) =>
+      r.fontExplicit ? r : { ...r, fontFamily: b.type === "Scripture" ? "literata" as const : "sans" as const },
+    ),
   }));
   if (!styled.length) {
-    styled = [{ type: "Title", align: "left", runs: [{ text: titleTextFromSnapshot(snapshot), fontFamily: "serif" }] }];
+    styled = [{ type: "Title", align: "left", runs: [{ text: titleTextFromSnapshot(snapshot), fontFamily: "sans" }] }];
   }
   const blocks = toLayoutBlocks(styled);
   const pages = layoutPngPages(blocks, target, snapshotLineSpacing(snapshot), snapshot.margins, {

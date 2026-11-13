@@ -310,25 +310,6 @@ export function PreachBar(props: PreachBarProps) {
             </select>
           </label>
 
-          <div className={styles.row} role="group" aria-label="Theme">
-            <span className={styles.rowLabel}>Theme</span>
-            <button
-              type="button"
-              className={theme === "dark" ? styles.active : styles.btn}
-              aria-pressed={theme === "dark"}
-              onClick={() => onThemeChange("dark")}
-            >
-              Dark
-            </button>
-            <button
-              type="button"
-              className={theme === "light" ? styles.active : styles.btn}
-              aria-pressed={theme === "light"}
-              onClick={() => onThemeChange("light")}
-            >
-              Light
-            </button>
-          </div>
 
 
           <label className={styles.row}>
