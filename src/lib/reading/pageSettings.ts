@@ -1,3 +1,4 @@
+import type { GlobalStyles } from "@/lib/sermon/blockStyle";
 /**
  * Preach ⚙ "Page" + "Spacing" controls ⇄ the sermon's saved page settings.
  *
@@ -169,13 +170,14 @@ export function stepTextSize(c: PageChoice, dir: 1 | -1): PageChoice {
 }
 
 /** Snapshot for page view: the same one Export lays out. */
-export function snapshotFor(content: SermonContent, ps: PresentationSettings): CalibratedSnapshot {
+export function snapshotFor(content: SermonContent, ps: PresentationSettings, globalStyles?: GlobalStyles): CalibratedSnapshot {
   const base = buildCalibratedSnapshot({
     target: ps.calibrationTarget,
     typeScaleStep: ps.typeScaleStep,
     lineHeight: ps.lineHeight,
     theme: ps.theme,
     content,
+    globalStyles,
   });
   return withPage(base, ps);
 }

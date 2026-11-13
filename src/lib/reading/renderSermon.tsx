@@ -1,4 +1,7 @@
 /** @jsxRuntime automatic */
+import { FIELD, blockCss, sanitizeSpacing, sanitizeStyle, type BlockSpacing, type BlockStyle } from "../builder/blockAttrs";
+import { effectiveBlockSizePt } from "../sermon/blockStyle";
+import { cssTextToReactStyle } from "../cssText";
 import { Fragment, type CSSProperties, type ReactNode } from "react";
 import type { JSONContent } from "@tiptap/react";
 import { bionicParts } from "@/lib/bionic";
@@ -56,6 +59,8 @@ export const RENDERED_NODES = [
   "orderedList", "listItem", "hardBreak", "horizontalRule",
   // Disabled in the sermon schema but rendered if old docs contain them.
   "blockquote", "codeBlock",
+  // Block builder.
+  "quote", "illustration", "section", "column",
 ];
 export const RENDERED_MARKS = [
   "bold", "italic", "underline", "strike", "code", "link", "textStyle",
@@ -108,10 +113,18 @@ function spacingStyle(attrs: Record<string, unknown> | undefined): CSSProperties
   return style;
 }
 
+function builderStyle(node: JSONContent): CSSProperties | undefined {
+  const st = node.attrs?.[FIELD.style] as BlockStyle | null | undefined;
+  const sp = node.attrs?.[FIELD.spacing] as BlockSpacing | null | undefined;
+  if (!st && !sp) return undefined;
+  const style = sanitizeStyle(st);
+  const shown = style?.size !== undefined ? { ...style, size: effectiveBlockSizePt(style) } : style;
+  return cssTextToReactStyle(blockCss(shown, sanitizeSpacing(sp)));
+}
+
 function alignStyle(node: JSONContent): CSSProperties | undefined {
   const a = textAlignOf(node);
-  const spacing = spacingStyle(node.attrs);
-  const style: CSSProperties = { ...spacing };
+  const style: CSSProperties = { ...spacingStyle(node.attrs), ...builderStyle(node) };
   if (a) style.textAlign = a;
   return Object.keys(style).length ? style : undefined;
 }
@@ -282,6 +295,30 @@ export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode 
       return <br key={key} />;
     case "horizontalRule":
       return <hr key={key} className={c.rule} />;
+    case "quote":
+      return (
+        <blockquote key={key} className="sermon-quote" data-quote="" style={alignStyle(node)}>
+          {children(node, ctx)}
+        </blockquote>
+      );
+    case "illustration":
+      return (
+        <div key={key} className="sermon-illustration" data-illustration="" style={alignStyle(node)}>
+          {children(node, ctx)}
+        </div>
+      );
+    case "section":
+      return (
+        <section key={key} className="sermon-section" data-section="" data-columns={String(node.attrs?.columns ?? 1)} style={alignStyle(node)}>
+          {children(node, ctx)}
+        </section>
+      );
+    case "column":
+      return (
+        <div key={key} className="sermon-column" data-column="">
+          {children(node, ctx)}
+        </div>
+      );
     case "blockquote":
       return <blockquote key={key}>{children(node, ctx)}</blockquote>;
     case "codeBlock":

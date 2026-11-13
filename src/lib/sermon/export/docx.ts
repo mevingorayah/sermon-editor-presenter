@@ -9,6 +9,7 @@ import {
   TextRun,
   ShadingType,
   PageOrientation,
+  BorderStyle,
 } from "docx";
 import type { CalibratedSnapshot } from "@/types/document";
 import { HIGHLIGHT_AMBER, hexWithoutHash, toHexRgb } from "./colors";
@@ -24,6 +25,7 @@ import {
 import { docxFontName } from "./fonts";
 import { frameSizeInches, type PageInput } from "./frames";
 import { pageSpecFromSnapshot } from "./pngLayout";
+import { BORDER_LEFT_CSS_PX, lookAlign } from "./blockLook";
 import { isPaperTarget, resolveMargins } from "./margins";
 
 export interface DocxBuildOptions {
@@ -94,10 +96,60 @@ function runToTextRun(
   });
 }
 
+const DOCX_ROLE_SIZE: Record<StyledBlock["type"], number> = { Title: 56, H1: 36, H2: 28, Body: 24, Scripture: 24, Caption: 20 };
+const TWIPS_PER_CSS_PX = 15; // 1440 / 96
+
+/**
+ * Builder-styled block: Word flows text itself, so this approximates Edit
+ * with the same colours, size (stored pt, no 24 pt floor on paper), weight,
+ * italic, alignment, fill, left rule and spacing. Columns stack.
+ */
+function styledBlockToParagraphs(block: StyledBlock, accent?: string): Paragraph[] {
+  const look = block.look!;
+  const sp = look.spacing;
+  const tw = (v?: number) => (v === undefined ? undefined : Math.round(v * TWIPS_PER_CSS_PX));
+  const size = look.sizePt !== undefined ? Math.round(look.sizePt * 2) : DOCX_ROLE_SIZE[block.type];
+  const defaultColor = look.color ?? (block.type === "Title" ? accent : undefined);
+  const heading = block.type === "Title" ? HeadingLevel.TITLE : block.type === "H1" ? HeadingLevel.HEADING_1 : block.type === "H2" ? HeadingLevel.HEADING_2 : undefined;
+  const align = look.align === "justify" ? AlignmentType.JUSTIFIED : alignType(lookAlign(look, block.align));
+  const shading = look.background ? { type: ShadingType.CLEAR, fill: hexWithoutHash(look.background) } : undefined;
+  const border = look.borderLeft
+    ? { left: { style: BorderStyle.SINGLE, size: Math.round(BORDER_LEFT_CSS_PX * 6), color: hexWithoutHash(look.borderLeft), space: Math.round((sp.pl ?? 0) * 0.75) } }
+    : undefined;
+  const runs = block.runs.length ? block.runs : [{ text: " " } as StyledRun];
+  const out = [
+    new Paragraph({
+      ...(heading ? { heading } : {}),
+      alignment: align,
+      spacing: { before: tw(sp.mt), after: tw(sp.mb) ?? (block.citation ? 0 : 160) },
+      indent: { left: tw(sp.pl), right: tw(sp.pr) },
+      ...(shading ? { shading } : {}),
+      ...(border ? { border } : {}),
+      children: runs.map((r) => {
+        const t = runToTextRun(r, { size, defaultColor });
+        return look.highlight && !r.highlight
+          ? new TextRun({ text: r.text, bold: r.bold, italics: r.italic, size, font: docxFontName(r.fontFamily), color: hexWithoutHash(r.color ?? defaultColor ?? "") || undefined, shading: { type: ShadingType.CLEAR, fill: hexWithoutHash(look.highlight) } })
+          : t;
+      }),
+    }),
+  ];
+  if (block.citation) {
+    out.push(
+      new Paragraph({
+        alignment: AlignmentType.RIGHT,
+        spacing: { after: 240 },
+        children: [new TextRun({ text: citationCaps(block.citation), size: 20, color: "666666" })],
+      }),
+    );
+  }
+  return out;
+}
+
 function blockToParagraphs(
   block: StyledBlock,
   accent?: string,
 ): Paragraph[] {
+  if (block.look) return styledBlockToParagraphs(block, accent);
   const align = alignType(block.align);
   switch (block.type) {
     case "Title":

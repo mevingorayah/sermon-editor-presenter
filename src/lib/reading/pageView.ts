@@ -1,5 +1,7 @@
 import type { JSONContent } from "@tiptap/react";
 import type { PresentationSettings } from "@/types/document";
+import type { GlobalStyles } from "@/lib/sermon/blockStyle";
+import { lookAlign, lookRole } from "@/lib/sermon/export/blockLook";
 import { sliceRuns } from "@/lib/sermon/export/pages";
 import { layoutSnapshot, pageSpecFromSnapshot, roleStyle } from "@/lib/sermon/export/pngLayout";
 import { pageGeometry } from "@/lib/sermon/export/frames";
@@ -22,6 +24,8 @@ export interface PageViewLine {
   y: number;
   size: number;
   lineHeight: number;
+  x?: number;
+  width?: number;
   /** Role style (headings bold, Scripture italic), as every export draws it. */
   role: { bold: boolean; italic: boolean };
   tokens: Array<{ run: StyledRun; text: string }>;
@@ -53,8 +57,8 @@ export interface PageViewModel {
 }
 
 /** Page view model: Backend's layoutSnapshot (the export layout), not a copy of it. */
-export function buildPageView(opts: { content: JSONContent; settings: PresentationSettings }): PageViewModel {
-  const snapshot = snapshotFor(opts.content as never, opts.settings);
+export function buildPageView(opts: { content: JSONContent; settings: PresentationSettings; globalStyles?: GlobalStyles }): PageViewModel {
+  const snapshot = snapshotFor(opts.content as never, opts.settings, opts.globalStyles);
   const { frame, styled, pages } = layoutSnapshot(snapshot);
   return {
     frame,
@@ -74,11 +78,13 @@ export function buildPageView(opts: { content: JSONContent; settings: Presentati
           blockType: block.type,
           blockIndex: l.blockIndex,
           lineIndex: l.lineIndex,
-          align: l.kind === "citation" ? "right" : block.align,
+          align: l.kind === "citation" ? "right" : lookAlign(block.look, block.align),
           y: l.y,
           size: l.size,
           lineHeight: l.lineHeight,
-          role: l.kind === "citation" ? { bold: false, italic: false } : roleStyle(block.type),
+          x: l.x,
+          width: l.width,
+          role: l.kind === "citation" ? { bold: false, italic: false } : lookRole(roleStyle(block.type), block.look),
           tokens,
           softEnd,
         };

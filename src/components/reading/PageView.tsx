@@ -22,6 +22,7 @@ interface PageViewProps {
   content: JSONContent;
   settings: PresentationSettings;
   /** Frame matches the screen: edge to edge, no bars. */
+  globalStyles?: import("@/lib/sermon/blockStyle").GlobalStyles;
   fill?: boolean;
 }
 
@@ -38,9 +39,9 @@ function typingInControl(t: EventTarget | null): boolean {
   return false;
 }
 
-export function PageView({ content, settings, fill = false }: PageViewProps) {
+export function PageView({ content, settings, fill = false, globalStyles }: PageViewProps) {
   const theme = settings.theme;
-  const model = useMemo(() => buildPageView({ content, settings }), [content, settings]);
+  const model = useMemo(() => buildPageView({ content, settings, globalStyles }), [content, settings, globalStyles]);
   const hostRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
   const [page, setPage] = useState(0);
@@ -157,8 +158,8 @@ function Line({
       data-soft-end={l.softEnd ? "" : undefined}
       style={{
         top: l.y,
-        left: frame.left,
-        width: frame.contentWidth,
+        left: l.x ?? frame.left,
+        width: l.width ?? frame.contentWidth,
         height: l.lineHeight,
         fontSize: l.size,
         lineHeight: `${l.lineHeight}px`,

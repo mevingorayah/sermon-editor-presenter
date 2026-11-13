@@ -233,7 +233,7 @@ describe("forward compatibility with v2 fields", () => {
 
   it("refuses block or mark types this version of the editor doesn't know", () => {
     const withNode = { ...sermon, content: { type: "doc", content: [
-      { type: "illustration", content: [{ type: "text", text: "Istwar" }] },
+      { type: "callout", content: [{ type: "text", text: "Istwar" }] },
     ] } } as unknown as SermonDocument;
     const withMark = { ...sermon, content: { type: "doc", content: [
       { type: "paragraph", content: [{ type: "text", text: "x", marks: [{ type: "definition" }] }] },

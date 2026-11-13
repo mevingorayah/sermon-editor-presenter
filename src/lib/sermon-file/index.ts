@@ -14,6 +14,7 @@ import type { SermonDocument } from "@/types/document";
 import { DEFAULT_PRESENTATION_SETTINGS } from "@/types/document";
 import { presentationSettingsSchema } from "@/lib/sermon/schema";
 import { sanitizePresentationSettings } from "@/lib/localStore/sanitizeSettings";
+import { globalStylesSchema } from "@/lib/sermon/blockStyle";
 import { getSchema } from "@tiptap/core";
 import { Node as PMNode, type Schema } from "@tiptap/pm/model";
 import { createSchemaExtensions } from "@/extensions/schema";
@@ -89,6 +90,8 @@ export const sermonDocumentSchema = z
     content: tiptapDocSchema,
     presentationSettings: presentationSettingsSchema,
     notes: z.string().max(1_000_000),
+    /** Block builder defaults; checked on open (bad values reject the file). */
+    globalStyles: globalStylesSchema.nullish(),
   })
   .passthrough();
 
@@ -152,6 +155,8 @@ function upgradeSermon(raw: unknown): unknown {
       content: o.content,
       presentationSettings: sanitizePresentationSettings(o.presentation ?? DEFAULT_PRESENTATION_SETTINGS),
       notes: typeof o.notes === "string" ? o.notes : "",
+      // Builder defaults: keep them (validated by sermonDocumentSchema).
+      ...(o.globalStyles !== undefined && o.globalStyles !== null ? { globalStyles: o.globalStyles } : {}),
     };
   }
   return {

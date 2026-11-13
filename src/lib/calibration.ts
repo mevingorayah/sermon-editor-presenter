@@ -7,6 +7,7 @@ import type {
   SermonContent,
   TypeScaleStep,
 } from "@/types/document";
+import type { GlobalStyles } from "@/lib/sermon/blockStyle";
 import { toSemanticBlocks } from "@/lib/semanticBlocks";
 
 export interface TargetMeta {
@@ -42,6 +43,7 @@ export function buildCalibratedSnapshot(opts: {
   lineHeight: LineHeightOption;
   theme: ReadingTheme;
   content: SermonContent;
+  globalStyles?: GlobalStyles;
 }): CalibratedSnapshot {
   return {
     target: opts.target,
@@ -53,6 +55,7 @@ export function buildCalibratedSnapshot(opts: {
     bionic: false,
     semanticBlocks: toSemanticBlocks(opts.content),
     content: opts.content,
+    ...(opts.globalStyles ? { globalStyles: opts.globalStyles } : {}),
   };
 }
 

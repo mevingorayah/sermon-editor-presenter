@@ -64,6 +64,7 @@ import {
   type RestorePreview,
   parseRestoreFile,
 } from "@/lib/localStore/backup";
+import type { GlobalStyles } from "@/lib/sermon/blockStyle";
 import type { SermonDocument } from "@/types/document";
 import { DEFAULT_PRESENTATION_SETTINGS } from "@/types/document";
 import type { PresentationSettings } from "@/types/document";
@@ -513,6 +514,18 @@ export function EditShell() {
       setDoc((prev) => {
         if (!prev) return prev;
         const next: SermonDocument = { ...prev, notes, updatedAt: new Date().toISOString() };
+        edited(next);
+        return next;
+      });
+    },
+    [edited],
+  );
+
+  const onGlobalStylesChange = useCallback(
+    (globalStyles: GlobalStyles) => {
+      setDoc((prev) => {
+        if (!prev) return prev;
+        const next: SermonDocument = { ...prev, globalStyles, updatedAt: new Date().toISOString() };
         edited(next);
         return next;
       });
@@ -1186,6 +1199,8 @@ export function EditShell() {
             content={doc.content}
             onChange={onContentChange}
             onEditorReady={setEditor}
+            globalStyles={doc.globalStyles}
+            onGlobalStylesChange={onGlobalStylesChange}
           />
         </main>
       </div>
@@ -1204,6 +1219,7 @@ export function EditShell() {
         >
           <CalibrationPanel
             content={doc.content}
+            globalStyles={doc.globalStyles}
             title={doc.title}
             notes={doc.notes ?? ""}
             autoFocus

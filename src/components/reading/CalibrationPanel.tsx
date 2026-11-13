@@ -48,6 +48,7 @@ const STEM_MAX = 200;
 
 interface CalibrationPanelProps {
   content: JSONContent;
+  globalStyles?: import("@/lib/sermon/blockStyle").GlobalStyles;
   /** Sermon title — default Save-as filename stem. */
   title: string;
   /** Study notes — sent only when "Include study notes" is on (DOCX/PDF). */
@@ -72,6 +73,7 @@ interface CalibrationPanelProps {
 export function CalibrationPanel(props: CalibrationPanelProps) {
   const {
     content,
+    globalStyles,
     title,
     notes,
     target,
@@ -124,11 +126,12 @@ export function CalibrationPanel(props: CalibrationPanelProps) {
         lineHeight,
         theme: meta.kind === "paper" ? "light" : theme,
         content,
+        globalStyles,
       });
       // Preach passes the sermon's page settings so exports match page view.
       return page ? withPage(base, { calibrationTarget: target, page }) : base;
     },
-    [target, typeScaleStep, lineHeight, theme, content, meta.kind, page],
+    [target, typeScaleStep, lineHeight, theme, content, globalStyles, meta.kind, page],
   );
 
   // Same layout as the server's PNG paging: >1 page comes back as a .zip.
