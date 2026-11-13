@@ -3,19 +3,23 @@ import type { CalibratedSnapshot, SemanticBlock } from "@/types/document";
 import { mapFontFamily, type FontFamilyId } from "./fonts";
 import { toHexRgb } from "./colors";
 
-export type TextAlign = "left" | "center" | "right";
+export type TextAlign = "left" | "center" | "right" | "justify";
 
 export interface StyledRun {
   text: string;
   bold?: boolean;
   italic?: boolean;
   highlight?: boolean;
+  /** Highlight fill when a colour was stored; otherwise the default amber. */
+  highlightColor?: string;
   underline?: boolean;
   strike?: boolean;
   color?: string; // #RRGGBB
   fontFamily: FontFamilyId;
   /** True when the text carries its own font choice (not the document default). */
   fontExplicit?: boolean;
+  letterSpacing?: string;
+  lineSpacing?: string;
 }
 
 export interface StyledBlock {
@@ -23,12 +27,23 @@ export interface StyledBlock {
   align: TextAlign;
   runs: StyledRun[];
   citation?: string;
+  letterSpacing?: string;
+  lineSpacing?: string;
 }
 
 function alignOf(node: JSONContent): TextAlign {
   const a = node.attrs?.textAlign;
-  if (a === "center" || a === "right" || a === "left") return a;
+  if (a === "center" || a === "right" || a === "left" || a === "justify") return a;
   return "left";
+}
+
+function spacingOf(node: JSONContent): { letterSpacing?: string; lineSpacing?: string } {
+  const ls = node.attrs?.letterSpacing;
+  const lh = node.attrs?.lineSpacing;
+  return {
+    letterSpacing: typeof ls === "string" && ls ? ls : undefined,
+    lineSpacing: typeof lh === "string" && lh ? lh : typeof lh === "number" ? String(lh) : undefined,
+  };
 }
 
 const OPENING_BRACKET = /[([{«‹“‘„¿¡]$/u;
@@ -58,16 +73,23 @@ function runsFromNode(node: JSONContent): StyledRun[] {
       let bold = inherited.bold;
       let italic = inherited.italic;
       let highlight = inherited.highlight;
+      let highlightColor = inherited.highlightColor;
       let underline = inherited.underline;
       let strike = inherited.strike;
       let color = inherited.color;
       let fontFamily = inherited.fontFamily ?? ("sans" as FontFamilyId);
       let fontExplicit = inherited.fontExplicit;
+      let letterSpacing = inherited.letterSpacing;
+      let lineSpacing = inherited.lineSpacing;
 
       for (const mark of n.marks ?? []) {
         if (mark.type === "bold") bold = true;
         if (mark.type === "italic") italic = true;
-        if (mark.type === "highlight") highlight = true;
+        if (mark.type === "highlight") {
+          highlight = true;
+          const c = mark.attrs?.color;
+          if (typeof c === "string" && c) highlightColor = toHexRgb(c) ?? c;
+        }
         if (mark.type === "underline") underline = true;
         if (mark.type === "strike") strike = true;
         if (mark.type === "textStyle") {
@@ -79,6 +101,12 @@ function runsFromNode(node: JSONContent): StyledRun[] {
             fontFamily = mapFontFamily(attrs.fontFamily);
             fontExplicit = true;
           }
+          if (typeof attrs.letterSpacing === "string" && attrs.letterSpacing) {
+            letterSpacing = attrs.letterSpacing;
+          }
+          if (typeof attrs.lineSpacing === "string" && attrs.lineSpacing) {
+            lineSpacing = attrs.lineSpacing;
+          }
         }
       }
 
@@ -87,11 +115,14 @@ function runsFromNode(node: JSONContent): StyledRun[] {
         bold,
         italic,
         highlight,
+        highlightColor,
         underline,
         strike,
         color,
         fontFamily,
         fontExplicit,
+        letterSpacing,
+        lineSpacing,
       });
       return;
     }
@@ -128,6 +159,7 @@ function blockFromTipTap(node: JSONContent): StyledBlock | null {
       return {
         type: "Title",
         align: alignOf(node),
+        ...spacingOf(node),
         runs: runsFromNode(node).map((r) => ({ ...r, bold: true })),
       };
     case "heading": {
@@ -135,6 +167,7 @@ function blockFromTipTap(node: JSONContent): StyledBlock | null {
       return {
         type: level,
         align: alignOf(node),
+        ...spacingOf(node),
         runs: runsFromNode(node).map((r) => ({ ...r, bold: true })),
       };
     }
@@ -142,6 +175,7 @@ function blockFromTipTap(node: JSONContent): StyledBlock | null {
       return {
         type: "Body",
         align: alignOf(node),
+        ...spacingOf(node),
         runs: runsFromNode(node),
       };
     case "scripture": {
@@ -152,6 +186,7 @@ function blockFromTipTap(node: JSONContent): StyledBlock | null {
       return {
         type: "Scripture",
         align: alignOf(node),
+        ...spacingOf(node),
         runs: runsFromNode(node).map((r) => ({ ...r, italic: true })),
         citation,
       };

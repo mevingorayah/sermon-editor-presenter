@@ -145,3 +145,28 @@ test("unsafe link hrefs are dropped", () => {
   });
   assert.doesNotMatch(out, /javascript/);
 });
+
+test("justify, letter spacing and line spacing round-trip from JSON into Preach markup", () => {
+  const doc: JSONContent = {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        attrs: { textAlign: "justify", letterSpacing: "0.05em", lineSpacing: "1.7" },
+        content: [
+          {
+            type: "text",
+            text: "Grace",
+            marks: [{ type: "textStyle", attrs: { letterSpacing: "0.1em", fontFamily: '"Lora", serif' } }],
+          },
+        ],
+      },
+    ],
+  };
+  const out = html(doc);
+  assert.match(out, /text-align:justify/);
+  assert.match(out, /letter-spacing:0\.05em/);
+  assert.match(out, /line-height:1\.7/);
+  assert.match(out, /letter-spacing:0\.1em/);
+  assert.match(out, /font-family:\\?"Lora\\?", serif|font-family:\"Lora\", serif|Lora/);
+});

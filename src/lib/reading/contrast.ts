@@ -5,6 +5,7 @@
  * other colour, and every colour in the light theme, is returned unchanged.
  */
 
+import { highlightPresetByIdOrColor } from "@/lib/writing/colors";
 import type { FormatTheme } from "@/lib/sermon/export/frames";
 
 
@@ -142,6 +143,8 @@ export function readingHighlightColor(
   preset?: string | null,
 ): string {
   if (theme !== "dark") return color;
+  const hit = highlightPresetByIdOrColor(color, preset);
+  if (hit) return hit.dark;
   if (preset === "yellow" || color.trim().toLowerCase() === YELLOW_PRESET_LIGHT) {
     return DARK_YELLOW_PRESET;
   }

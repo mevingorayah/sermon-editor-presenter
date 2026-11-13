@@ -15,7 +15,8 @@ export const APPROVED_FONT_IDS = [
 export type ApprovedFontId = (typeof APPROVED_FONT_IDS)[number];
 
 /** A run's font: an approved id, or a legacy v1 value (sans/serif/mono). */
-export type FontFamilyId = "sans" | "serif" | "mono" | ApprovedFontId;
+export type ExtraWritingFontId = "eb-garamond" | "crimson-pro" | "noto-serif" | "source-sans-3" | "noto-sans" | "ibm-plex-sans";
+export type FontFamilyId = "sans" | "serif" | "mono" | ApprovedFontId | ExtraWritingFontId;
 
 /** Legacy v1 values → the export font used for them (matches PR #30 LEGACY_FONT_MAP). */
 export const LEGACY_EXPORT_FONT: Record<"sans" | "serif" | "mono", ApprovedFontId> = {
@@ -37,7 +38,7 @@ export function exportFontId(id: FontFamilyId | string | undefined): ApprovedFon
   return EXPORT_COVERED_FONTS.has(id as ApprovedFontId) ? (id as ApprovedFontId) : "literata";
 }
 
-const SANS_IDS = new Set<string>(["sans", "inter", "open-sans", "lato", "montserrat", "nunito-sans"]);
+const SANS_IDS = new Set<string>(["sans", "inter", "open-sans", "lato", "montserrat", "nunito-sans", "source-sans-3", "noto-sans", "ibm-plex-sans"]);
 /** Broad class, for fallbacks (Office, built-in PDF fonts). */
 export function fontCategory(id: FontFamilyId | string | undefined): "sans" | "serif" | "mono" {
   if (id === "mono" || id === "jetbrains-mono") return "mono";
@@ -70,6 +71,16 @@ export function mapFontFamily(
   for (const id of APPROVED_FONT_IDS) {
     if (first === FONT_NAMES[id] || n.includes(`--font-${id}`)) return id;
   }
+  // Extra writing-tool fonts (no bundled export file yet — category still maps).
+  const EXTRA: Record<string, string> = {
+    "eb garamond": "eb-garamond",
+    "crimson pro": "crimson-pro",
+    "noto serif": "noto-serif",
+    "source sans 3": "source-sans-3",
+    "noto sans": "noto-sans",
+    "ibm plex sans": "ibm-plex-sans",
+  };
+  if (EXTRA[first]) return EXTRA[first] as FontFamilyId;
   if (n.includes("monospace") || n.includes("mono") || n === "mono") {
     return "mono";
   }
@@ -88,7 +99,11 @@ export function mapFontFamily(
 /** Concrete CSS font stacks for SVG / HTML-ish renderers. */
 export function cssFontStack(id: FontFamilyId): string {
   const c = fontCategory(id);
-  const own = id === "sans" || id === "serif" || id === "mono" ? "" : `"${FONT_NAMES[id].replace(/\b\w/g, (m) => m.toUpperCase())}", `;
+  const named = FONT_NAMES[id as ApprovedFontId];
+  const own =
+    id === "sans" || id === "serif" || id === "mono"
+      ? ""
+      : `"${(named ?? String(id).replace(/-/g, " ")).replace(/\b\w/g, (m) => m.toUpperCase())}", `;
   switch (c) {
     case "mono":
       return '"JetBrains Mono", ui-monospace, "Liberation Mono", Menlo, "DejaVu Sans Mono", monospace';

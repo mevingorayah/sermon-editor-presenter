@@ -312,6 +312,35 @@ test("words: a '/' between letters is not a break; the joined word shrinks its l
   }
 });
 
+test("words: 'suppléments/compléments' at 48 pt shrinks toward 24 pt before breaking after '/'", () => {
+  // Made-up fixture. Break after '/' only if the word cannot fit even at 24 pt.
+  for (const format of ["a5", "half-letter"]) {
+    const spec = allPageSpecs().find((x) => x.format === format && x.orientation === "portrait")!;
+    const joined = "suppléments/compléments";
+    const snap = docSnap(
+      spec,
+      [{ type: "Body", text: `Les ${joined} arrivent demain matin.` }],
+      { textSizePt: 48, lineSpacing: 2, paragraphSpacingPt: 48, margins: { top: "1.1in", right: "1.1in", bottom: "1.1in", left: "1.1in" } } as Partial<CalibratedSnapshot>,
+    );
+    const L = layoutSnapshot(snap);
+    const t = L.blocks[0].text;
+    const lines = L.pages.flatMap((p) => p.lines).filter((l) => l.kind === "text");
+    const shown = lines.map((l) => t.slice(l.start, l.end).trimEnd());
+    const whole = lines.find((l) => t.slice(l.start, l.end).includes(joined));
+    if (whole) {
+      const others = lines.filter((l) => l !== whole);
+      assert.ok(others.length === 0 || whole.size <= others[0].size + 1e-6, `${format}: shrinks or stays at body size`);
+      const floor = 24 * (Math.max(...lines.map((l) => l.size)) / 48);
+      assert.ok(whole.size >= floor - 1e-6, `${format}: not under 24 pt`);
+    } else {
+      const i = shown.indexOf("suppléments/");
+      assert.ok(i >= 0 && shown[i + 1]?.startsWith("compléments"), `${format}: only then break after '/': ${shown.join(" | ")}`);
+      for (const l of lines) assert.ok(l.size >= 24 * (Math.max(...lines.map((x) => x.size)) / 48) - 1e-6, `${format}: floor 24 pt`);
+    }
+    for (const l of lines) assert.ok(!midWord(t, l.end) || t[l.end - 1] === "/", `${format}: no mid-word cut`);
+  }
+});
+
 test("text size: max is 48 pt on A5 and half-letter, 72 pt elsewhere; exports clamp to it", () => {
   for (const f of ["a5", "half-letter"]) assert.equal(maxTextSizePt(f), 48);
   for (const f of ["a4", "letter", "legal", "4:3", "16:10", "16:9", "custom", "fit-screen"]) assert.equal(maxTextSizePt(f), 72);

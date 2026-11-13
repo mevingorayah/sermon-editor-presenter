@@ -57,7 +57,7 @@ test("unparseable colours pass through", () => {
 });
 
 // Q3 / UI UX rule: text on a highlight in dark Preach reaches 4.5:1 against
-// that highlight's dark colour. Mirrors TEXT_COLORS in FormatToolbar.tsx.
+// that highlight's dark colour. Mirrors TEXT_COLORS in src/lib/writing/colors.ts.
 import {
   DARK_HIGHLIGHT_BG as HL_DEFAULT,
   effectiveDarkBackground,
@@ -157,10 +157,10 @@ function lightHighlightBackgrounds(): Array<[string, [number, number, number]]> 
   ];
 }
 
-test("every text colour preset in FormatToolbar.tsx is >= 4.5:1 on white, Edit #f4f1ea and every light highlight", () => {
-  const src = readFileSync(new URL("../../../components/editor/FormatToolbar.tsx", import.meta.url), "utf8");
+test("every text colour preset in src/lib/writing/colors.ts is >= 4.5:1 on white, Edit #f4f1ea and every light highlight", () => {
+  const src = readFileSync(new URL("../../writing/colors.ts", import.meta.url), "utf8");
   const block = src.match(/export const TEXT_COLORS = \[([\s\S]*?)\] as const;/);
-  assert.ok(block, "TEXT_COLORS not found in FormatToolbar.tsx; point this test at the new preset list");
+  assert.ok(block, "TEXT_COLORS not found in src/lib/writing/colors.ts; point this test at the new preset list");
   const values = [...block[1].matchAll(/value:\s*"(#[0-9a-fA-F]{6})"/g)].map((m) => m[1]);
   assert.ok(values.length >= 5, `found ${values.length} presets`);
   assert.deepEqual(values.map((v) => v.toLowerCase()), TEXT_PRESETS);
