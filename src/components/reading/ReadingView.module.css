@@ -88,6 +88,31 @@
   font-style: normal;
 }
 
+/* Read-only verse-snippet top bar (ref · translation), not a caption-right. */
+.scripture[data-verse-snippet] {
+  padding: 0;
+}
+.verseBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--rm-fg) 16%, transparent);
+  background: color-mix(in srgb, var(--rm-fg) 6%, var(--rm-bg-elevated));
+  border-radius: 0 10px 0 0;
+  font-family: var(--rm-font-ui);
+  font-size: calc(var(--rm-size-caption) * var(--rm-scale));
+  color: var(--rm-fg-muted);
+}
+.verseBar cite {
+  font-style: normal;
+}
+.scripture[data-verse-snippet] .quoteBlock {
+  padding: 0.85rem 1rem 0.85rem 1.1rem;
+}
+
+
 .quote {
   margin: 0;
   font-size: calc(var(--rm-size-body) * var(--rm-scale));

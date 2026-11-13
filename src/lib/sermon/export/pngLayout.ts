@@ -1,6 +1,6 @@
 import { snapshotLineSpacing } from "./frames";
 import type { CalibratedSnapshot } from "@/types/document";
-import { styledBlocksFromSnapshot, titleTextFromSnapshot, type BlockColumn, type StyledBlock } from "./contentWalk";
+import { citationDisplay, styledBlocksFromSnapshot, titleTextFromSnapshot, type BlockColumn, type StyledBlock } from "./contentWalk";
 import { effectiveBlockSizePt } from "../blockStyle";
 import { BORDER_LEFT_CSS_PX, SECTION_GAP_CSS_PX, lookRole, type BlockLook } from "./blockLook";
 import { DEFAULT_MARGINS, resolveMargins } from "./margins";
@@ -57,6 +57,8 @@ export interface LayoutBlock {
   /** Plain text of the block (runs joined). */
   text: string;
   citation?: string;
+  /** When true, the citation is a top bar (verse snippets), not a right-aligned caption. */
+  verseBar?: boolean;
   /**
    * Optional style runs whose texts concatenate to `text`; they set the font
    * family / bold / italic used to measure each character. Without runs the
@@ -405,7 +407,7 @@ export function layoutPngPages(
     let cSize = citeSize;
     let cLh = citeLh;
     if (b.citation) {
-      const cw = measure(b.citation.toLocaleUpperCase("fr"), cSize, { font: "serif" });
+      const cw = measure(citationDisplay(b).text, cSize, { font: "serif" });
       if (cw > width) {
         const k2 = Math.max(minPx / cSize, (width / cw) * 0.999);
         cSize *= k2;
@@ -594,14 +596,17 @@ export function layoutPngPages(
         const ci = blocks[i].column!.index;
         let at = cy.has(ci) ? cy.get(ci)! + q.mt : top;
         at += q.pt;
+        const emitCite = () => {
+          if (!q.b.citation) return;
+          page().lines.push(lineOf(q, i, "citation", q.ranges.length, 0, q.b.citation.length, at, q.cSize, q.cLh));
+          at += q.cLh;
+        };
+        if (q.b.verseBar) emitCite();
         q.ranges.forEach(([s, e], li) => {
           page().lines.push(lineOf(q, i, "text", li, s, e, at, q.sizes[li], q.lh));
           at += q.lh;
         });
-        if (q.b.citation) {
-          page().lines.push(lineOf(q, i, "citation", q.ranges.length, 0, q.b.citation.length, at, q.cSize, q.cLh));
-          at += q.cLh;
-        }
+        if (!q.b.verseBar) emitCite();
         cy.set(ci, at + q.pb + q.r.gap);
       }
       if (sl?.background || sl?.borderLeft) {
@@ -637,17 +642,25 @@ export function layoutPngPages(
       if (!underHeadings) ensure(p.height);
     }
 
+    if (p.b.verseBar && p.b.citation) {
+      const before = pages.length;
+      ensure(p.pt + p.cite + (p.ranges.length ? p.lh : 0) + (p.ranges.length <= 1 ? p.pb : 0));
+      if (pages.length > before && !HEADINGS.has(p.b.type)) carryHeadings(bi);
+      y += p.pt;
+      push("citation", p.ranges.length, 0, p.b.citation.length, p.cSize, p.cLh);
+    }
     p.ranges.forEach(([s, e], li) => {
       const last = li === p.ranges.length - 1;
       const first = li === 0;
       // Rule 2 (oversized Scripture): last line keeps its citation.
       const before = pages.length;
-      ensure((first ? p.pt : 0) + (last && p.cite ? p.lh + p.cite : p.lh) + (last ? p.pb : 0));
+      const firstPad = first && !p.b.verseBar ? p.pt : 0;
+      ensure(firstPad + (last && p.cite && !p.b.verseBar ? p.lh + p.cite : p.lh) + (last ? p.pb : 0));
       if (first && pages.length > before && !HEADINGS.has(p.b.type)) carryHeadings(bi);
-      if (first) y += p.pt;
+      if (first && !p.b.verseBar) y += p.pt;
       push("text", li, s, e, p.sizes[li], p.lh);
     });
-    if (p.b.citation) {
+    if (p.b.citation && !p.b.verseBar) {
       ensure(p.cite + p.pb);
       push("citation", p.ranges.length, 0, p.b.citation.length, p.cSize, p.cLh);
     }
@@ -662,8 +675,12 @@ export function layoutPngPages(
     for (const l of pg.lines) {
       const q = prepared[l.blockIndex];
       if (!q.b.look?.background && !q.b.look?.borderLeft) continue;
-      const isFirst = l.kind === "text" && l.lineIndex === 0;
-      const isLast = l.kind === "citation" || (!q.b.citation && l.lineIndex === q.ranges.length - 1);
+      const isFirst = q.b.verseBar
+        ? (q.b.citation ? l.kind === "citation" : l.kind === "text" && l.lineIndex === 0)
+        : l.kind === "text" && l.lineIndex === 0;
+      const isLast = q.b.verseBar
+        ? (l.kind === "text" && l.lineIndex === q.ranges.length - 1) || (!q.ranges.length && l.kind === "citation")
+        : l.kind === "citation" || (!q.b.citation && l.lineIndex === q.ranges.length - 1);
       const sp = spans.get(l.blockIndex) ?? { y0: l.y, y1: l.y + l.lineHeight, first: false, last: false };
       sp.y0 = Math.min(sp.y0, l.y);
       sp.y1 = Math.max(sp.y1, l.y + l.lineHeight);
@@ -701,6 +718,7 @@ export function toLayoutBlocks(blocks: readonly StyledBlock[]): LayoutBlock[] {
   return blocks.map((b) => ({
     type: b.type,
     citation: b.citation,
+    ...(b.verseBar ? { verseBar: true } : {}),
     text: b.runs.map((r) => r.text).join(""),
     runs: b.runs.map((r) => ({
       text: r.text,

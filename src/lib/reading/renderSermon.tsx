@@ -34,6 +34,7 @@ export type ReadingClassNames = Partial<
     | "quoteBlock"
     | "quote"
     | "citation"
+    | "verseBar"
     | "cue"
     | "titleSub",
     string
@@ -374,16 +375,16 @@ export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode 
       const style = { ...alignStyle(node), fontFamily: VERSE_SNIPPET_FONT_FAMILY };
       return (
         <figure key={key} className={c.scripture} data-verse-snippet="" style={style}>
+          {citation ? (
+            <div className={c.verseBar} data-verse-bar="">
+              <cite>{citation}</cite>
+            </div>
+          ) : null}
           <blockquote className={c.quoteBlock}>
             <p className={c.quote} style={{ fontFamily: VERSE_SNIPPET_FONT_FAMILY }}>
               {text}
             </p>
           </blockquote>
-          {citation ? (
-            <figcaption className={c.citation}>
-              <cite>{citation}</cite>
-            </figcaption>
-          ) : null}
         </figure>
       );
     }

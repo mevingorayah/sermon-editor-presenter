@@ -237,6 +237,7 @@ export const INSERT_TYPES: InsertDef[] = [
   { id: "heading2", label: "Subpoint heading", keywords: "heading h2 sub", json: () => ({ type: "heading", attrs: { level: 2 } }) },
   { id: "paragraph", label: "Paragraph", keywords: "body text paragraph", json: () => ({ type: "paragraph" }) },
   { id: "scripture", label: "Scripture", keywords: "bible verse scripture", json: () => ({ type: "scripture", attrs: { citation: "" } }) },
+  { id: "verseSnippet", label: "Verse snippet", keywords: "bible verse snippet lsg web", json: () => ({ type: "verseSnippet", attrs: { ref: "", translation: "LSG", texts: {} } }) },
   { id: "quote", label: "Quote", keywords: "quote citation", json: () => ({ type: "quote" }) },
   { id: "illustration", label: "Illustration", keywords: "story example illustration", json: () => ({ type: "illustration" }) },
   {
@@ -282,6 +283,7 @@ export function insertBlockInColumn(editor: Editor, colPos: number, at: number, 
 
 export const TYPE_LABEL: Record<string, string> = {
   title: "Title", heading: "Heading", paragraph: "Paragraph", scripture: "Scripture",
+  verseSnippet: "Verse snippet",
   quote: "Quote", illustration: "Illustration", section: "Section",
 };
 

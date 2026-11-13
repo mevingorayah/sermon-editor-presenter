@@ -159,6 +159,7 @@ function Line({
       className={styles.line}
       data-line=""
       data-kind={l.kind}
+      data-verse-bar={l.verseBar ? "" : undefined}
       data-block={l.blockType}
       data-bi={l.blockIndex}
       data-soft-end={l.softEnd ? "" : undefined}

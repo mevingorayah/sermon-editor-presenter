@@ -179,5 +179,58 @@ function nodePlain(node: { textBetween?: (f: number, t: number, s: string, bl?: 
   return n.textBetween(0, n.content.size, "\n", "\n");
 }
 
+
+describe("verse snippet is a builder block", () => {
+  const snippet = {
+    type: "verseSnippet",
+    attrs: { ref: "Jn 3:16", translation: "LSG", texts: { LSG: "Made-up verse snippet line." } },
+  };
+
+  it("can be inserted, duplicated, deleted and dropped into a column", () => {
+    const ed = editorWith({
+      type: "doc",
+      content: [para("Alpha block"), snippet, para("Charlie block")],
+    });
+    assert.equal(INSERT_TYPES.some((t) => t.id === "verseSnippet"), true);
+    const first = collectBlocks(ed).find((b) => b.node.type.name === "verseSnippet");
+    assert.ok(first);
+    assert.equal(first!.parentType, "doc");
+    assert.equal(first!.node.attrs.ref, "Jn 3:16");
+    assert.equal(first!.node.attrs.texts.LSG, "Made-up verse snippet line.");
+
+    duplicateBlockAt(ed, first!.pos);
+    const verses = () => collectBlocks(ed).filter((b) => b.node.type.name === "verseSnippet");
+    assert.equal(verses().length, 2);
+    assert.equal(verses()[1].node.attrs.texts.LSG, "Made-up verse snippet line.");
+
+    const sectionDef = INSERT_TYPES.find((t) => t.id === "section2");
+    assert.ok(sectionDef);
+    // Insert the section after Charlie (index 4 once the duplicate is in place:
+    // Alpha, verse, verse, Charlie).
+    const tops = topBlocks(ed);
+    insertBlockAt(ed, tops.length, sectionDef!);
+    const section = topBlocks(ed).find((b) => b.node.type.name === "section");
+    assert.ok(section);
+    const firstColPos = section!.pos + 1;
+    const firstCol = ed.state.doc.nodeAt(firstColPos);
+    assert.equal(firstCol?.type.name, "column");
+    const insertAt = firstColPos + firstCol!.nodeSize - 1;
+    const moving = verses()[0];
+    assert.equal(moveNode(ed, moving.pos, insertAt), true);
+    const inCol = collectBlocks(ed).filter((b) => b.node.type.name === "verseSnippet" && b.parentType === "column");
+    assert.equal(inCol.length, 1);
+    assert.equal(inCol[0].node.attrs.texts.LSG, "Made-up verse snippet line.");
+    assert.equal(verses().length, 2);
+
+    const leftover = verses().find((b) => b.parentType === "doc");
+    assert.ok(leftover);
+    deleteBlockAt(ed, leftover!.pos);
+    assert.equal(verses().length, 1);
+    assert.equal(verses()[0].parentType, "column");
+    assert.equal(verses()[0].node.attrs.texts.LSG, "Made-up verse snippet line.");
+    ed.destroy();
+  });
+});
+
 void insertBlockAt;
 void INSERT_TYPES;

@@ -65,11 +65,14 @@ describe("verseSnippet in Preach and exports", () => {
     assert.equal(styled[1].runs[0].fontFamily, "literata");
     assert.equal(styled[1].runs[0].fontExplicit, true);
     assert.equal(styled[1].citation, "Jean 3:16 · WEB");
+    assert.equal(styled[1].verseBar, true);
+    assert.notEqual(styled[0].verseBar, true);
   });
 
   it("renders in Preach with the serif stack and no edit chrome", () => {
     const html = renderToStaticMarkup(renderSermon(content, { bionic: false, theme: "light" }));
     assert.match(html, /data-verse-snippet=""/);
+    assert.match(html, /data-verse-bar=""/);
     assert.match(html, /FIXTURE WEB: made-up test verse\./);
     assert.match(html, /Jean 3:16 · WEB/);
     assert.match(html, /--font-literata/);

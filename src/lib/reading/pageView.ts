@@ -1,13 +1,13 @@
 import type { JSONContent } from "@tiptap/react";
 import type { PresentationSettings } from "@/types/document";
 import type { GlobalStyles } from "@/lib/sermon/blockStyle";
-import { lookAlign, lookRole } from "@/lib/sermon/export/blockLook";
+import { cssAlign, lookRole } from "@/lib/sermon/export/blockLook";
 import { sliceRuns } from "@/lib/sermon/export/pages";
 import { layoutSnapshot, pageSpecFromSnapshot, roleStyle } from "@/lib/sermon/export/pngLayout";
 import { bionicMeasurer } from "@/lib/sermon/export/textMeasure";
 import { pageGeometry } from "@/lib/sermon/export/frames";
 import { snapshotFor } from "@/lib/reading/pageSettings";
-import { citationCaps, type StyledBlock, type StyledRun } from "@/lib/sermon/export/contentWalk";
+import { citationDisplay, type StyledBlock, type StyledRun } from "@/lib/sermon/export/contentWalk";
 import type { PngFrame } from "@/lib/sermon/export/pngLayout";
 
 /**
@@ -18,6 +18,8 @@ import type { PngFrame } from "@/lib/sermon/export/pngLayout";
 export interface PageViewLine {
   key: string;
   kind: "text" | "citation";
+  /** True when this citation line is a verse-snippet top bar. */
+  verseBar?: boolean;
   blockType: StyledBlock["type"];
   blockIndex: number;
   lineIndex: number;
@@ -67,19 +69,20 @@ export function buildPageView(opts: { content: JSONContent; settings: Presentati
     pages: pages.map((pg, pi) =>
       pg.lines.map((l, li) => {
         const block = styled[l.blockIndex];
-        const cite = citationCaps(block.citation ?? "");
+        const shown = l.kind === "citation" ? citationDisplay(block).text : "";
         const raw =
           l.kind === "citation"
-            ? [{ run: { text: cite, fontFamily: "serif" } as StyledRun, text: cite }]
+            ? [{ run: { text: shown, fontFamily: "serif" } as StyledRun, text: shown }]
             : sliceRuns(block, l.start, l.end);
         const { tokens, softEnd } = trimTrailing(raw);
         return {
           key: `${pi}-${li}`,
           kind: l.kind,
+          verseBar: l.kind === "citation" && !!block.verseBar,
           blockType: block.type,
           blockIndex: l.blockIndex,
           lineIndex: l.lineIndex,
-          align: l.kind === "citation" ? "right" : lookAlign(block.look, block.align),
+          align: l.kind === "citation" ? citationDisplay(block).align : cssAlign(block.look, block.align),
           y: l.y,
           size: l.size,
           lineHeight: l.lineHeight,

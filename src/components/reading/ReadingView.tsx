@@ -31,6 +31,7 @@ const classes = {
   quoteBlock: styles.quoteBlock,
   quote: styles.quote,
   citation: styles.citation,
+  verseBar: styles.verseBar,
   cue: styles.cue,
   titleSub: styles.titleSub,
 };

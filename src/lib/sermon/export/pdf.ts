@@ -10,7 +10,7 @@ import {
   type StyledBlock,
   type StyledRun,
   type TextAlign,
-  citationCaps,
+  citationDisplay,
 } from "./contentWalk";
 import { pdfkitFont, type FontFamilyId } from "./fonts";
 import { exportFontName, fallbackFontName } from "./textMeasure";
@@ -183,11 +183,12 @@ function writeBlock(
         defaultFont: "serif",
       });
       if (block.citation) {
+        const shown = citationDisplay(block);
         doc
           .font("Times-Roman")
           .fontSize(fontSize(step, "caption"))
           .fillColor("#555555")
-          .text(citationCaps(block.citation), { align: "right" });
+          .text(shown.text, { align: shown.align });
       }
       doc.moveDown(0.6);
       break;
@@ -268,11 +269,12 @@ export async function buildPdf(
         const baseline = P(line.y + line.size);
         const fs = P(line.size);
         if (line.kind === "citation") {
-          const text = citationCaps(block.citation ?? "");
+          const shownCite = citationDisplay(block);
           doc.font(fontFor("serif", {})).fontSize(fs).fillColor(pal.muted);
-          const shown = safeGlyphs(doc, text);
+          const shown = safeGlyphs(doc, shownCite.text);
           const w = doc.widthOfString(shown, { features: NO_LIGA });
-          doc.text(shown, Math.max(P(lx), P(lx + lw) - w), baseline, { lineBreak: false, baseline: "alphabetic", features: NO_LIGA });
+          const x = shownCite.align === "left" ? P(lx) : Math.max(P(lx), P(lx + lw) - w);
+          doc.text(shown, x, baseline, { lineBreak: false, baseline: "alphabetic", features: NO_LIGA });
           continue;
         }
         const role = lookRole(roleStyle(block.type), block.look);

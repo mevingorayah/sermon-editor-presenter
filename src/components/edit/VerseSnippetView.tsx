@@ -4,7 +4,7 @@ import {
   NodeViewWrapper,
   type NodeViewProps,
 } from "@tiptap/react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type MouseEvent } from "react";
 import {
   TRANSLATIONS,
   VERSE_SNIPPET_FONT_FAMILY,
@@ -20,9 +20,12 @@ import styles from "./VerseSnippet.module.css";
 
 /**
  * Edit chrome for the self-contained `verseSnippet` node.
- * The block builder can wrap this node later; this view does not depend on it.
+ * The block builder wraps the selected node with drag / duplicate / delete
+ * chrome; this view does not depend on that wrapper. Clicks on the passage
+ * reach the editor so the wrapper can appear; only the bar's controls stop
+ * propagation so typing a reference does not leak into the document.
  */
-export function VerseSnippetView({ node, updateAttributes, selected }: NodeViewProps) {
+export function VerseSnippetView({ node, updateAttributes, selected, editor, getPos }: NodeViewProps) {
   const attrs = normalizeAttrs(node.attrs);
   const { ref, translation, texts } = attrs;
   const passage = currentPassageText(attrs);
@@ -130,6 +133,11 @@ export function VerseSnippetView({ node, updateAttributes, selected }: NodeViewP
     event.stopPropagation();
   };
 
+  const selectAtom = () => {
+    const pos = getPos();
+    if (typeof pos === "number") editor.chain().focus().setNodeSelection(pos).run();
+  };
+
   return (
     <NodeViewWrapper
       as="div"
@@ -139,10 +147,13 @@ export function VerseSnippetView({ node, updateAttributes, selected }: NodeViewP
       data-translation={translation}
       data-selected={selected ? "true" : "false"}
       contentEditable={false}
-      onMouseDown={stop}
-      onKeyDown={stop}
+      onMouseDown={(event: MouseEvent<HTMLElement>) => {
+        const t = event.target as HTMLElement | null;
+        if (t?.closest("input, select, textarea, button, a")) return;
+        selectAtom();
+      }}
     >
-      <div className={styles.bar} role="group" aria-label="Verse snippet">
+      <div className={styles.bar} role="group" aria-label="Verse snippet" onMouseDown={stop} onKeyDown={stop}>
         <label className={styles.field} htmlFor={refInputId}>
           <span className="visually-hidden">Reference</span>
           <input

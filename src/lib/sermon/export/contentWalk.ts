@@ -37,6 +37,8 @@ export interface StyledBlock {
   citation?: string;
   letterSpacing?: string;
   lineSpacing?: string;
+  /** When true, the citation is drawn as a top bar (verse snippets). */
+  verseBar?: boolean;
   /** Block-builder look (globalStyles + attrs); absent on unstyled blocks. */
   look?: BlockLook;
   /** Set when the block sits in a section column. */
@@ -243,6 +245,7 @@ function blockFromTipTap(node: JSONContent, globals?: GlobalStyles): StyledBlock
           ? [{ text, fontFamily: VERSE_SNIPPET_EXPORT_FONT, fontExplicit: true }]
           : [],
         citation: citation || undefined,
+        verseBar: true,
       };
     }
     default:
@@ -332,6 +335,13 @@ export function withNotesSection(
 /** Scripture citations print in capitals in every export, matching Preach (#5). */
 export function citationCaps(citation: string): string {
   return citation.toLocaleUpperCase("fr");
+}
+
+/** Verse-snippet top bars stay mixed-case and left-aligned; Scripture captions stay uppercase and right. */
+export function citationDisplay(block: { citation?: string; verseBar?: boolean }): { text: string; align: "left" | "right" } {
+  const text = block.citation ?? "";
+  if (block.verseBar) return { text, align: "left" };
+  return { text: citationCaps(text), align: "right" };
 }
 
 /**

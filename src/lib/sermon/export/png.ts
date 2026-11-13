@@ -7,7 +7,7 @@ import {
   DEFAULT_ACCENT_LIGHT,
   toHexRgb,
 } from "./colors";
-import { citationCaps, type StyledBlock, type StyledRun } from "./contentWalk";
+import { citationDisplay, type StyledBlock, type StyledRun } from "./contentWalk";
 import { layoutSnapshot, roleStyle, type PngPage, type SnapshotLayout } from "./pngLayout";
 import { lookAlign, lookRole } from "./blockLook";
 import { afmMeasurer, FALLBACK_FAMILY, letterSpacingEm, metricCompatibleCss, splitByCoverage } from "./textMeasure";
@@ -120,8 +120,11 @@ function pageSvg(layout: SnapshotLayout, page: PngPage, p: Palette): string {
     const lw = line.width ?? f.contentWidth;
     const baseline = (line.y + line.size).toFixed(2);
     if (line.kind === "citation") {
+      const shown = citationDisplay(block);
+      const anchor = shown.align === "left" ? "start" : "end";
+      const x = shown.align === "left" ? lx : lx + lw;
       parts.push(
-        `<text x="${lx + lw}" y="${baseline}" text-anchor="end" fill="${escapeXml(p.muted)}" font-size="${line.size}" font-family="${escapeXml(metricCompatibleCss("serif"))}">${escapeXml(citationCaps(block.citation ?? ""))}</text>`,
+        `<text x="${x}" y="${baseline}" text-anchor="${anchor}" fill="${escapeXml(p.muted)}" font-size="${line.size}" font-family="${escapeXml(metricCompatibleCss("serif"))}">${escapeXml(shown.text)}</text>`,
       );
       continue;
     }

@@ -74,7 +74,13 @@ export function lookRole(
 }
 
 /** Export alignment (justify is drawn left-aligned: lines are placed one by one). */
-export function lookAlign(look: BlockLook | undefined, fallback: "left" | "center" | "right"): "left" | "center" | "right" {
-  const a = look?.align;
-  return a === "center" || a === "right" || a === "left" ? a : a === "justify" ? "left" : fallback;
+export function lookAlign(look: BlockLook | undefined, fallback: "left" | "center" | "right" | "justify"): "left" | "center" | "right" {
+  const a = look?.align ?? fallback;
+  return a === "center" || a === "right" ? a : "left";
+}
+
+/** Preach page view can honour justify (CSS); raster exports use lookAlign. */
+export function cssAlign(look: BlockLook | undefined, fallback: "left" | "center" | "right" | "justify"): "left" | "center" | "right" | "justify" {
+  const a = look?.align ?? fallback;
+  return a === "center" || a === "right" || a === "justify" ? a : "left";
 }

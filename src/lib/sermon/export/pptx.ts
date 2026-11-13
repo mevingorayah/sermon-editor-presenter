@@ -1,6 +1,6 @@
 import PptxGenJS from "pptxgenjs";
 import type { CalibratedSnapshot } from "@/types/document";
-import { citationCaps, titleTextFromSnapshot } from "./contentWalk";
+import { citationDisplay, titleTextFromSnapshot } from "./contentWalk";
 import { blockColor, paletteFor, sliceRuns, splitRunsByGlyph, trimRunsEnd, type GlyphRun } from "./png";
 import { frameSizeInches, pxPerInch, pxPerPt, type PageInput } from "./frames";
 import { layoutSnapshot, roleStyle } from "./pngLayout";
@@ -117,8 +117,9 @@ export async function buildPptx(
         margin: 0, valign: "top" as const, wrap: false, fit: "none" as const,
       };
       if (line.kind === "citation") {
-        slide.addText(citationCaps(block.citation ?? ""), {
-          ...box, align: "right", fontSize: pt(line.size), color: hex(p.muted),
+        const shown = citationDisplay(block);
+        slide.addText(shown.text, {
+          ...box, align: shown.align, fontSize: pt(line.size), color: hex(p.muted),
           fontFace: metricCompatibleOffice("serif"),
         });
         continue;
