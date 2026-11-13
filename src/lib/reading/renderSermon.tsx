@@ -1,8 +1,18 @@
 /** @jsxRuntime automatic */
+import { FIELD, blockCss, sanitizeSpacing, sanitizeStyle, type BlockSpacing, type BlockStyle } from "../builder/blockAttrs";
+import { effectiveBlockSizePt } from "../sermon/blockStyle";
+import { cssTextToReactStyle } from "../cssText";
 import { Fragment, type CSSProperties, type ReactNode } from "react";
 import type { JSONContent } from "@tiptap/react";
 import { bionicParts } from "@/lib/bionic";
-import { effectiveDarkBackground, readingHighlightColor, readingTextColor } from "./contrast";
+import { displayHighlightColor, displayTextColor } from "./contrast";
+import { FORMAT_THEME, type FormatTheme } from "@/lib/sermon/export/frames";
+import {
+  VERSE_SNIPPET_FONT_FAMILY,
+  currentPassageText,
+  normalizeAttrs,
+  translationLabel,
+} from "@/lib/sermon/verseSnippet";
 
 /**
  * Preach renderer: walks the sermon's ProseMirror JSON (the shared schema in
@@ -24,6 +34,7 @@ export type ReadingClassNames = Partial<
     | "quoteBlock"
     | "quote"
     | "citation"
+    | "verseBar"
     | "cue"
     | "titleSub",
     string
@@ -32,24 +43,31 @@ export type ReadingClassNames = Partial<
 
 export interface RenderOptions {
   bionic: boolean;
+  /** 0.1–1; ignored when bionic is off. Default 0.45. */
+  bionicStrength?: number;
   theme: "light" | "dark";
+  /** #43 format group: print vs screen-dark. Overrides theme when set. */
+  formatTheme?: FormatTheme;
   classes?: ReadingClassNames;
 }
 
 interface Ctx extends RenderOptions {
   classes: ReadingClassNames;
-  /** Bionic disabled for this subtree (Scripture). */
+  /** Bionic disabled for this subtree (code blocks). */
   plain: boolean;
-  /** Dark-theme background behind the current text run (highlight or page). */
+  /** Background behind the current text run (highlight or page). */
   textBg?: string;
+  formatTheme: FormatTheme;
 }
 
 /** Every node/mark type this renderer handles explicitly (see drift test). */
 export const RENDERED_NODES = [
-  "doc", "paragraph", "text", "title", "heading", "scripture", "bulletList",
+  "doc", "paragraph", "text", "title", "heading", "scripture", "verseSnippet", "bulletList",
   "orderedList", "listItem", "hardBreak", "horizontalRule",
   // Disabled in the sermon schema but rendered if old docs contain them.
   "blockquote", "codeBlock",
+  // Block builder.
+  "quote", "illustration", "section", "column",
 ];
 export const RENDERED_MARKS = [
   "bold", "italic", "underline", "strike", "code", "link", "textStyle",
@@ -102,18 +120,26 @@ function spacingStyle(attrs: Record<string, unknown> | undefined): CSSProperties
   return style;
 }
 
+function builderStyle(node: JSONContent): CSSProperties | undefined {
+  const st = node.attrs?.[FIELD.style] as BlockStyle | null | undefined;
+  const sp = node.attrs?.[FIELD.spacing] as BlockSpacing | null | undefined;
+  if (!st && !sp) return undefined;
+  const style = sanitizeStyle(st);
+  const shown = style?.size !== undefined ? { ...style, size: effectiveBlockSizePt(style) } : style;
+  return cssTextToReactStyle(blockCss(shown, sanitizeSpacing(sp)));
+}
+
 function alignStyle(node: JSONContent): CSSProperties | undefined {
   const a = textAlignOf(node);
-  const spacing = spacingStyle(node.attrs);
-  const style: CSSProperties = { ...spacing };
+  const style: CSSProperties = { ...spacingStyle(node.attrs), ...builderStyle(node) };
   if (a) style.textAlign = a;
   return Object.keys(style).length ? style : undefined;
 }
 
 const SAFE_HREF = /^(https?:|mailto:|tel:|#|\/)/i;
 
-function bionicLeaf(text: string, inBold: boolean): ReactNode {
-  return bionicParts(text).map((part, i) => {
+function bionicLeaf(text: string, inBold: boolean, strength?: number): ReactNode {
+  return bionicParts(text, strength).map((part, i) => {
     if (!part.bold) return <span key={i}>{part.text}</span>;
     // Inside a user bold mark, bionic adds weight contrast instead of a
     // second <strong>, so the user's bold is never replaced.
@@ -136,9 +162,16 @@ function renderText(node: JSONContent, ctx: Ctx, key: string): ReactNode {
   const hl = marks.find((m) => m.type === "highlight");
   const hlColor = typeof hl?.attrs?.color === "string" && hl.attrs.color ? hl.attrs.color : null;
   const hlPreset = typeof hl?.attrs?.preset === "string" ? hl.attrs.preset : null;
-  ctx = { ...ctx, textBg: effectiveDarkBackground(hlColor, Boolean(hl), hlPreset) };
+  const fmt = ctx.formatTheme;
+  const pageBg = FORMAT_THEME[fmt].pageBackground;
+  ctx = {
+    ...ctx,
+    textBg: hl
+      ? displayHighlightColor(hlColor || "#FFF176", fmt)
+      : pageBg,
+  };
   let out: ReactNode =
-    ctx.bionic && !ctx.plain ? bionicLeaf(text, inBold) : text;
+    ctx.bionic && !ctx.plain ? bionicLeaf(text, inBold, ctx.bionicStrength) : text;
   // Wrap innermost-last so marks[0] is the outermost element, like ProseMirror.
   for (let i = marks.length - 1; i >= 0; i--) {
     out = wrapMark(marks[i], out, ctx, i);
@@ -185,7 +218,12 @@ function wrapMark(
     case "textStyle": {
       const style: CSSProperties = {};
       if (typeof attrs.color === "string" && attrs.color) {
-        style.color = readingTextColor(attrs.color, ctx.theme, ctx.textBg);
+        style.color = displayTextColor(
+          attrs.color,
+          ctx.textBg ?? FORMAT_THEME[ctx.formatTheme].pageBackground,
+          ctx.formatTheme,
+          { highlight: !!ctx.textBg && ctx.textBg !== FORMAT_THEME[ctx.formatTheme].pageBackground },
+        );
       }
       if (typeof attrs.fontFamily === "string" && attrs.fontFamily) {
         style.fontFamily = attrs.fontFamily;
@@ -208,7 +246,10 @@ function wrapMark(
           key={i}
           className="sermon-highlight"
           data-color={color ?? undefined}
-          style={color ? { backgroundColor: readingHighlightColor(color, ctx.theme, preset) } : undefined}
+          style={{
+            ...(color ? { backgroundColor: displayHighlightColor(color, ctx.formatTheme) } : {}),
+            ...(ctx.formatTheme === "screen-dark" ? { color: FORMAT_THEME.print.text } : {}),
+          }}
         >
           {children}
         </mark>
@@ -276,6 +317,30 @@ export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode 
       return <br key={key} />;
     case "horizontalRule":
       return <hr key={key} className={c.rule} />;
+    case "quote":
+      return (
+        <blockquote key={key} className="sermon-quote" data-quote="" style={alignStyle(node)}>
+          {children(node, ctx)}
+        </blockquote>
+      );
+    case "illustration":
+      return (
+        <div key={key} className="sermon-illustration" data-illustration="" style={alignStyle(node)}>
+          {children(node, ctx)}
+        </div>
+      );
+    case "section":
+      return (
+        <section key={key} className="sermon-section" data-section="" data-columns={String(node.attrs?.columns ?? 1)} style={alignStyle(node)}>
+          {children(node, ctx)}
+        </section>
+      );
+    case "column":
+      return (
+        <div key={key} className="sermon-column" data-column="">
+          {children(node, ctx)}
+        </div>
+      );
     case "blockquote":
       return <blockquote key={key}>{children(node, ctx)}</blockquote>;
     case "codeBlock":
@@ -287,17 +352,39 @@ export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode 
     case "scripture": {
       const citation = typeof node.attrs?.citation === "string" ? node.attrs.citation : "";
       // Body follows the node's TextAlign; the citation is always caption-right
-      // below the quote (slice 1 spec, Align). Scripture never gets bionic.
+      // below the quote (slice 1 spec, Align). Scripture quote body is Bionic when on.
       return (
         <figure key={key} className={c.scripture} data-scripture="" style={alignStyle(node)}>
           <blockquote className={c.quoteBlock}>
-            <p className={c.quote}>{children(node, { ...ctx, plain: true })}</p>
+            <p className={c.quote}>{children(node, { ...ctx, plain: false })}</p>
           </blockquote>
           {citation ? (
             <figcaption className={c.citation}>
               <cite>{citation}</cite>
             </figcaption>
           ) : null}
+        </figure>
+      );
+    }
+    case "verseSnippet": {
+      const attrs = normalizeAttrs(node.attrs);
+      const text = currentPassageText(attrs);
+      const citation = [attrs.ref, translationLabel(attrs.translation)]
+        .filter(Boolean)
+        .join(" · ");
+      const style = { ...alignStyle(node), fontFamily: VERSE_SNIPPET_FONT_FAMILY };
+      return (
+        <figure key={key} className={c.scripture} data-verse-snippet="" style={style}>
+          {citation ? (
+            <div className={c.verseBar} data-verse-bar="">
+              <cite>{citation}</cite>
+            </div>
+          ) : null}
+          <blockquote className={c.quoteBlock}>
+            <p className={c.quote} style={{ fontFamily: VERSE_SNIPPET_FONT_FAMILY }}>
+              {text}
+            </p>
+          </blockquote>
         </figure>
       );
     }
@@ -309,7 +396,8 @@ export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode 
 
 /** Render the blocks of a sermon document for Preach. */
 export function renderSermon(content: JSONContent, opts: RenderOptions): ReactNode {
-  const ctx: Ctx = { ...opts, classes: opts.classes ?? {}, plain: false };
+  const formatTheme = opts.formatTheme ?? (opts.theme === "dark" ? "screen-dark" : "print");
+  const ctx: Ctx = { ...opts, formatTheme, classes: opts.classes ?? {}, plain: false };
   const blocks = content.content ?? [];
   return blocks.map((n, i) => {
     if (isTitleSubline(blocks[i - 1], n)) {

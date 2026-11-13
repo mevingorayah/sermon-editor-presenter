@@ -5,8 +5,8 @@
  * other colour, and every colour in the light theme, is returned unchanged.
  */
 
-import { highlightPresetByIdOrColor } from "@/lib/writing/colors";
 import type { FormatTheme } from "@/lib/sermon/export/frames";
+import { highlightPresetByIdOrColor } from "@/lib/writing/colors";
 
 
 export const DARK_STAGE_BG = "#141210"; // --rm-bg (dark), reading-mode.css

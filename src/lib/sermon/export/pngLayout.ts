@@ -1,6 +1,8 @@
 import { snapshotLineSpacing } from "./frames";
 import type { CalibratedSnapshot } from "@/types/document";
-import { styledBlocksFromSnapshot, titleTextFromSnapshot, type StyledBlock } from "./contentWalk";
+import { citationDisplay, styledBlocksFromSnapshot, titleTextFromSnapshot, type BlockColumn, type StyledBlock } from "./contentWalk";
+import { effectiveBlockSizePt } from "../blockStyle";
+import { BORDER_LEFT_CSS_PX, SECTION_GAP_CSS_PX, lookRole, type BlockLook } from "./blockLook";
 import { DEFAULT_MARGINS, resolveMargins } from "./margins";
 import { PAGE_LIMITS, clamp, pngFrameSize, pxPerInch, pxPerPt, resolvePage, type PageInput, type PageSpec } from "./frames";
 import type { FontFamilyId } from "./fonts";
@@ -55,12 +57,20 @@ export interface LayoutBlock {
   /** Plain text of the block (runs joined). */
   text: string;
   citation?: string;
+  /** When true, the citation is a top bar (verse snippets), not a right-aligned caption. */
+  verseBar?: boolean;
   /**
    * Optional style runs whose texts concatenate to `text`; they set the font
    * family / bold / italic used to measure each character. Without runs the
    * whole block is measured in the role's default style (sans).
    */
-  runs?: ReadonlyArray<{ text: string; fontFamily?: FontFamilyId; bold?: boolean; italic?: boolean }>;
+  runs?: ReadonlyArray<{ text: string; fontFamily?: FontFamilyId; bold?: boolean; italic?: boolean; letterSpacing?: string; lineSpacing?: string }>;
+  letterSpacing?: string;
+  lineSpacing?: string;
+  /** Block-builder look (size, weight, spacing, box…); absent = legacy layout. */
+  look?: BlockLook;
+  /** Section column the block sits in. */
+  column?: BlockColumn;
 }
 
 /** Options shared by the layout entry points. */
@@ -91,10 +101,26 @@ export interface PngPageLine {
   y: number;
   size: number;
   lineHeight: number;
+  /** Styled / column blocks only: left edge and width of the line's text box. */
+  x?: number;
+  width?: number;
+}
+
+/** A filled box and/or left rule behind a styled block or section (px). */
+export interface PngBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  fill?: string;
+  border?: string;
+  borderWidth: number;
 }
 
 export interface PngPage {
   lines: PngPageLine[];
+  /** Present only when a page has styled boxes (drawn before the text). */
+  boxes?: PngBox[];
 }
 
 export interface PngFrame {
@@ -131,7 +157,7 @@ export interface StyleSegment {
 
 /** Style segments for a block (role style merged with each run). */
 export function blockSegments(b: LayoutBlock): StyleSegment[] {
-  const role = roleStyle(b.type);
+  const role = lookRole(roleStyle(b.type), b.look);
   if (!b.runs || b.runs.length === 0 || b.runs.map((r) => r.text).join("") !== b.text) {
     return [{ start: 0, end: b.text.length, style: { font: "sans", ...role } }];
   }
@@ -254,6 +280,20 @@ export function wrapLineRanges(
  * Sizes: body ≥ 24 pt via pngTypeScale(); renderers must draw each line with
  * its `size` / `lineHeight` from here, never their own constants.
  */
+
+function parseLineSpacing(raw: string | number | undefined): number | null {
+  if (raw == null || raw === "") return null;
+  const n = typeof raw === "number" ? raw : parseFloat(String(raw));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Block or run line-spacing, else the document value (already clamped by the caller). */
+function blockLineHeight(b: LayoutBlock, fallback: number): number {
+  const fromRuns = (b.runs ?? []).map((r) => parseLineSpacing(r.lineSpacing)).find((n) => n != null);
+  const n = fromRuns ?? parseLineSpacing(b.lineSpacing) ?? fallback;
+  return n;
+}
+
 export function layoutPngPages(
   blocks: readonly LayoutBlock[],
   target: PageInput,
@@ -280,18 +320,45 @@ export function layoutPngPages(
   const minPx = MIN_BODY_PT * pxPerPt(target); // nothing on a page is smaller than 24 pt
   const citeSize = Math.max(CITATION_SIZE * k, minPx);
   const citeLh = Math.max(CITATION_LH * k, citeSize * (CITATION_LH / CITATION_SIZE));
-  const prepared = blocks.map((b) => {
+  const measure = opts.measure ?? afmMeasurer;
+  const cssPx = pxPerInch(target) / 96; // Edit's CSS px are 1/96 in
+  const sectionGap = SECTION_GAP_CSS_PX * cssPx;
+
+  /** Size, line breaks and box geometry of one block placed in [colX, colX + colW]. */
+  const prepare = (b: LayoutBlock, colX: number, colW: number) => {
+    const styled = !!b.look || !!b.column;
+    const sp = b.look?.spacing ?? {};
+    const borderW = b.look?.borderLeft ? BORDER_LEFT_CSS_PX * cssPx : 0;
+    let padL = (sp.pl ?? 0) * cssPx + borderW;
+    let padR = (sp.pr ?? 0) * cssPx;
+    if (padL + padR > colW / 2 && padL + padR > 0) {
+      const sc = colW / 2 / (padL + padR);
+      padL *= sc;
+      padR *= sc;
+    }
+    let pt = (sp.pt ?? 0) * cssPx;
+    let pb = (sp.pb ?? 0) * cssPx;
+    if (pt + pb > avail / 4 && pt + pb > 0) {
+      const sc = avail / 4 / (pt + pb);
+      pt *= sc;
+      pb *= sc;
+    }
+    const mt = Math.min((sp.mt ?? 0) * cssPx, avail / 4);
+    const width = colW - padL - padR;
     const base = roleSize(b.type);
     const r = {
-      size: Math.max(base.size * k, minPx),
-      gap: opts.paragraphSpacingPt === undefined
-        ? base.gap * k
-        : clamp(opts.paragraphSpacingPt, PAGE_LIMITS.paragraphSpacingPt) * pxPerPt(target),
+      size: b.look?.sizePt !== undefined
+        ? effectiveBlockSizePt({ size: b.look.sizePt }, null, MIN_BODY_PT) * pxPerPt(target)
+        : Math.max(base.size * k, minPx),
+      gap: sp.mb !== undefined
+        ? Math.min(sp.mb * cssPx, avail / 4)
+        : opts.paragraphSpacingPt === undefined
+          ? base.gap * k
+          : clamp(opts.paragraphSpacingPt, PAGE_LIMITS.paragraphSpacingPt) * pxPerPt(target),
     };
     const segs = blockSegments(b);
-    const measure = opts.measure ?? afmMeasurer;
     // Fit: one line never taller than the content box.
-    r.size = Math.max(minPx, Math.min(r.size, avail / lineHeight));
+    r.size = Math.max(minPx, Math.min(r.size, (avail - pt - pb) / lineHeight));
     const heading = HEADINGS.has(b.type);
     if (heading) {
       // UX heading rule: break only between words (Jésus-Christ stays whole);
@@ -300,33 +367,34 @@ export function layoutPngPages(
       for (const [a, z] of breakWords(b.text)) {
         widest = Math.max(widest, measureRange(b.text, a, z, r.size, segs, measure));
       }
-      if (widest > f.contentWidth) r.size = Math.max(minPx, r.size * (f.contentWidth / widest) * 0.999);
+      if (widest > width) r.size = Math.max(minPx, r.size * (width / widest) * 0.999);
     }
-    const lh = r.size * lineHeight;
+    const blockLh = blockLineHeight(b, lineHeight);
+    const lh = r.size * blockLh;
     // Body breaks only between words; a lone word wider than the column
     // shrinks just its own line to fit. Headings split a word only if it is
     // still wider than the column at 24 pt.
-    let ranges = wrapLineRanges(b.text, r.size, f.contentWidth, segs, opts.measure, heading);
+    let ranges = wrapLineRanges(b.text, r.size, width, segs, opts.measure, heading);
     const lineW = ([a, z]: [number, number], size: number) =>
       measureRange(b.text, a, a + b.text.slice(a, z).trimEnd().length, size, segs, measure);
     let sizes = ranges.map((rg) => {
       const w = lineW(rg, r.size);
-      return w > f.contentWidth ? Math.max(minPx, r.size * (f.contentWidth / w) * 0.999) : r.size;
+      return w > width ? Math.max(minPx, r.size * (width / w) * 0.999) : r.size;
     });
-    if (ranges.some((rg, i) => lineW(rg, sizes[i]) > f.contentWidth + 0.5)) {
+    if (ranges.some((rg, i) => lineW(rg, sizes[i]) > width + 0.5)) {
       // A lone word wider than the column even at 24 pt: split only that
       // line, at 24 pt (soft breaks after / … – — first). Re-wrapping the
       // whole block with splitting split every line mid-word at large sizes.
       const nr: Array<[number, number]> = [];
       const ns: number[] = [];
       ranges.forEach((rg, i) => {
-        if (lineW(rg, sizes[i]) <= f.contentWidth + 0.5) {
+        if (lineW(rg, sizes[i]) <= width + 0.5) {
           nr.push(rg);
           ns.push(sizes[i]);
           return;
         }
         const sub = rg[0];
-        for (const [a, z] of wrapLineRanges(b.text.slice(sub, rg[1]), minPx, f.contentWidth,
+        for (const [a, z] of wrapLineRanges(b.text.slice(sub, rg[1]), minPx, width,
           segs.map((g) => ({ ...g, start: g.start - sub, end: g.end - sub })), opts.measure, true)) {
           nr.push([a + sub, z + sub]);
           ns.push(minPx);
@@ -339,16 +407,64 @@ export function layoutPngPages(
     let cSize = citeSize;
     let cLh = citeLh;
     if (b.citation) {
-      const cw = measure(b.citation.toLocaleUpperCase("fr"), cSize, { font: "serif" });
-      if (cw > f.contentWidth) {
-        const k2 = Math.max(minPx / cSize, (f.contentWidth / cw) * 0.999);
+      const cw = measure(citationDisplay(b).text, cSize, { font: "serif" });
+      if (cw > width) {
+        const k2 = Math.max(minPx / cSize, (width / cw) * 0.999);
         cSize *= k2;
         cLh *= k2;
       }
     }
     const cite = b.citation ? cLh : 0;
-    return { b, r, lh, ranges, sizes, cite, cSize, cLh, height: ranges.length * lh + cite };
-  });
+    return {
+      b, r, lh, ranges, sizes, cite, cSize, cLh, styled, x: colX + padL, w: width,
+      boxX: colX, boxW: colW, borderW, pt, pb, mt,
+      height: pt + ranges.length * lh + cite + pb,
+    };
+  };
+  type Prepared = ReturnType<typeof prepare>;
+
+  const prepared: Prepared[] = new Array(blocks.length);
+  const sideBySide = new Set<number>();
+  const groups = new Map<number, number[]>();
+  function sectionHeight(idx: number[]): number {
+    const cols = new Map<number, number>();
+    for (const bi of idx) {
+      const p = prepared[bi];
+      const ci = blocks[bi].column!.index;
+      const prev = cols.get(ci);
+      cols.set(ci, prev === undefined ? p.height : prev + p.mt + p.height);
+      const last = idx.filter((x) => blocks[x].column!.index === ci).at(-1);
+      if (bi !== last) cols.set(ci, cols.get(ci)! + p.r.gap);
+    }
+    return Math.max(0, ...cols.values());
+  }
+  for (let i = 0; i < blocks.length; i++) {
+    const c = blocks[i].column;
+    if (!c) {
+      prepared[i] = prepare(blocks[i], f.left, f.contentWidth);
+      continue;
+    }
+    let j = i;
+    while (j < blocks.length && blocks[j].column?.section === c.section) j++;
+    const idx = Array.from({ length: j - i }, (_, n) => i + n);
+    const n = c.count;
+    const colW = (f.contentWidth - sectionGap * (n - 1)) / n;
+    let ok = n > 1 && colW >= minPx * 8;
+    if (ok) {
+      for (const bi of idx) {
+        const ci = blocks[bi].column!.index;
+        prepared[bi] = prepare(blocks[bi], f.left + ci * (colW + sectionGap), colW);
+      }
+      ok = sectionHeight(idx) <= avail;
+    }
+    if (ok) {
+      idx.forEach((bi) => sideBySide.add(bi));
+      groups.set(i, idx);
+    } else {
+      for (const bi of idx) prepared[bi] = prepare(blocks[bi], f.left, f.contentWidth);
+    }
+    i = j - 1;
+  }
 
   /**
    * Keep-with-next needs: a heading, the headings after it, and the first
@@ -362,38 +478,39 @@ export function layoutPngPages(
   const followLines = (i: number): number => {
     const n = prepared[i];
     if (!n) return 0;
-    if (oneLine.has(i)) return n.lh;
-    const two = Math.min(2, n.ranges.length) * n.lh;
-    return two <= avail ? two : n.lh;
+    if (sideBySide.has(i)) return n.lh;
+    if (oneLine.has(i)) return n.pt + n.lh;
+    const two = n.pt + Math.min(2, n.ranges.length) * n.lh + n.pb;
+    return two <= avail ? two : n.pt + n.lh + n.pb;
   };
-  const measure = opts.measure ?? afmMeasurer;
   /** One 5% step down (floor 24 pt) for heading `p`; false at the floor. */
-  const shrinkHeading = (p: (typeof prepared)[number]): boolean => {
+  const shrinkHeading = (p: Prepared): boolean => {
     if (p.r.size <= minPx) return false;
     const segs = blockSegments(p.b);
     p.r.size = Math.max(minPx, p.r.size * 0.95);
     p.lh = p.r.size * lineHeight;
     // Same rule as above: words stay whole unless one is wider than the
     // column even at 24 pt (the heading already fits its widest word).
-    p.ranges = wrapLineRanges(p.b.text, p.r.size, f.contentWidth, segs, opts.measure, true);
+    p.ranges = wrapLineRanges(p.b.text, p.r.size, p.w, segs, opts.measure, true);
     p.sizes = p.ranges.map(([a, z]) => {
       const w = measureRange(p.b.text, a, a + p.b.text.slice(a, z).trimEnd().length, p.r.size, segs, measure);
-      return w > f.contentWidth ? Math.max(minPx, p.r.size * (f.contentWidth / w) * 0.999) : p.r.size;
+      return w > p.w ? Math.max(minPx, p.r.size * (p.w / w) * 0.999) : p.r.size;
     });
-    p.height = p.ranges.length * p.lh;
+    p.height = p.pt + p.ranges.length * p.lh + p.cite + p.pb;
     return true;
   };
   for (let i = prepared.length - 1; i >= 0; i--) {
+    if (sideBySide.has(i)) continue;
     const p = prepared[i];
     if (!HEADINGS.has(p.b.type)) continue;
     let j = i + 1;
-    while (j < prepared.length && HEADINGS.has(prepared[j].b.type)) j++;
+    while (j < prepared.length && HEADINGS.has(prepared[j].b.type) && !sideBySide.has(j)) j++;
     const rest = () => {
       let r = followLines(j);
       for (let k = i + 1; k < j; k++) r += prepared[k].height + prepared[k].r.gap;
       return r;
     };
-    const fits = () => p.ranges.length * p.lh + p.r.gap + rest() <= avail;
+    const fits = () => p.pt + p.ranges.length * p.lh + p.pb + p.r.gap + rest() <= avail;
     // This heading first, then the headings chained under it.
     while (!fits() && shrinkHeading(p));
     for (let k = i + 1; k < j && !fits(); k++) while (!fits() && shrinkHeading(prepared[k]));
@@ -402,23 +519,25 @@ export function layoutPngPages(
     // strand them.
     if (!fits()) oneLine.add(j);
     for (let k = j - 1; k >= i && !fits(); k--) {
-      const over = p.ranges.length * p.lh + p.r.gap + rest() - avail;
+      const over = p.pt + p.ranges.length * p.lh + p.pb + p.r.gap + rest() - avail;
       prepared[k].r.gap = Math.max(0, prepared[k].r.gap - over);
     }
   }
 
   const startsScripturePage = prepared.map((p, i) => {
+    if (sideBySide.has(i)) return false; // sections are placed whole
     if (i > 0 && HEADINGS.has(prepared[i - 1].b.type)) return false; // chain started earlier
     let j = i;
-    while (j < prepared.length && HEADINGS.has(prepared[j].b.type)) j++;
-    return prepared[j]?.b.type === "Scripture";
+    while (j < prepared.length && HEADINGS.has(prepared[j].b.type) && !sideBySide.has(j)) j++;
+    return !sideBySide.has(j) && prepared[j]?.b.type === "Scripture";
   });
 
   /** Height that must follow a heading on the same page. */
   const leadOf = (i: number): number => {
     const n = prepared[i];
     if (!n) return 0;
-    if (HEADINGS.has(n.b.type)) return n.ranges.length * n.lh + n.r.gap + leadOf(i + 1);
+    if (sideBySide.has(i)) return groups.has(i) ? sectionHeight(groups.get(i)!) : n.lh;
+    if (HEADINGS.has(n.b.type)) return n.pt + n.ranges.length * n.lh + n.pb + n.r.gap + leadOf(i + 1);
     // Keep-with-next: the first two lines of what follows (or all, if shorter;
     // one if two lines never fit on a page). Scripture is placed whole when
     // it fits under its headings, else it flows from right under them.
@@ -442,8 +561,9 @@ export function layoutPngPages(
       l.y -= shift;
       end = l.y + l.lineHeight;
     }
-    const gap = prepared[moved[n - 1].blockIndex].r.gap;
-    if (end + gap + prepared[bi].lh > f.bottom) {
+    const last = prepared[moved[n - 1].blockIndex];
+    const gap = last.r.gap + last.pb;
+    if (end + gap + prepared[bi].pt + prepared[bi].lh > f.bottom) {
       prev.lines.push(...moved.map((l) => ({ ...l, y: l.y + shift })));
       return;
     }
@@ -451,15 +571,64 @@ export function layoutPngPages(
     y = end + gap;
   };
 
-  prepared.forEach((p, bi) => {
+  const lineOf = (p: Prepared, bi: number, kind: PngPageLine["kind"], li: number, start: number, end: number, at: number, size: number, lh: number): PngPageLine => ({
+    blockIndex: bi, kind, lineIndex: li, start, end, y: at, size, lineHeight: lh,
+    ...(p.styled ? { x: p.x, width: p.w } : {}),
+  });
+  const sectionBoxes: Array<{ page: number; box: PngBox }> = [];
+
+  for (let bi = 0; bi < prepared.length; bi++) {
+    const p = prepared[bi];
+
+    if (groups.has(bi)) {
+      // Side-by-side section: placed whole on one page.
+      const idx = groups.get(bi)!;
+      const sl = blocks[bi].column!.sectionLook;
+      const smt = Math.min((sl?.spacing.mt ?? 0) * cssPx, avail / 4);
+      const smb = Math.min((sl?.spacing.mb ?? 0) * cssPx, avail / 4);
+      const h = sectionHeight(idx);
+      if (y > f.top) y += smt;
+      ensure(h);
+      const top = y;
+      const cy = new Map<number, number>();
+      for (const i of idx) {
+        const q = prepared[i];
+        const ci = blocks[i].column!.index;
+        let at = cy.has(ci) ? cy.get(ci)! + q.mt : top;
+        at += q.pt;
+        const emitCite = () => {
+          if (!q.b.citation) return;
+          page().lines.push(lineOf(q, i, "citation", q.ranges.length, 0, q.b.citation.length, at, q.cSize, q.cLh));
+          at += q.cLh;
+        };
+        if (q.b.verseBar) emitCite();
+        q.ranges.forEach(([s, e], li) => {
+          page().lines.push(lineOf(q, i, "text", li, s, e, at, q.sizes[li], q.lh));
+          at += q.lh;
+        });
+        if (!q.b.verseBar) emitCite();
+        cy.set(ci, at + q.pb + q.r.gap);
+      }
+      if (sl?.background || sl?.borderLeft) {
+        sectionBoxes.push({
+          page: pages.length - 1,
+          box: { x: f.left, y: top, w: f.contentWidth, h, fill: sl.background, border: sl.borderLeft ?? undefined, borderWidth: sl.borderLeft ? BORDER_LEFT_CSS_PX * cssPx : 0 },
+        });
+      }
+      y = top + h + smb;
+      bi = idx[idx.length - 1];
+      continue;
+    }
+
     const push = (kind: PngPageLine["kind"], li: number, start: number, end: number, size: number, lh: number) => {
-      page().lines.push({ blockIndex: bi, kind, lineIndex: li, start, end, y, size, lineHeight: lh });
+      page().lines.push(lineOf(p, bi, kind, li, start, end, y, size, lh));
       y += lh;
     };
-    const textH = p.ranges.length * p.lh;
+    const textH = p.pt + p.ranges.length * p.lh + p.pb;
 
     // Rule 4: Scripture (with the headings directly before it) starts a page.
     if (startsScripturePage[bi] && y > f.top) newPage();
+    if (p.mt && y > f.top) y += p.mt;
 
     if (HEADINGS.has(p.b.type)) {
       // Rule 3: the heading moves with the start of what follows (bounded by a page).
@@ -473,19 +642,62 @@ export function layoutPngPages(
       if (!underHeadings) ensure(p.height);
     }
 
-    p.ranges.forEach(([s, e], li) => {
-      const last = li === p.ranges.length - 1;
-      // Rule 2 (oversized Scripture): last line keeps its citation.
+    if (p.b.verseBar && p.b.citation) {
       const before = pages.length;
-      ensure(last && p.cite ? p.lh + p.cite : p.lh);
-      if (li === 0 && pages.length > before && !HEADINGS.has(p.b.type)) carryHeadings(bi);
-      push("text", li, s, e, p.sizes[li], p.lh);
-    });
-    if (p.b.citation) {
-      ensure(p.cite);
+      ensure(p.pt + p.cite + (p.ranges.length ? p.lh : 0) + (p.ranges.length <= 1 ? p.pb : 0));
+      if (pages.length > before && !HEADINGS.has(p.b.type)) carryHeadings(bi);
+      y += p.pt;
       push("citation", p.ranges.length, 0, p.b.citation.length, p.cSize, p.cLh);
     }
-    y += p.r.gap;
+    p.ranges.forEach(([s, e], li) => {
+      const last = li === p.ranges.length - 1;
+      const first = li === 0;
+      // Rule 2 (oversized Scripture): last line keeps its citation.
+      const before = pages.length;
+      const firstPad = first && !p.b.verseBar ? p.pt : 0;
+      ensure(firstPad + (last && p.cite && !p.b.verseBar ? p.lh + p.cite : p.lh) + (last ? p.pb : 0));
+      if (first && pages.length > before && !HEADINGS.has(p.b.type)) carryHeadings(bi);
+      if (first && !p.b.verseBar) y += p.pt;
+      push("text", li, s, e, p.sizes[li], p.lh);
+    });
+    if (p.b.citation && !p.b.verseBar) {
+      ensure(p.cite + p.pb);
+      push("citation", p.ranges.length, 0, p.b.citation.length, p.cSize, p.cLh);
+    }
+    y += p.pb + p.r.gap;
+  }
+
+  // Boxes (fill / left rule) behind styled blocks, per page, from the placed
+  // lines (so keep-with-next moves are respected). Never past the frame.
+  pages.forEach((pg, pi) => {
+    const boxes: PngBox[] = sectionBoxes.filter((s) => s.page === pi).map((s) => s.box);
+    const spans = new Map<number, { y0: number; y1: number; first: boolean; last: boolean }>();
+    for (const l of pg.lines) {
+      const q = prepared[l.blockIndex];
+      if (!q.b.look?.background && !q.b.look?.borderLeft) continue;
+      const isFirst = q.b.verseBar
+        ? (q.b.citation ? l.kind === "citation" : l.kind === "text" && l.lineIndex === 0)
+        : l.kind === "text" && l.lineIndex === 0;
+      const isLast = q.b.verseBar
+        ? (l.kind === "text" && l.lineIndex === q.ranges.length - 1) || (!q.ranges.length && l.kind === "citation")
+        : l.kind === "citation" || (!q.b.citation && l.lineIndex === q.ranges.length - 1);
+      const sp = spans.get(l.blockIndex) ?? { y0: l.y, y1: l.y + l.lineHeight, first: false, last: false };
+      sp.y0 = Math.min(sp.y0, l.y);
+      sp.y1 = Math.max(sp.y1, l.y + l.lineHeight);
+      sp.first ||= isFirst;
+      sp.last ||= isLast;
+      spans.set(l.blockIndex, sp);
+    }
+    for (const [i, sp] of spans) {
+      const q = prepared[i];
+      const y0 = Math.max(0, sp.y0 - (sp.first ? q.pt : 0));
+      const y1 = Math.min(f.height, sp.y1 + (sp.last ? q.pb : 0));
+      boxes.push({
+        x: q.boxX, y: y0, w: q.boxW, h: y1 - y0,
+        fill: q.b.look!.background, border: q.b.look!.borderLeft ?? undefined, borderWidth: q.borderW,
+      });
+    }
+    if (boxes.length) pg.boxes = boxes;
   });
   return pages;
 }
@@ -506,8 +718,20 @@ export function toLayoutBlocks(blocks: readonly StyledBlock[]): LayoutBlock[] {
   return blocks.map((b) => ({
     type: b.type,
     citation: b.citation,
+    ...(b.verseBar ? { verseBar: true } : {}),
     text: b.runs.map((r) => r.text).join(""),
-    runs: b.runs.map((r) => ({ text: r.text, fontFamily: r.fontFamily, bold: r.bold, italic: r.italic })),
+    runs: b.runs.map((r) => ({
+      text: r.text,
+      fontFamily: r.fontFamily,
+      bold: r.bold,
+      italic: r.italic,
+      letterSpacing: r.letterSpacing,
+      lineSpacing: r.lineSpacing,
+    })),
+    letterSpacing: b.letterSpacing,
+    lineSpacing: b.lineSpacing,
+    ...(b.look ? { look: b.look } : {}),
+    ...(b.column ? { column: b.column } : {}),
   }));
 }
 
@@ -528,13 +752,16 @@ export interface SnapshotLayout {
 /** Lay out a calibrated snapshot exactly as every export does. */
 export function layoutSnapshot(snapshot: CalibratedSnapshot, opts: LayoutOptions = {}): SnapshotLayout {
   const target = pageSpecFromSnapshot(snapshot);
-  // Body text is serif (as in Edit) unless the writer picked a font.
+  // Preach role fonts: sermon text defaults to sans, Scripture to Literata.
+  // A stored font mark (fontExplicit) is kept. Exports use the same mapping.
   let styled = styledBlocksFromSnapshot(snapshot).map((b) => ({
     ...b,
-    runs: b.runs.map((r) => (r.fontExplicit ? r : { ...r, fontFamily: "serif" as const })),
+    runs: b.runs.map((r) =>
+      r.fontExplicit ? r : { ...r, fontFamily: b.type === "Scripture" ? "literata" as const : "sans" as const },
+    ),
   }));
   if (!styled.length) {
-    styled = [{ type: "Title", align: "left", runs: [{ text: titleTextFromSnapshot(snapshot), fontFamily: "serif" }] }];
+    styled = [{ type: "Title", align: "left", runs: [{ text: titleTextFromSnapshot(snapshot), fontFamily: "sans" }] }];
   }
   const blocks = toLayoutBlocks(styled);
   const pages = layoutPngPages(blocks, target, snapshotLineSpacing(snapshot), snapshot.margins, {

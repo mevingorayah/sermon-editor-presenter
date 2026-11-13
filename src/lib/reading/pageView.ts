@@ -1,10 +1,13 @@
 import type { JSONContent } from "@tiptap/react";
 import type { PresentationSettings } from "@/types/document";
+import type { GlobalStyles } from "@/lib/sermon/blockStyle";
+import { cssAlign, lookRole } from "@/lib/sermon/export/blockLook";
 import { sliceRuns } from "@/lib/sermon/export/pages";
 import { layoutSnapshot, pageSpecFromSnapshot, roleStyle } from "@/lib/sermon/export/pngLayout";
+import { bionicMeasurer } from "@/lib/sermon/export/textMeasure";
 import { pageGeometry } from "@/lib/sermon/export/frames";
 import { snapshotFor } from "@/lib/reading/pageSettings";
-import { citationCaps, type StyledBlock, type StyledRun } from "@/lib/sermon/export/contentWalk";
+import { citationDisplay, type StyledBlock, type StyledRun } from "@/lib/sermon/export/contentWalk";
 import type { PngFrame } from "@/lib/sermon/export/pngLayout";
 
 /**
@@ -15,6 +18,8 @@ import type { PngFrame } from "@/lib/sermon/export/pngLayout";
 export interface PageViewLine {
   key: string;
   kind: "text" | "citation";
+  /** True when this citation line is a verse-snippet top bar. */
+  verseBar?: boolean;
   blockType: StyledBlock["type"];
   blockIndex: number;
   lineIndex: number;
@@ -22,6 +27,8 @@ export interface PageViewLine {
   y: number;
   size: number;
   lineHeight: number;
+  x?: number;
+  width?: number;
   /** Role style (headings bold, Scripture italic), as every export draws it. */
   role: { bold: boolean; italic: boolean };
   tokens: Array<{ run: StyledRun; text: string }>;
@@ -53,32 +60,35 @@ export interface PageViewModel {
 }
 
 /** Page view model: Backend's layoutSnapshot (the export layout), not a copy of it. */
-export function buildPageView(opts: { content: JSONContent; settings: PresentationSettings }): PageViewModel {
-  const snapshot = snapshotFor(opts.content as never, opts.settings);
-  const { frame, styled, pages } = layoutSnapshot(snapshot);
+export function buildPageView(opts: { content: JSONContent; settings: PresentationSettings; globalStyles?: GlobalStyles }): PageViewModel {
+  const snapshot = snapshotFor(opts.content as never, opts.settings, opts.globalStyles);
+  const { frame, styled, pages } = layoutSnapshot(snapshot, { measure: bionicMeasurer(opts.settings.bionicStrength) });
   return {
     frame,
     geometry: pageGeometry(pageSpecFromSnapshot(snapshot)),
     pages: pages.map((pg, pi) =>
       pg.lines.map((l, li) => {
         const block = styled[l.blockIndex];
-        const cite = citationCaps(block.citation ?? "");
+        const shown = l.kind === "citation" ? citationDisplay(block).text : "";
         const raw =
           l.kind === "citation"
-            ? [{ run: { text: cite, fontFamily: "serif" } as StyledRun, text: cite }]
+            ? [{ run: { text: shown, fontFamily: "serif" } as StyledRun, text: shown }]
             : sliceRuns(block, l.start, l.end);
         const { tokens, softEnd } = trimTrailing(raw);
         return {
           key: `${pi}-${li}`,
           kind: l.kind,
+          verseBar: l.kind === "citation" && !!block.verseBar,
           blockType: block.type,
           blockIndex: l.blockIndex,
           lineIndex: l.lineIndex,
-          align: l.kind === "citation" ? "right" : block.align,
+          align: l.kind === "citation" ? citationDisplay(block).align : cssAlign(block.look, block.align),
           y: l.y,
           size: l.size,
           lineHeight: l.lineHeight,
-          role: l.kind === "citation" ? { bold: false, italic: false } : roleStyle(block.type),
+          x: l.x,
+          width: l.width,
+          role: l.kind === "citation" ? { bold: false, italic: false } : lookRole(roleStyle(block.type), block.look),
           tokens,
           softEnd,
         };

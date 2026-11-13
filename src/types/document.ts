@@ -24,6 +24,8 @@ export interface PresentationSettings {
   typeScaleStep: TypeScaleStep;
   lineHeight: LineHeightOption;
   bionic: boolean;
+  /** 0.1–1, default 0.45. Preach always applies Bionic; this is only the strength. */
+  bionicStrength?: number;
   /** Calibration / export preview target */
   calibrationTarget: CalibrationTarget;
   /**
@@ -89,7 +91,13 @@ export interface SermonDocument {
   presentationSettings: PresentationSettings;
   /** Free-form study notes (edit chrome only) */
   notes: string;
+  /**
+   * Block builder: per-block-type default style/spacing
+   * (see `src/lib/sermon/blockStyle.ts`). Missing = app defaults.
+   */
+  globalStyles?: import("@/lib/sermon/blockStyle").GlobalStyles;
 }
+
 
 export type SemanticBlockType =
   | "Title"
@@ -136,6 +144,8 @@ export interface CalibratedSnapshot {
   pageSpec?: FitPageSpecSettings;
   textSizePt?: number;
   paragraphSpacingPt?: number;
+  /** Block builder defaults per block type (sermon.globalStyles); missing = app defaults. */
+  globalStyles?: import("@/lib/sermon/blockStyle").GlobalStyles;
   flattenGradient: true;
   bionic: false; // never in export
   semanticBlocks: SemanticBlock[];
@@ -146,7 +156,8 @@ export const DEFAULT_PRESENTATION_SETTINGS: PresentationSettings = {
   theme: "dark",
   typeScaleStep: 0,
   lineHeight: 1.55,
-  bionic: false,
+  bionic: true,
+  bionicStrength: 0.45,
   calibrationTarget: "screen-16-9",
   /** New sermons: A4 portrait (frames.DEFAULT_PAGE). */
   page: { format: "a4", orientation: "portrait" },

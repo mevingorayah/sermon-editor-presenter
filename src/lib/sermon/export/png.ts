@@ -7,10 +7,11 @@ import {
   DEFAULT_ACCENT_LIGHT,
   toHexRgb,
 } from "./colors";
-import { citationCaps, type StyledBlock, type StyledRun } from "./contentWalk";
+import { citationDisplay, type StyledBlock, type StyledRun } from "./contentWalk";
 import { layoutSnapshot, roleStyle, type PngPage, type SnapshotLayout } from "./pngLayout";
-import { afmMeasurer, FALLBACK_FAMILY, metricCompatibleCss, splitByCoverage } from "./textMeasure";
-import { DARK_YELLOW_PRESET, ensureContrast } from "@/lib/reading/contrast";
+import { lookAlign, lookRole } from "./blockLook";
+import { afmMeasurer, FALLBACK_FAMILY, letterSpacingEm, metricCompatibleCss, splitByCoverage } from "./textMeasure";
+import { displayHighlightColor, displayTextColor, ensureContrast } from "@/lib/reading/contrast";
 
 export interface PngBuildOptions {
   resolvedColors?: { accent: string };
@@ -93,7 +94,7 @@ export function paletteFor(theme: "light" | "dark", accentIn?: string): Palette 
     muted: light ? "#555555" : "#A8A29A",
     accent,
     title: light ? accent : ensureContrast(accent, bg),
-    highlight: light ? HIGHLIGHT_AMBER : DARK_YELLOW_PRESET,
+    highlight: HIGHLIGHT_AMBER,
   };
 }
 
@@ -109,40 +110,65 @@ function pageSvg(layout: SnapshotLayout, page: PngPage, p: Palette): string {
   const parts: string[] = [
     `<rect x="0" y="0" width="8" height="${f.height}" fill="${escapeXml(p.accent)}" />`,
   ];
+  for (const b of page.boxes ?? []) {
+    if (b.fill) parts.push(`<rect x="${b.x.toFixed(2)}" y="${b.y.toFixed(2)}" width="${b.w.toFixed(2)}" height="${b.h.toFixed(2)}" fill="${escapeXml(b.fill)}" />`);
+    if (b.border) parts.push(`<rect x="${b.x.toFixed(2)}" y="${b.y.toFixed(2)}" width="${b.borderWidth.toFixed(2)}" height="${b.h.toFixed(2)}" fill="${escapeXml(b.border)}" />`);
+  }
   for (const line of page.lines) {
     const block = styled[line.blockIndex];
+    const lx = line.x ?? f.left;
+    const lw = line.width ?? f.contentWidth;
     const baseline = (line.y + line.size).toFixed(2);
     if (line.kind === "citation") {
+      const shown = citationDisplay(block);
+      const anchor = shown.align === "left" ? "start" : "end";
+      const x = shown.align === "left" ? lx : lx + lw;
       parts.push(
-        `<text x="${f.left + f.contentWidth}" y="${baseline}" text-anchor="end" fill="${escapeXml(p.muted)}" font-size="${line.size}" font-family="${escapeXml(metricCompatibleCss("serif"))}">${escapeXml(citationCaps(block.citation ?? ""))}</text>`,
+        `<text x="${x}" y="${baseline}" text-anchor="${anchor}" fill="${escapeXml(p.muted)}" font-size="${line.size}" font-family="${escapeXml(metricCompatibleCss("serif"))}">${escapeXml(shown.text)}</text>`,
       );
       continue;
     }
-    const role = roleStyle(block.type);
-    const color = blockColor(block.type, p);
-    const anchor = block.align === "center" ? "middle" : block.align === "right" ? "end" : "start";
+    const role = lookRole(roleStyle(block.type), block.look);
+    const color = block.look?.color ?? blockColor(block.type, p);
+    const align = lookAlign(block.look, block.align);
+    const anchor = align === "center" ? "middle" : align === "right" ? "end" : "start";
     const x =
-      block.align === "center" ? f.left + f.contentWidth / 2
-        : block.align === "right" ? f.left + f.contentWidth
-          : f.left;
+      align === "center" ? lx + lw / 2
+        : align === "right" ? lx + lw
+          : lx;
     const runs = splitRunsByGlyph(trimRunsEnd(sliceRuns(block.runs, line.start, line.end)), role);
-    const styleOf = (run: StyledRun) => ({ font: run.fontFamily, bold: role.bold || !!run.bold, italic: role.italic || !!run.italic });
+    const styleOf = (run: StyledRun) => ({
+      font: run.fontFamily,
+      bold: role.bold || !!run.bold,
+      italic: role.italic || !!run.italic,
+      letterSpacing: run.letterSpacing ?? block.letterSpacing,
+    });
     const widths = runs.map((run) => afmMeasurer(run.text, line.size, styleOf(run)));
     const total = widths.reduce((a, w) => a + w, 0);
     let hx = anchor === "middle" ? x - total / 2 : anchor === "end" ? x - total : x;
+    if (block.look?.highlight && total > 0) {
+      parts.push(
+        `<rect x="${hx.toFixed(2)}" y="${(line.y + line.size * 0.15).toFixed(2)}" width="${total.toFixed(2)}" height="${(line.size * 1.05).toFixed(2)}" fill="${escapeXml(block.look.highlight)}" />`,
+      );
+    }
     runs.forEach((run, i) => {
       if (run.highlight) {
+        const hl = displayHighlightColor(run.highlightColor || p.highlight);
         parts.push(
-          `<rect x="${hx.toFixed(2)}" y="${(line.y + line.size * 0.15).toFixed(2)}" width="${widths[i].toFixed(2)}" height="${(line.size * 1.05).toFixed(2)}" fill="${escapeXml(p.highlight)}" />`,
+          `<rect x="${hx.toFixed(2)}" y="${(line.y + line.size * 0.15).toFixed(2)}" width="${widths[i].toFixed(2)}" height="${(line.size * 1.05).toFixed(2)}" fill="${escapeXml(hl)}" />`,
         );
       }
       hx += widths[i];
     });
     const tspans = runs
       .map((run) => {
-        const fill = run.color || color;
+        const fill = run.highlight && !run.color && !p.light
+          ? "#141210"
+          : displayTextColor(run.color || color, p.bg, p.light ? "print" : "screen-dark", { highlight: !!run.highlight });
         const deco = [run.underline ? "underline" : "", run.strike ? "line-through" : ""].filter(Boolean).join(" ");
-        return `<tspan fill="${escapeXml(fill)}" font-family="${escapeXml(run.glyphFallback ? `"${FALLBACK_FAMILY}", sans-serif` : metricCompatibleCss(run.fontFamily))}" font-weight="${role.bold || run.bold ? 700 : 400}" font-style="${!run.glyphFallback && (role.italic || run.italic) ? "italic" : "normal"}"${deco ? ` text-decoration="${deco}"` : ""}>${escapeXml(run.text)}</tspan>`;
+        const ls = letterSpacingEm(run.letterSpacing ?? block.letterSpacing);
+        const lsAttr = ls ? ` letter-spacing="${(ls * line.size).toFixed(3)}"` : "";
+        return `<tspan fill="${escapeXml(fill)}" font-family="${escapeXml(run.glyphFallback ? `"${FALLBACK_FAMILY}", sans-serif` : metricCompatibleCss(run.fontFamily))}" font-weight="${role.bold || run.bold ? 700 : 400}" font-style="${!run.glyphFallback && (role.italic || run.italic) ? "italic" : "normal"}"${deco ? ` text-decoration="${deco}"` : ""}${lsAttr}>${escapeXml(run.text)}</tspan>`;
       })
       .join("");
     parts.push(

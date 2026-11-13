@@ -8,6 +8,8 @@ import {
 } from "@tiptap/react";
 import { useEffect } from "react";
 import { createSermonExtensions } from "@/extensions";
+import { BlockBuilder } from "../builder/BlockBuilder";
+import { stripDefaultBuilderAttrs, type GlobalStyles } from "@/lib/builder/blockAttrs";
 import { FormatToolbar } from "./FormatToolbar";
 import styles from "./SermonEditor.module.css";
 
@@ -15,12 +17,18 @@ interface SermonEditorProps {
   content: JSONContent;
   onChange: (json: JSONContent) => void;
   onEditorReady?: (editor: Editor | null) => void;
+  /** sermon.globalStyles — saved with the sermon. */
+  globalStyles?: GlobalStyles;
+  onGlobalStylesChange?: (g: GlobalStyles) => void;
 }
+const NO_GLOBALS: GlobalStyles = {};
 
 export function SermonEditor({
   content,
   onChange,
   onEditorReady,
+  globalStyles = NO_GLOBALS,
+  onGlobalStylesChange,
 }: SermonEditorProps) {
   const editor = useEditor({
     immediatelyRender: false,
@@ -33,14 +41,14 @@ export function SermonEditor({
       },
     },
     onUpdate: ({ editor: ed }) => {
-      onChange(ed.getJSON());
+      onChange(stripDefaultBuilderAttrs(ed.getJSON()));
     },
   });
 
   // Sync external content (e.g. after load) without clobbering typing
   useEffect(() => {
     if (!editor) return;
-    const current = JSON.stringify(editor.getJSON());
+    const current = JSON.stringify(stripDefaultBuilderAttrs(editor.getJSON()));
     const next = JSON.stringify(content);
     if (current !== next) {
       editor.commands.setContent(content, { emitUpdate: false });
@@ -113,10 +121,33 @@ export function SermonEditor({
           >
             Scripture
           </button>
+          <button
+            type="button"
+            className={styles.toolBtn}
+            onClick={() => {
+              // Insert after the current block so a selected atom is not replaced.
+              const $from = editor.state.selection.$from;
+              const depth = $from.depth || 1;
+              let at = $from.after(depth);
+              if (at == null || at < 0) at = editor.state.doc.content.size;
+              editor
+                .chain()
+                .focus()
+                .insertContentAt(at, {
+                  type: "verseSnippet",
+                  attrs: { ref: "", translation: "LSG", texts: {} },
+                })
+                .run();
+            }}
+          >
+            Verse snippet
+          </button>
         </div>
         <FormatToolbar editor={editor} />
       </div>
-      <EditorContent editor={editor} />
+      <BlockBuilder editor={editor} globalStyles={globalStyles} onGlobalStylesChange={(g) => onGlobalStylesChange?.(g)}>
+        <EditorContent editor={editor} />
+      </BlockBuilder>
     </div>
   );
 }

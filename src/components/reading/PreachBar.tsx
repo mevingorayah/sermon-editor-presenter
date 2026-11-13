@@ -24,12 +24,12 @@ interface PreachBarProps {
   theme: ReadingTheme;
   typeScaleStep: TypeScaleStep;
   lineHeight: LineHeightOption;
-  bionic: boolean;
+  bionicStrength: number;
   calibrationOpen: boolean;
   onThemeChange: (t: ReadingTheme) => void;
   onTypeScaleChange: (s: TypeScaleStep) => void;
   onLineHeightChange: (lh: LineHeightOption) => void;
-  onBionicChange: (v: boolean) => void;
+  onBionicStrengthChange: (v: number) => void;
   /** Receives the trigger so the shell can return focus to it on close. */
   onToggleCalibration: (trigger: HTMLElement) => void;
   calibrationToggleRef?: Ref<HTMLButtonElement>;
@@ -55,11 +55,11 @@ export function PreachBar(props: PreachBarProps) {
   const {
     theme,
     lineHeight,
-    bionic,
+    bionicStrength,
     calibrationOpen,
     onThemeChange,
     onLineHeightChange,
-    onBionicChange,
+    onBionicStrengthChange,
     onToggleCalibration,
     calibrationToggleRef,
     view,
@@ -310,25 +310,6 @@ export function PreachBar(props: PreachBarProps) {
             </select>
           </label>
 
-          <div className={styles.row} role="group" aria-label="Theme">
-            <span className={styles.rowLabel}>Theme</span>
-            <button
-              type="button"
-              className={theme === "dark" ? styles.active : styles.btn}
-              aria-pressed={theme === "dark"}
-              onClick={() => onThemeChange("dark")}
-            >
-              Dark
-            </button>
-            <button
-              type="button"
-              className={theme === "light" ? styles.active : styles.btn}
-              aria-pressed={theme === "light"}
-              onClick={() => onThemeChange("light")}
-            >
-              Light
-            </button>
-          </div>
 
 
           <label className={styles.row}>
@@ -347,14 +328,23 @@ export function PreachBar(props: PreachBarProps) {
             </select>
           </label>
 
-          <label className={`${styles.row} ${styles.check}`}>
+          <div className={styles.sliderRow} data-slider="bionic-strength">
+            <label htmlFor="bionic-strength" className={styles.rowLabel}>
+              Bionic
+            </label>
             <input
-              type="checkbox"
-              checked={bionic}
-              onChange={(e) => onBionicChange(e.target.checked)}
+              id="bionic-strength"
+              type="range"
+              className={styles.range}
+              min={10}
+              max={100}
+              step={5}
+              value={Math.round(bionicStrength * 100)}
+              aria-label="Bionic strength"
+              onChange={(e) => onBionicStrengthChange(Number(e.target.value) / 100)}
             />
-            <span>Bionic reading</span>
-          </label>
+            <span className={styles.ptValue}>{Math.round(bionicStrength * 100)}%</span>
+          </div>
 
           <button
             type="button"

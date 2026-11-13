@@ -1,12 +1,15 @@
 import { APP_METRIC_CHARS as METRIC_CHARS, APP_WIDTHS } from "./appFontMetrics";
 import { APP_COVERAGE, FALLBACK_WIDTHS } from "./appFontCoverage";
 import { exportFontId, fontCategory, type ApprovedFontId, type FontFamilyId } from "./fonts";
+import { bionicParts, clampBionicStrength } from "@/lib/bionic";
 
 /** Style that affects glyph widths. */
 export interface MeasureStyle {
   font: FontFamilyId;
   bold?: boolean;
   italic?: boolean;
+  /** CSS letter-spacing in em (e.g. "0.05em"); included in the measured width. */
+  letterSpacing?: string | number | null;
 }
 
 /**
@@ -70,6 +73,12 @@ export const EXPORT_FAMILY: Record<ApprovedFontId, string> = {
   montserrat: "Montserrat Export",
   "nunito-sans": "Nunito Sans Export",
   "jetbrains-mono": "JetBrains Mono Export",
+  "eb-garamond": "EB Garamond Export",
+  "crimson-pro": "Crimson Pro Export",
+  "noto-serif": "Noto Serif Export",
+  "source-sans-3": "Sermon Export Sans D",
+  "noto-sans": "Noto Sans Export",
+  "ibm-plex-sans": "Sermon Export Sans F",
 };
 
 /**
@@ -163,9 +172,19 @@ export const afmMeasurer: TextMeasurer = (text, sizePx, style) => {
     }
     units += charWidth(ch, widths, memo);
   }
-  return (units / 1000) * sizePx;
+  let w = (units / 1000) * sizePx;
+  const em = letterSpacingEm(style.letterSpacing);
+  // Count spacing on every character so wrapped width never under-measures (avoids clip).
+  if (em && text.length) w += em * sizePx * [...text].length;
+  return w;
 };
 export const appFontMeasurer = afmMeasurer;
+
+export function letterSpacingEm(raw: string | number | null | undefined): number {
+  if (raw == null || raw === "") return 0;
+  const n = typeof raw === "number" ? raw : parseFloat(String(raw).replace(/em$/i, ""));
+  return Number.isFinite(n) ? n : 0;
+}
 
 /**
  * CSS families for the PNG renderer: the export instances first (registered
@@ -186,14 +205,38 @@ export function metricCompatibleCss(id: FontFamilyId): string {
  * wider than its export font, so the pre-broken, non-wrapping PPTX lines
  * never overflow; they just sit slightly narrower.
  */
+const OFFICE_FACE: Record<string, string> = {
+  lora: "Lora", merriweather: "Merriweather", "playfair-display": "Playfair Display",
+  "source-serif-4": "Source Serif 4", literata: "Literata",
+  inter: "Inter", "open-sans": "Open Sans", lato: "Lato", montserrat: "Montserrat",
+  "nunito-sans": "Nunito Sans", "jetbrains-mono": "JetBrains Mono",
+  "eb-garamond": "EB Garamond", "crimson-pro": "Crimson Pro", "noto-serif": "Noto Serif",
+  "source-sans-3": "Source Sans 3", "noto-sans": "Noto Sans", "ibm-plex-sans": "IBM Plex Sans",
+};
+
 export function metricCompatibleOffice(id: FontFamilyId): string {
+  const resolved = exportFontId(id);
+  if (OFFICE_FACE[resolved]) return OFFICE_FACE[resolved];
   switch (fontCategory(id)) {
     case "mono": return "Courier New";
     case "serif": return "Times New Roman";
     case "sans":
-    default: return "Calibri"; // Arial is about as wide as Inter; Calibri is safely narrower
+    default: return "Calibri";
   }
 }
 
 /** Shown next to the PowerPoint export option. */
 export const PPTX_FONT_NOTICE = "PowerPoint uses standard fonts, so line breaks may differ slightly";
+
+/** Measure Preach text as Bionic (bold prefixes), so page-view line boxes match the painted glyphs. Exports do not use this. */
+export function bionicMeasurer(strength?: number): TextMeasurer {
+  const ratio = clampBionicStrength(strength);
+  return (text, sizePx, style) => {
+    if (style.bold) return afmMeasurer(text, sizePx, style);
+    let w = 0;
+    for (const part of bionicParts(text, ratio)) {
+      w += afmMeasurer(part.text, sizePx, { ...style, bold: part.bold });
+    }
+    return w;
+  };
+}

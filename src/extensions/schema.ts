@@ -6,9 +6,12 @@ import { TextStyle, Color, FontFamily } from "@tiptap/extension-text-style";
 import { Title } from "./Title";
 import { Scripture } from "./Scripture";
 import { letterSpacingCss, lineSpacingCss, SPACING_BLOCK_TYPES } from "@/lib/writing/spacing";
+import { VerseSnippet } from "@/lib/sermon/verseSnippet";
+import { BUILDER_NODES } from "./builder/BuilderNodes";
+import { BlockStyleAttrs } from "./builder/BlockStyleAttrs";
 
 /** Node types that carry TextAlign. Shared by Edit and Preach. */
-export const ALIGNED_TYPES = ["heading", "paragraph", "title", "scripture"];
+export const ALIGNED_TYPES = ["heading", "paragraph", "title", "scripture", "quote", "illustration"];
 
 const TextStyleWithSpacing = TextStyle.extend({
   addAttributes() {
@@ -102,6 +105,7 @@ export function createSchemaExtensions() {
     }),
     Title,
     Scripture,
+    VerseSnippet,
     TextStyleWithSpacing,
     Color,
     FontFamily,
@@ -112,5 +116,8 @@ export function createSchemaExtensions() {
       defaultAlignment: "left",
     }),
     BlockSpacing,
+    // Block builder: extra block types + per-block style attrs.
+    ...BUILDER_NODES,
+    BlockStyleAttrs,
   ];
 }

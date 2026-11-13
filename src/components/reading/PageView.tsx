@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { JSONContent } from "@tiptap/react";
-import type { PresentationSettings, ReadingTheme } from "@/types/document";
+import type { PresentationSettings } from "@/types/document";
 import { metricCompatibleCss } from "@/lib/sermon/export/textMeasure";
 import {
   buildPageView,
@@ -14,7 +14,10 @@ import {
   pageOfBlock,
   type PageViewLine,
 } from "@/lib/reading/pageView";
-import { readingHighlightColor, readingTextColor } from "@/lib/reading/contrast";
+import { displayHighlightColor, displayTextColor } from "@/lib/reading/contrast";
+import { bionicParts, clampBionicStrength, DEFAULT_BIONIC_STRENGTH } from "@/lib/bionic";
+import { FORMAT_THEME, formatTheme } from "@/lib/sermon/export/frames";
+import { letterSpacingEm } from "@/lib/sermon/export/textMeasure";
 import { CUE_COLOR } from "@/lib/reading/renderSermon";
 import styles from "./PageView.module.css";
 
@@ -22,6 +25,7 @@ interface PageViewProps {
   content: JSONContent;
   settings: PresentationSettings;
   /** Frame matches the screen: edge to edge, no bars. */
+  globalStyles?: import("@/lib/sermon/blockStyle").GlobalStyles;
   fill?: boolean;
 }
 
@@ -38,9 +42,10 @@ function typingInControl(t: EventTarget | null): boolean {
   return false;
 }
 
-export function PageView({ content, settings, fill = false }: PageViewProps) {
-  const theme = settings.theme;
-  const model = useMemo(() => buildPageView({ content, settings }), [content, settings]);
+export function PageView({ content, settings, fill = false, globalStyles }: PageViewProps) {
+  const fmtTheme = formatTheme(settings.page?.format ?? settings.calibrationTarget);
+  const bionicStrength = clampBionicStrength(settings.bionicStrength, DEFAULT_BIONIC_STRENGTH);
+  const model = useMemo(() => buildPageView({ content, settings, globalStyles }), [content, settings, globalStyles]);
   const hostRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
   const [page, setPage] = useState(0);
@@ -127,7 +132,7 @@ export function PageView({ content, settings, fill = false }: PageViewProps) {
           style={{ width: frame.width, height: frame.height, transform: `scale(${scale})` }}
         >
           {lines.map((l) => (
-            <Line key={l.key} l={l} frame={frame} theme={theme} />
+            <Line key={l.key} l={l} frame={frame} formatTheme={fmtTheme} bionicStrength={bionicStrength} />
           ))}
         </div>
       </section>
@@ -141,24 +146,27 @@ export function PageView({ content, settings, fill = false }: PageViewProps) {
 function Line({
   l,
   frame,
-  theme,
+  formatTheme: fmt,
+  bionicStrength,
 }: {
   l: PageViewLine;
   frame: { left: number; contentWidth: number };
-  theme: ReadingTheme;
+  formatTheme: "print" | "screen-dark";
+  bionicStrength: number;
 }) {
   return (
     <div
       className={styles.line}
       data-line=""
       data-kind={l.kind}
+      data-verse-bar={l.verseBar ? "" : undefined}
       data-block={l.blockType}
       data-bi={l.blockIndex}
       data-soft-end={l.softEnd ? "" : undefined}
       style={{
         top: l.y,
-        left: frame.left,
-        width: frame.contentWidth,
+        left: l.x ?? frame.left,
+        width: l.width ?? frame.contentWidth,
         height: l.lineHeight,
         fontSize: l.size,
         lineHeight: `${l.lineHeight}px`,
@@ -176,11 +184,23 @@ function Line({
         if (r.italic || l.role.italic) style.fontStyle = "italic";
         const deco = [r.underline && "underline", r.strike && "line-through"].filter(Boolean).join(" ");
         if (deco) style.textDecorationLine = deco;
-        if (r.color && !cue) style.color = readingTextColor(r.color, theme);
-        if (r.highlight) style.backgroundColor = readingHighlightColor("#fff176", theme, "yellow");
+        const ls = letterSpacingEm(r.letterSpacing);
+        if (ls) style.letterSpacing = `${ls}em`;
+        if (r.color && !cue) {
+          style.color = displayTextColor(r.color, FORMAT_THEME[fmt].pageBackground, fmt, { highlight: !!r.highlight });
+        } else if (r.highlight && fmt === "screen-dark" && !cue) {
+          style.color = FORMAT_THEME.print.text;
+        }
+        if (r.highlight) style.backgroundColor = displayHighlightColor(r.highlightColor || "#FFF176", fmt);
+        const alreadyBold = Boolean(r.bold || l.role.bold);
+        const body = alreadyBold || cue || l.kind === "citation"
+          ? t.text
+          : bionicParts(t.text, bionicStrength).map((part, i) =>
+              part.bold ? <strong key={i} data-bionic="">{part.text}</strong> : <span key={i}>{part.text}</span>,
+            );
         return (
           <span key={ti} style={style} className={cue ? styles.cue : undefined} data-cue={cue ? "" : undefined}>
-            {t.text}
+            {body}
           </span>
         );
       })}

@@ -66,7 +66,7 @@ test("highlight, text colour, font, justify and spacing round-trip in localStore
   await pm.click();
   await page.keyboard.press("Control+A");
 
-  await page.getByRole("button", { name: "Highlight" }).click();
+  await page.getByRole("toolbar", { name: "Text formatting" }).getByRole("button", { name: "Highlight", exact: true }).click();
   await page.getByRole("option", { name: "Yellow" }).click();
 
   await page.getByRole("button", { name: "Text color" }).click();
@@ -75,7 +75,7 @@ test("highlight, text colour, font, justify and spacing round-trip in localStore
   await page.getByRole("button", { name: "Apply custom colour" }).click();
 
   await page.getByLabel("Font family").selectOption("lora");
-  await page.getByRole("button", { name: "Justify" }).click();
+  await page.getByRole("toolbar", { name: "Text formatting" }).getByRole("button", { name: "Justify", exact: true }).click();
   await pm.click();
   await expect(pm).toContainText("Writing tools fixture text");
   await page.getByTestId("letter-spacing").fill("0.05");

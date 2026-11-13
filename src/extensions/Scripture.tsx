@@ -10,6 +10,7 @@ import {
 } from "@tiptap/react";
 import type { CSSProperties } from "react";
 import { cssTextToReactStyle } from "../lib/cssText";
+import { FIELD, blockCss, type BlockSpacing, type BlockStyle } from "../lib/builder/blockAttrs";
 
 function ScriptureView({
   node,
@@ -40,6 +41,13 @@ function ScriptureView({
       ? { ...baseStyle, ...(textAlign ? { textAlign } : {}) }
       : undefined;
   if (style && !textAlign) delete style.textAlign;
+  const builderCss = blockCss(
+    node.attrs[FIELD.style] as BlockStyle | null,
+    node.attrs[FIELD.spacing] as BlockSpacing | null,
+  );
+  const finalStyle = builderCss
+    ? { ...(style ?? {}), ...cssTextToReactStyle(builderCss) }
+    : style;
   return (
     <NodeViewWrapper
       {...restAttrs}
@@ -47,7 +55,7 @@ function ScriptureView({
       className={`sermon-scripture${selected ? " is-selected" : ""}`}
       data-scripture=""
       data-citation={citation}
-      style={style}
+      style={finalStyle}
     >
       <label className="sermon-scripture-citation-field">
         <span className="visually-hidden">Citation</span>

@@ -2,7 +2,8 @@
 
 import { readLibrary, setActiveDoc } from "@/lib/localStore/browserCache";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { resolveBuilderStyles } from "@/lib/builder/resolveStyles";
 import type { CSSProperties } from "react";
 import {
   resolveActiveDocument,
@@ -27,6 +28,7 @@ import {
   type PageChoice,
   fitChoice,
 } from "@/lib/reading/pageSettings";
+import { formatTheme as formatThemeOf } from "@/lib/sermon/export/frames";
 const FOLLOW_KEY = "sermon-editor-presenter:preach-follow-rotation:v1";
 import { keepScreenAwake } from "@/lib/reading/wakeLock";
 import { fillsScreen } from "@/lib/reading/pageView";
@@ -46,6 +48,10 @@ export function PreachShell() {
   // Deep link from Edit's "Export…": /preach?calibrate=1 opens Document setup.
   const [calibrationDeepLink, setCalibrationDeepLink] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const content = useMemo(
+    () => (doc ? resolveBuilderStyles(doc.content, doc.globalStyles) : null),
+    [doc],
+  );
   const calibrationToggleRef = useRef<HTMLButtonElement>(null);
   /** Element that opened Document setup; focus returns here on close. */
   const calibrationOpenerRef = useRef<Element | null>(null);
@@ -233,6 +239,7 @@ export function PreachShell() {
 
   const { presentationSettings: ps } = doc;
   const choice = fromSettings(ps);
+  const fmtTheme = formatThemeOf(choice.format);
   const scale = typeScaleMultiplier(ps.typeScaleStep);
 
   const cssVars = {
@@ -247,7 +254,7 @@ export function PreachShell() {
     <div
       className={styles.shell}
       data-reading-mode=""
-      data-theme={ps.theme}
+      data-theme={fmtTheme === "print" ? "light" : "dark"} data-format-theme={fmtTheme}
       data-view={view}
       data-stopped={timer.stopped ? "true" : "false"}
       style={cssVars}
@@ -257,7 +264,7 @@ export function PreachShell() {
         theme={ps.theme}
         typeScaleStep={ps.typeScaleStep}
         lineHeight={ps.lineHeight}
-        bionic={ps.bionic}
+        bionicStrength={ps.bionicStrength ?? 0.45}
         calibrationOpen={calibrationOpen}
         onThemeChange={(theme: ReadingTheme) => patchSettings({ theme })}
         onTypeScaleChange={(typeScaleStep: TypeScaleStep) =>
@@ -266,7 +273,7 @@ export function PreachShell() {
         onLineHeightChange={(lineHeight: LineHeightOption) =>
           patchSettings({ lineHeight })
         }
-        onBionicChange={(bionic: boolean) => patchSettings({ bionic })}
+        onBionicStrengthChange={(bionicStrength: number) => patchSettings({ bionicStrength })}
         calibrationToggleRef={calibrationToggleRef}
         view={view}
         onViewChange={changeView}
@@ -298,18 +305,20 @@ export function PreachShell() {
         <div className={styles.scroll} ref={scrollRef} onScroll={onScroll}>
           {view === "page" ? (
             <PageView
-              content={doc.content}
+              content={content ?? doc.content}
               settings={ps}
+              globalStyles={doc.globalStyles}
               fill={fill}
             />
           ) : (
-            <ReadingView content={doc.content} bionic={ps.bionic} theme={ps.theme} pulpit />
+            <ReadingView content={content ?? doc.content} bionic theme={fmtTheme === "print" ? "light" : "dark"} formatTheme={fmtTheme} bionicStrength={ps.bionicStrength ?? 0.45} pulpit />
           )}
         </div>
 
         {calibrationOpen ? (
           <CalibrationPanel
-            content={doc.content}
+            content={content ?? doc.content}
+            globalStyles={doc.globalStyles}
             title={doc.title}
             notes={doc.notes ?? ""}
             autoFocus={calibrationDeepLink}
