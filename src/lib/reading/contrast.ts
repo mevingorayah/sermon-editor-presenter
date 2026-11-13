@@ -5,6 +5,9 @@
  * other colour, and every colour in the light theme, is returned unchanged.
  */
 
+import type { FormatTheme } from "@/lib/sermon/export/frames";
+
+
 export const DARK_STAGE_BG = "#141210"; // --rm-bg (dark), reading-mode.css
 export const MIN_CONTRAST = 4.5;
 /** #17 HIGHLIGHT_PRESETS yellow (light #FFF176) → its pre-mixed dark value. */
@@ -153,4 +156,37 @@ export function readingHighlightColor(
     out = hslToRgb(h, s, L);
   }
   return toHex(out);
+}
+
+/**
+ * Display-time only: lighten `textHex` (same hue) until it reaches 4.5:1
+ * against `bgHex`. Colours that already pass, and unparseable values, are
+ * returned unchanged. Never writes back to the sermon.
+ */
+export function adjustForDarkContrast(textHex: string, bgHex: string): string {
+  return ensureContrast(textHex, bgHex, MIN_CONTRAST);
+}
+
+/**
+ * Apply the format-group colour policy at display time.
+ * - print: leave text as saved (white page, dark text).
+ * - screen-dark: lighten text that fails 4.5:1 against the page, except
+ *   text sitting on a highlight, which stays dark. Highlights keep their
+ *   colour (see displayHighlightColor).
+ */
+export function displayTextColor(
+  textHex: string,
+  bgHex: string,
+  theme: FormatTheme,
+  opts?: { highlight?: boolean },
+): string {
+  if (theme !== "screen-dark") return textHex;
+  if (opts?.highlight) return textHex;
+  return adjustForDarkContrast(textHex, bgHex);
+}
+
+/** Highlights keep their saved colour in every format theme. */
+export function displayHighlightColor(color: string, theme?: FormatTheme): string {
+  void theme;
+  return color;
 }

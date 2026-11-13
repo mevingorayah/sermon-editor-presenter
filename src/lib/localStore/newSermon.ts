@@ -27,6 +27,8 @@ export function blankSermon(
       ...DEFAULT_PRESENTATION_SETTINGS,
       ...(carry ?? {}),
       calibrationTarget: NEW_SERMON_PAGE,
+      // Always A4 portrait for a new sermon; reading prefs (theme, size…) may still carry.
+      page: { format: "a4", orientation: "portrait" },
     },
     notes: "",
   };
