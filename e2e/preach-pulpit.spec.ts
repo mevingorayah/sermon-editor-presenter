@@ -332,7 +332,7 @@ test("⚙ Spacing: sliders, tap-to-type, reset keeps format", async ({ page }) =
   await expect(panel.getByRole("button", { name: /Line spacing: 2 ×/ })).toBeVisible();
   await expect.poll(async () => Number(await page.locator("[data-page-view]").getAttribute("data-page-count"))).toBeGreaterThan(before);
   await panel.locator("[data-each-side]").click();
-  await expect(panel.locator("[data-slider]")).toHaveCount(6);
+  await expect(panel.locator("[data-slider]")).toHaveCount(7);
   for (const el of await panel.locator("button, input:not([type=checkbox]), label:has(input[type=checkbox]), [data-slider] label").all()) {
     const b = await el.boundingBox();
     if (b && b.width > 0) expect(Math.min(b.height, b.width)).toBeGreaterThanOrEqual(44);

@@ -180,7 +180,7 @@ for (const theme of ["light", "dark"] as const) {
       // Scripture: marks kept, citation caption-right below. Bionic may apply (all Preach text).
       const fig = col.locator("figure[data-scripture]");
       await expect(fig.locator("em")).toHaveText("For God so loved the world");
-      if (!bionic) await expect(fig.locator("[data-bionic]")).toHaveCount(0);
+      await expect(fig.locator("[data-bionic]").first()).toBeVisible();
       await expect(fig.locator("figcaption")).toHaveCSS("text-align", "right");
 
       // Preach role font: sermon text is sans-serif (user marks like Courier still win).
@@ -212,7 +212,7 @@ test("Edit and Preach agree on fonts, colours and proportions (light)", async ({
           spanFont: getComputedStyle(span).fontFamily,
           spanColor: getComputedStyle(span).color,
           markBg: getComputedStyle(root.querySelector("mark")!).backgroundColor,
-          tags: ["strong", "em", "u", "s", "a", "ul li", "ol li", "hr", "br:not(.ProseMirror-trailingBreak)"].map((t) => root.querySelectorAll(t).length),
+          tags: ["strong:not([data-bionic])", "em", "u", "s", "a", "ul li", "ol li", "hr", "br:not(.ProseMirror-trailingBreak)"].map((t) => root.querySelectorAll(t).length),
         };
       },
       [titleSel, h1Sel, h2Sel] as const,

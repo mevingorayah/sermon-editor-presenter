@@ -1,6 +1,7 @@
 import { APP_METRIC_CHARS as METRIC_CHARS, APP_WIDTHS } from "./appFontMetrics";
 import { APP_COVERAGE, FALLBACK_WIDTHS } from "./appFontCoverage";
 import { exportFontId, fontCategory, type ApprovedFontId, type FontFamilyId } from "./fonts";
+import { bionicParts, clampBionicStrength } from "@/lib/bionic";
 
 /** Style that affects glyph widths. */
 export interface MeasureStyle {
@@ -226,3 +227,16 @@ export function metricCompatibleOffice(id: FontFamilyId): string {
 
 /** Shown next to the PowerPoint export option. */
 export const PPTX_FONT_NOTICE = "PowerPoint uses standard fonts, so line breaks may differ slightly";
+
+/** Measure Preach text as Bionic (bold prefixes), so page-view line boxes match the painted glyphs. Exports do not use this. */
+export function bionicMeasurer(strength?: number): TextMeasurer {
+  const ratio = clampBionicStrength(strength);
+  return (text, sizePx, style) => {
+    if (style.bold) return afmMeasurer(text, sizePx, style);
+    let w = 0;
+    for (const part of bionicParts(text, ratio)) {
+      w += afmMeasurer(part.text, sizePx, { ...style, bold: part.bold });
+    }
+    return w;
+  };
+}
