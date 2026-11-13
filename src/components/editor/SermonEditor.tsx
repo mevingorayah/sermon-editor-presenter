@@ -113,6 +113,27 @@ export function SermonEditor({
           >
             Scripture
           </button>
+          <button
+            type="button"
+            className={styles.toolBtn}
+            onClick={() => {
+              // Insert after the current block so a selected atom is not replaced.
+              const $from = editor.state.selection.$from;
+              const depth = $from.depth || 1;
+              let at = $from.after(depth);
+              if (at == null || at < 0) at = editor.state.doc.content.size;
+              editor
+                .chain()
+                .focus()
+                .insertContentAt(at, {
+                  type: "verseSnippet",
+                  attrs: { ref: "", translation: "LSG", texts: {} },
+                })
+                .run();
+            }}
+          >
+            Verse snippet
+          </button>
         </div>
         <FormatToolbar editor={editor} />
       </div>

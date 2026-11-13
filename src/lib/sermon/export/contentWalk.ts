@@ -2,6 +2,12 @@ import type { JSONContent } from "@tiptap/react";
 import type { CalibratedSnapshot, SemanticBlock } from "@/types/document";
 import { mapFontFamily, type FontFamilyId } from "./fonts";
 import { toHexRgb } from "./colors";
+import {
+  VERSE_SNIPPET_EXPORT_FONT,
+  currentPassageText,
+  normalizeAttrs,
+  translationLabel,
+} from "@/lib/sermon/verseSnippet";
 
 export type TextAlign = "left" | "center" | "right";
 
@@ -154,6 +160,21 @@ function blockFromTipTap(node: JSONContent): StyledBlock | null {
         align: alignOf(node),
         runs: runsFromNode(node).map((r) => ({ ...r, italic: true })),
         citation,
+      };
+    }
+    case "verseSnippet": {
+      const attrs = normalizeAttrs(node.attrs);
+      const text = currentPassageText(attrs);
+      const citation = [attrs.ref, translationLabel(attrs.translation)]
+        .filter(Boolean)
+        .join(" · ");
+      return {
+        type: "Scripture",
+        align: alignOf(node),
+        runs: text
+          ? [{ text, fontFamily: VERSE_SNIPPET_EXPORT_FONT, fontExplicit: true }]
+          : [],
+        citation: citation || undefined,
       };
     }
     default:
