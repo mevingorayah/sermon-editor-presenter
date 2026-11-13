@@ -120,13 +120,11 @@ test("plain highlight = yellow preset: every text preset reaches 4.5:1 on it", (
   assert.ok(ratioOf(rgbOf("#ece6da")!, rgbOf(plain)!) >= 4.5, "body text");
 });
 
-test("sermon-marks.css: dark plain highlight is #655F33, no #3d2e0e", () => {
+test("sermon-marks.css: screen-dark highlights keep the same amber as light, no #3d2e0e", () => {
   const css = readFileSync(new URL("../../../styles/sermon-marks.css", import.meta.url), "utf8");
   assert.doesNotMatch(css, /#3d2e0e/i);
-  assert.match(
-    css,
-    /\[data-reading-mode\]\[data-theme="dark"\] mark\.sermon-highlight\s*\{\s*background:\s*#655F33;/i,
-  );
+  assert.match(css, /data-format-theme="screen-dark"/);
+  assert.match(css, /rgba\(212,\s*168,\s*75,\s*0\.42\)/);
 });
 
 test("Muted gray #5c5c5c: dark Preach lifts it to >= 4.5:1 on the page and every dark highlight; light keeps it", () => {

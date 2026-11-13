@@ -87,7 +87,16 @@ async function seed(page: Page, theme: "light" | "dark", bionic: boolean) {
     notes: "",
     title: "Fidelity Sermon",
     content,
-    presentationSettings: { theme, bionic, typeScaleStep: 0, lineHeight: 1.7, calibrationTarget: "screen-16-9" },
+    presentationSettings: {
+      theme,
+      bionic,
+      typeScaleStep: 0,
+      lineHeight: 1.7,
+      calibrationTarget: theme === "light" ? "paper-a4" : "screen-16-9",
+      page: theme === "light"
+        ? { format: "a4", orientation: "portrait" }
+        : { format: "16:9", orientation: "landscape" },
+    },
   };
   await page.addInitScript(
     ([k, id, doc]) => {
@@ -113,7 +122,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.goto("/preach", { waitUntil: "networkidle" });
       const col = page.locator("article");
       await expect(col.getByText("Fidelity Sermon")).toBeVisible({ timeout: 20_000 });
-      await expect(page.locator(`[data-reading-mode][data-theme="${theme}"]`).first()).toBeVisible();
+      await expect(page.locator(`[data-reading-mode][data-format-theme="${theme === "light" ? "print" : "screen-dark"}"]`).first()).toBeVisible();
 
       const para = col.locator("p", { hasText: "Linked" }).first();
       // Font family + colour (rule 2: dark lifts NAVY but keeps hue; GOLD unchanged).
@@ -141,9 +150,9 @@ for (const theme of ["light", "dark"] as const) {
       const markBg = await mark.evaluate((el) => getComputedStyle(el).backgroundColor);
       expect(markBg).not.toBe("rgba(0, 0, 0, 0)");
       const markFg = await mark.evaluate((el) => getComputedStyle(el).color);
-      const opaqueBg = theme === "dark" ? "rgb(101, 95, 51)" : bg;
-      if (theme === "dark") expect(markBg).toBe(opaqueBg);
-      expect(contrast(markFg, opaqueBg)).toBeGreaterThanOrEqual(4.5);
+      // Highlights keep their colour, including on screen-dark.
+      if (theme === "dark") expect(markBg).not.toBe("rgb(101, 95, 51)");
+      expect(contrast(markFg, markBg === "rgba(0, 0, 0, 0)" ? bg : markBg)).toBeGreaterThanOrEqual(4.5);
 
       // Marks (rule 3: bionic never removes them)
       await expect(para.locator("strong:not([data-bionic])")).toHaveText("Bold");
@@ -152,12 +161,9 @@ for (const theme of ["light", "dark"] as const) {
       await expect(para.locator("s")).toHaveText("Struck");
       await expect(para.locator("a[href='https://example.org']")).toHaveText("Linked");
       await expect(para.locator("br")).toHaveCount(1);
-      if (bionic) {
-        await expect(col.locator("[data-bionic]").first()).toBeVisible();
-        await expect(para.locator("em [data-bionic]")).toHaveCount(1);
-      } else {
-        await expect(col.locator("[data-bionic]")).toHaveCount(0);
-      }
+      // Preach always applies Bionic, even when the saved sermon has bionic:false.
+      await expect(col.locator("[data-bionic]").first()).toBeVisible();
+      await expect(para.locator("em [data-bionic]")).toHaveCount(1);
 
       // Alignment on every block type
       await expect(col.locator("h1")).toHaveCSS("text-align", "center");
@@ -171,14 +177,14 @@ for (const theme of ["light", "dark"] as const) {
       await expect(col.locator("ol > li")).toHaveText(["First", "Second"]);
       await expect(col.locator("hr")).toHaveCount(1);
 
-      // Scripture: marks kept, never bionic, citation caption-right below.
+      // Scripture: marks kept, citation caption-right below. Bionic may apply (all Preach text).
       const fig = col.locator("figure[data-scripture]");
       await expect(fig.locator("em")).toHaveText("For God so loved the world");
-      await expect(fig.locator("[data-bionic]")).toHaveCount(0);
+      await expect(fig.locator("[data-bionic]").first()).toBeVisible();
       await expect(fig.locator("figcaption")).toHaveCSS("text-align", "right");
 
-      // Body font matches Edit's body font.
-      await expect(para).toHaveCSS("font-family", /Source Serif/);
+      // Preach role font: sermon text is sans-serif (user marks like Courier still win).
+      await expect(para).toHaveCSS("font-family", /system-ui|Inter|sans-serif/i);
 
       await page.screenshot({
         path: `/workspace/fidelity-shots/after-preach-${theme}-bionic-${bionic ? "on" : "off"}.png`,
@@ -206,7 +212,7 @@ test("Edit and Preach agree on fonts, colours and proportions (light)", async ({
           spanFont: getComputedStyle(span).fontFamily,
           spanColor: getComputedStyle(span).color,
           markBg: getComputedStyle(root.querySelector("mark")!).backgroundColor,
-          tags: ["strong", "em", "u", "s", "a", "ul li", "ol li", "hr", "br:not(.ProseMirror-trailingBreak)"].map((t) => root.querySelectorAll(t).length),
+          tags: ["strong:not([data-bionic])", "em", "u", "s", "a", "ul li", "ol li", "hr", "br:not(.ProseMirror-trailingBreak)"].map((t) => root.querySelectorAll(t).length),
         };
       },
       [titleSel, h1Sel, h2Sel] as const,
@@ -218,8 +224,11 @@ test("Edit and Preach agree on fonts, colours and proportions (light)", async ({
   await expect(col.getByText("Fidelity Sermon")).toBeVisible({ timeout: 20_000 });
   const preach = await read(col, "h1", "h2", "h3");
   // Preach headings are deliberately larger (pulpit layout); everything else matches.
-  const { ratios: pr, ...pRest } = preach;
-  const { ratios: er, ...eRest } = edit;
+  const { ratios: pr, bodyFont: pBody, ...pRest } = preach;
+  const { ratios: er, bodyFont: eBody, ...eRest } = edit;
   expect(pRest).toEqual(eRest);
+  // Role fonts: Preach body is sans; Edit keeps Source Serif. User marks still match.
+  expect(eBody).toMatch(/Source Serif|serif/i);
+  expect(pBody).toMatch(/system-ui|Inter|sans-serif/i);
   pr.forEach((r, i) => expect(r).toBeGreaterThanOrEqual(er[i]));
 });

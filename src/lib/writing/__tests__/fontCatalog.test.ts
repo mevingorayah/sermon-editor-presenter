@@ -9,7 +9,7 @@ import {
   GOOGLE_FONTS_HREF,
   writingFontId,
 } from "@/lib/writing/fontCatalog";
-import { fontCategory, mapFontFamily } from "@/lib/sermon/export/fonts";
+import { exportFontId, fontCategory, mapFontFamily } from "@/lib/sermon/export/fonts";
 
 test("catalog has 8 serif + 8 sans Google fonts and keeps system stacks", () => {
   assert.equal(SERIF_FONTS.length, 8);
@@ -32,4 +32,16 @@ test("stored family names and ids map for export category (French-capable fonts)
   assert.equal(fontCategory(mapFontFamily('"EB Garamond", serif')), "serif");
   assert.equal(GOOGLE_FONTS_HREF.includes("display=swap"), true);
   assert.equal(GOOGLE_FONTS_HREF.startsWith("https://fonts.googleapis.com/css2?"), true);
+});
+
+
+test("six new faces use their own bundled export font, not a fallback", () => {
+  assert.equal(exportFontId("eb-garamond"), "eb-garamond");
+  assert.equal(exportFontId("crimson-pro"), "crimson-pro");
+  assert.equal(exportFontId("noto-serif"), "noto-serif");
+  assert.equal(exportFontId("source-sans-3"), "source-sans-3");
+  assert.equal(exportFontId("noto-sans"), "noto-sans");
+  assert.equal(exportFontId("ibm-plex-sans"), "ibm-plex-sans");
+  assert.equal(exportFontId("lora"), "lora");
+  assert.equal(exportFontId("inter"), "inter");
 });

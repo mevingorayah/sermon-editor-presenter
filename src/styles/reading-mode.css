@@ -5,8 +5,9 @@
 
 [data-reading-mode] {
   /* Type */
-  /* Same body face as Edit (--edit-font-body) so user styling carries over. */
-  --rm-font-body: var(--font-source-serif), "Source Serif 4", Georgia, serif;
+  /* Preach role fonts: sermon text sans-serif; Scripture uses Literata. */
+  --rm-font-body: system-ui, "Segoe UI", Inter, sans-serif;
+  --rm-font-scripture: var(--font-literata), Literata, "Source Serif 4", serif;
   --rm-font-ui: system-ui, sans-serif;
   /* Edit's sizes (1.75 / 1.35 / 1.15 / 1.05rem) × one factor (1.25 / 1.05),
      so Preach keeps Edit's proportions and only the overall size differs. */
@@ -43,6 +44,7 @@
 }
 
 /* Dark (stage default for Preaching) */
+[data-reading-mode][data-format-theme="screen-dark"],
 [data-reading-mode][data-theme="dark"] {
   --rm-bg: #141210;
   --rm-bg-elevated: #1d1a16;
@@ -60,10 +62,11 @@
 }
 
 /* Light (paper / print default) */
+[data-reading-mode][data-format-theme="print"],
 [data-reading-mode][data-theme="light"] {
-  --rm-bg: #f7f3eb;
+  --rm-bg: #ffffff;
   --rm-bg-elevated: #fffcf7;
-  --rm-fg: #1a1814;
+  --rm-fg: #141210;
   --rm-fg-muted: #6b6560;
   --rm-border: #d9d2c5;
   --rm-accent: #8b6914;
@@ -88,10 +91,9 @@
 }
 
 /*
- * Pulpit stage (Preach only, not the Calibrate preview): type scales with the
- * screen so lines stay ~38–45 characters by growing the text, not by
- * narrowing the column. min(vw, vh) keeps a landscape tablet near 28–32 px
- * while a laptop goes larger; phones floor at 22 px.
+ * Pulpit stage (Preach only, not the Calibrate preview): the column fills the
+ * screen width up to 60ch. Type scales with min(vw, vh) so a landscape tablet
+ * stays near 28–32 px while a laptop goes larger; phones floor at 22 px.
  */
 [data-reading-mode] [data-pulpit] {
   --rm-size-body: clamp(22px, min(3.5vw, 4.4vh), 64px);
@@ -99,7 +101,7 @@
   --rm-size-h1: calc(var(--rm-size-body) * 1.4);
   --rm-size-h2: calc(var(--rm-size-body) * 1.25);
   --rm-size-caption: calc(var(--rm-size-body) * 0.6);
-  --rm-measure: 44ch;
+  --rm-measure: 60ch;
   --rm-pad-inline: clamp(1rem, 4vw, 4rem);
   --rm-pad-block: clamp(1.25rem, 4vh, 3rem);
   --rm-gap-block: 0.9em;

@@ -10,8 +10,8 @@ import {
 import { citationCaps, type StyledBlock, type StyledRun } from "./contentWalk";
 import { layoutSnapshot, roleStyle, type PngPage, type SnapshotLayout } from "./pngLayout";
 import { lookAlign, lookRole } from "./blockLook";
-import { afmMeasurer, FALLBACK_FAMILY, metricCompatibleCss, splitByCoverage } from "./textMeasure";
-import { DARK_YELLOW_PRESET, ensureContrast } from "@/lib/reading/contrast";
+import { afmMeasurer, FALLBACK_FAMILY, letterSpacingEm, metricCompatibleCss, splitByCoverage } from "./textMeasure";
+import { displayHighlightColor, displayTextColor, ensureContrast } from "@/lib/reading/contrast";
 
 export interface PngBuildOptions {
   resolvedColors?: { accent: string };
@@ -94,7 +94,7 @@ export function paletteFor(theme: "light" | "dark", accentIn?: string): Palette 
     muted: light ? "#555555" : "#A8A29A",
     accent,
     title: light ? accent : ensureContrast(accent, bg),
-    highlight: light ? HIGHLIGHT_AMBER : DARK_YELLOW_PRESET,
+    highlight: HIGHLIGHT_AMBER,
   };
 }
 
@@ -134,7 +134,12 @@ function pageSvg(layout: SnapshotLayout, page: PngPage, p: Palette): string {
         : align === "right" ? lx + lw
           : lx;
     const runs = splitRunsByGlyph(trimRunsEnd(sliceRuns(block.runs, line.start, line.end)), role);
-    const styleOf = (run: StyledRun) => ({ font: run.fontFamily, bold: role.bold || !!run.bold, italic: role.italic || !!run.italic });
+    const styleOf = (run: StyledRun) => ({
+      font: run.fontFamily,
+      bold: role.bold || !!run.bold,
+      italic: role.italic || !!run.italic,
+      letterSpacing: run.letterSpacing ?? block.letterSpacing,
+    });
     const widths = runs.map((run) => afmMeasurer(run.text, line.size, styleOf(run)));
     const total = widths.reduce((a, w) => a + w, 0);
     let hx = anchor === "middle" ? x - total / 2 : anchor === "end" ? x - total : x;
@@ -145,17 +150,22 @@ function pageSvg(layout: SnapshotLayout, page: PngPage, p: Palette): string {
     }
     runs.forEach((run, i) => {
       if (run.highlight) {
+        const hl = displayHighlightColor(run.highlightColor || p.highlight);
         parts.push(
-          `<rect x="${hx.toFixed(2)}" y="${(line.y + line.size * 0.15).toFixed(2)}" width="${widths[i].toFixed(2)}" height="${(line.size * 1.05).toFixed(2)}" fill="${escapeXml(p.highlight)}" />`,
+          `<rect x="${hx.toFixed(2)}" y="${(line.y + line.size * 0.15).toFixed(2)}" width="${widths[i].toFixed(2)}" height="${(line.size * 1.05).toFixed(2)}" fill="${escapeXml(hl)}" />`,
         );
       }
       hx += widths[i];
     });
     const tspans = runs
       .map((run) => {
-        const fill = run.color || color;
+        const fill = run.highlight && !run.color && !p.light
+          ? "#141210"
+          : displayTextColor(run.color || color, p.bg, p.light ? "print" : "screen-dark", { highlight: !!run.highlight });
         const deco = [run.underline ? "underline" : "", run.strike ? "line-through" : ""].filter(Boolean).join(" ");
-        return `<tspan fill="${escapeXml(fill)}" font-family="${escapeXml(run.glyphFallback ? `"${FALLBACK_FAMILY}", sans-serif` : metricCompatibleCss(run.fontFamily))}" font-weight="${role.bold || run.bold ? 700 : 400}" font-style="${!run.glyphFallback && (role.italic || run.italic) ? "italic" : "normal"}"${deco ? ` text-decoration="${deco}"` : ""}>${escapeXml(run.text)}</tspan>`;
+        const ls = letterSpacingEm(run.letterSpacing ?? block.letterSpacing);
+        const lsAttr = ls ? ` letter-spacing="${(ls * line.size).toFixed(3)}"` : "";
+        return `<tspan fill="${escapeXml(fill)}" font-family="${escapeXml(run.glyphFallback ? `"${FALLBACK_FAMILY}", sans-serif` : metricCompatibleCss(run.fontFamily))}" font-weight="${role.bold || run.bold ? 700 : 400}" font-style="${!run.glyphFallback && (role.italic || run.italic) ? "italic" : "normal"}"${deco ? ` text-decoration="${deco}"` : ""}${lsAttr}>${escapeXml(run.text)}</tspan>`;
       })
       .join("");
     parts.push(

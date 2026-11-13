@@ -36,6 +36,7 @@ export const presentationSettingsSchema = z.object({
   typeScaleStep: typeScaleStepSchema,
   lineHeight: lineHeightSchema,
   bionic: z.boolean(),
+  bionicStrength: z.number().min(0.1).max(1).optional(),
   calibrationTarget: calibrationTargetSchema,
   page: z.lazy(() => sermonPageSettingsSchema).optional(),
 });

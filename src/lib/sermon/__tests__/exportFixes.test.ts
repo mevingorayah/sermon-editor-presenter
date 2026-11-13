@@ -116,7 +116,7 @@ describe("long sermon export (retest 9facff1)", () => {
       assert.equal(slides.length, expected, target);
     }
   });
-  it("dark PNG highlight is #655F33, not #3d2e0e; PDF draws the highlight", async () => {
+  it("PNG/PDF highlights keep their colour (never #3d2e0e); PDF draws the highlight", async () => {
     const fs = await import("node:fs");
     const src = fs.readFileSync(new URL("../export/png.ts", import.meta.url), "utf8");
     assert.doesNotMatch(src, /3d2e0e/i);

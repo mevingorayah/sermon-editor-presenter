@@ -3,13 +3,16 @@
 import type { JSONContent } from "@tiptap/react";
 import { renderSermon } from "@/lib/reading/renderSermon";
 import type { ReadingTheme } from "@/types/document";
+import type { FormatTheme } from "@/lib/sermon/export/frames";
 import styles from "./ReadingView.module.css";
 
 interface ReadingViewProps {
   content: JSONContent;
   bionic: boolean;
+  bionicStrength?: number;
   /** Theme for the dark-mode contrast policy on user colours. */
   theme?: ReadingTheme;
+  formatTheme?: FormatTheme;
   /** When true (export preview), omit atmosphere gradient under the column. */
   flattenGradient?: boolean;
   /** Preach stage: screen-scaled pulpit type (not the Calibrate preview). */
@@ -35,7 +38,9 @@ const classes = {
 export function ReadingView({
   content,
   bionic,
+  bionicStrength,
   theme = "light",
+  formatTheme,
   flattenGradient = false,
   pulpit = false,
 }: ReadingViewProps) {
@@ -45,7 +50,7 @@ export function ReadingView({
         <div className={styles.atmosphere} aria-hidden="true" />
       ) : null}
       <article className={`${styles.column} sermon-marks`}>
-        {renderSermon(content, { bionic, theme, classes })}
+        {renderSermon(content, { bionic, bionicStrength, theme, formatTheme, classes })}
       </article>
     </div>
   );

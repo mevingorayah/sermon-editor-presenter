@@ -22,6 +22,14 @@ FONTS = {
   "montserrat": ("Montserrat Export", "montserrat/Montserrat[wght].ttf", "montserrat/Montserrat-Italic[wght].ttf", {}),
   "nunito-sans": ("Nunito Sans Export", "nunito-sans/NunitoSans[YTLC,opsz,wdth,wght].ttf", "nunito-sans/NunitoSans-Italic[YTLC,opsz,wdth,wght].ttf", {"opsz": 12, "wdth": 100, "YTLC": 500}),
   "jetbrains-mono": ("JetBrains Mono Export", "jetbrains-mono/JetBrainsMono[wght].ttf", "jetbrains-mono/JetBrainsMono-Italic[wght].ttf", {}),
+  # Six Phase 2 writing faces. Source Sans / IBM Plex have OFL Reserved Font
+  # Names ("Source", "Plex"), so instanced files use a neutral family name.
+  "eb-garamond": ("EB Garamond Export", "eb-garamond/EBGaramond[wght].ttf", "eb-garamond/EBGaramond-Italic[wght].ttf", {}),
+  "crimson-pro": ("Crimson Pro Export", "crimson-pro/CrimsonPro[wght].ttf", "crimson-pro/CrimsonPro-Italic[wght].ttf", {}),
+  "noto-serif": ("Noto Serif Export", "noto-serif/NotoSerif[wdth,wght].ttf", "noto-serif/NotoSerif-Italic[wdth,wght].ttf", {"wdth": 100}),
+  "source-sans-3": ("Sermon Export Sans D", "source-sans-3/SourceSans3[wght].ttf", "source-sans-3/SourceSans3-Italic[wght].ttf", {}),
+  "noto-sans": ("Noto Sans Export", "noto-sans/NotoSans[wdth,wght].ttf", "noto-sans/NotoSans-Italic[wdth,wght].ttf", {"wdth": 100}),
+  "ibm-plex-sans": ("Sermon Export Sans F", "ibm-plex-sans/IBMPlexSans[wdth,wght].ttf", "ibm-plex-sans/IBMPlexSans-Italic[wdth,wght].ttf", {"wdth": 100}),
 }
 STYLES = [("Regular", False, 400), ("Bold", False, 700), ("Italic", True, 400), ("BoldItalic", True, 700)]
 

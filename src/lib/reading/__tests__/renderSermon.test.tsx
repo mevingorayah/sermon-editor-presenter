@@ -63,7 +63,7 @@ test("bionic adds <strong> inside italic text without dropping the <em>", () => 
   assert.match(out, /^<p><em><strong data-bionic="">Wo<\/strong><span>rd<\/span><\/em><\/p>$/);
 });
 
-test("Scripture keeps marks but never gets bionic", () => {
+test("Scripture keeps marks and applies bionic when on", () => {
   const out = html(
     {
       type: "doc",
@@ -77,8 +77,8 @@ test("Scripture keeps marks but never gets bionic", () => {
     },
     true,
   );
-  assert.doesNotMatch(out, /data-bionic/);
-  assert.match(out, /<em>For God so loved<\/em>/);
+  assert.match(out, /data-bionic/);
+  assert.match(out, /<em><strong data-bionic="">Fo<\/strong>/);
   assert.match(out, /<figure data-scripture="" style="text-align:center">/);
   assert.match(out, /<figcaption><cite>John 3:16<\/cite><\/figcaption>/);
 });

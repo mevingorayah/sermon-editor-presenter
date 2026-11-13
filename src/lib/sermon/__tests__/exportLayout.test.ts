@@ -422,8 +422,8 @@ test("page fields: defaults 0.8in / 1.55; out-of-range values clamp; lineSpacing
   assert.equal(snapshotLineSpacing({ lineHeight: 1.7 }), 1.7);
 });
 
-test("fonts: all 10 approved fonts + JetBrains Mono have bundled export files", () => {
-  assert.equal(APPROVED_FONT_IDS.length, 11);
+test("fonts: all approved faces including the six Phase 2 writing fonts have bundled export files", () => {
+  assert.equal(APPROVED_FONT_IDS.length, 17);
   for (const id of APPROVED_FONT_IDS) {
     for (const st of [{}, { bold: true }, { italic: true }, { bold: true, italic: true }]) {
       assert.ok(existsSync(join("assets/fonts/export", `${exportFontName(id, st)}.ttf`)), `${id} ${JSON.stringify(st)}`);

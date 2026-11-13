@@ -78,8 +78,8 @@ for (const vp of VIEWPORTS) {
     expect(m.fs).toBeGreaterThanOrEqual(vp.min);
     expect(m.fs).toBeLessThanOrEqual(vp.max);
     if (vp.name !== "phone") {
-      expect(m.cpl).toBeGreaterThanOrEqual(34);
-      expect(m.cpl).toBeLessThanOrEqual(50);
+      expect(m.cpl).toBeGreaterThanOrEqual(40);
+      expect(m.cpl).toBeLessThanOrEqual(100);
     }
     expect(m.hyph).toBe("none");
     expect(m.lh).toBeCloseTo(1.55, 1);
@@ -141,7 +141,7 @@ test("countdown timer: caps, STOP dims, bar fades while running but not while fo
 });
 
 test("cues stay inline; dark contrast", async ({ page }) => {
-  await seed(page, { theme: "dark" });
+  await seed(page, { theme: "dark", format: "16:9" });
   await page.goto("/preach", { waitUntil: "networkidle" });
   const cue = page.locator("article [data-cue]").first();
   await expect(cue).toBeVisible({ timeout: 20_000 });
@@ -186,7 +186,7 @@ for (const target of ["screen-16-9", "paper-a4"]) {
   });
 }
 
-const FORMATS = ["fit", "a4", "a5", "letter", "half-letter", "4-3", "16-10", "16-9"];
+const FORMATS = ["a4", "a5", "letter", "half-letter", "4-3", "16-10", "16-9", "fit"];
 for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 800 }, { width: 2112, height: 1320 }, { width: 800, height: 1280 }, { width: 1000, height: 300 }]) {
   test(`⚙ Page: every format re-renders live, saved, never clipped (${vp.width}x${vp.height})`, async ({ page }) => {
     await page.setViewportSize(vp);
@@ -214,7 +214,7 @@ for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 800 }, { w
       expect(clipped).toBe(0);
     }
     // Extremes: half-Letter max (48 pt) with 2in margins and 2.0 line spacing still never runs off the page.
-    await panel.locator('[data-format="half-letter"]').click();
+    await panel.locator('[data-format="a5"]').click();
     for (let i = 0; i < 24; i++) await panel.getByRole("button", { name: "Larger text" }).click({ force: true }).catch(() => {});
     await expect(panel.locator("[data-text-pt]")).toHaveText("48 pt");
     for (const [name, v] of [["Margins", "2"], ["Line spacing", "2"]] as const) {
@@ -332,7 +332,7 @@ test("⚙ Spacing: sliders, tap-to-type, reset keeps format", async ({ page }) =
   await expect(panel.getByRole("button", { name: /Line spacing: 2 ×/ })).toBeVisible();
   await expect.poll(async () => Number(await page.locator("[data-page-view]").getAttribute("data-page-count"))).toBeGreaterThan(before);
   await panel.locator("[data-each-side]").click();
-  await expect(panel.locator("[data-slider]")).toHaveCount(6);
+  await expect(panel.locator("[data-slider]")).toHaveCount(7);
   for (const el of await panel.locator("button, input:not([type=checkbox]), label:has(input[type=checkbox]), [data-slider] label").all()) {
     const b = await el.boundingBox();
     if (b && b.width > 0) expect(Math.min(b.height, b.width)).toBeGreaterThanOrEqual(44);

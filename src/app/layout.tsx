@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Literata, Source_Serif_4 } from "next/font/google";
 import { GOOGLE_FONTS_HREF } from "@/lib/writing/fontCatalog";
+import "@/styles/bundled-writing-fonts";
 import "./globals.css";
 import "@/styles/reading-mode.css";
 import "@/styles/sermon-marks.css";

@@ -4,6 +4,7 @@ import type { GlobalStyles } from "@/lib/sermon/blockStyle";
 import { lookAlign, lookRole } from "@/lib/sermon/export/blockLook";
 import { sliceRuns } from "@/lib/sermon/export/pages";
 import { layoutSnapshot, pageSpecFromSnapshot, roleStyle } from "@/lib/sermon/export/pngLayout";
+import { bionicMeasurer } from "@/lib/sermon/export/textMeasure";
 import { pageGeometry } from "@/lib/sermon/export/frames";
 import { snapshotFor } from "@/lib/reading/pageSettings";
 import { citationCaps, type StyledBlock, type StyledRun } from "@/lib/sermon/export/contentWalk";
@@ -59,7 +60,7 @@ export interface PageViewModel {
 /** Page view model: Backend's layoutSnapshot (the export layout), not a copy of it. */
 export function buildPageView(opts: { content: JSONContent; settings: PresentationSettings; globalStyles?: GlobalStyles }): PageViewModel {
   const snapshot = snapshotFor(opts.content as never, opts.settings, opts.globalStyles);
-  const { frame, styled, pages } = layoutSnapshot(snapshot);
+  const { frame, styled, pages } = layoutSnapshot(snapshot, { measure: bionicMeasurer(opts.settings.bionicStrength) });
   return {
     frame,
     geometry: pageGeometry(pageSpecFromSnapshot(snapshot)),

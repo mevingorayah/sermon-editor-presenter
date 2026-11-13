@@ -1,5 +1,6 @@
 import { PAGE_FORMATS, PAGE_ORIENTATIONS } from "@/lib/sermon/export/frames";
 import type { PresentationSettings, SermonPageSettings } from "@/types/document";
+import { clampBionicStrength, DEFAULT_BIONIC_STRENGTH } from "@/lib/bionic";
 
 /**
  * Load-time sanitizer + migration for presentation.page.
@@ -38,5 +39,9 @@ export function sanitizePresentationSettings(raw: unknown): unknown {
     if (page === undefined) delete (s as { page?: unknown }).page;
     else s.page = page;
   }
+  s.bionicStrength = clampBionicStrength(
+    (s as { bionicStrength?: unknown }).bionicStrength,
+    DEFAULT_BIONIC_STRENGTH,
+  );
   return s;
 }

@@ -54,9 +54,10 @@ export const FORMAT_GROUPS: Array<{ label: string; items: FormatButton[] }> = [
     { key: "4-3", label: "4:3", format: "4:3" },
     { key: "16-10", label: "16:10", format: "16:10" },
     { key: "16-9", label: "16:9", format: "16:9" },
+    FIT_BUTTON,
   ] },
 ];
-export const FORMAT_BUTTONS = [FIT_BUTTON, ...FORMAT_GROUPS.flatMap((g) => g.items)].filter(
+export const FORMAT_BUTTONS = [...FORMAT_GROUPS.flatMap((g) => g.items)].filter(
   (b): b is FormatButton & { format: PageFormat } => Boolean(b.format),
 );
 

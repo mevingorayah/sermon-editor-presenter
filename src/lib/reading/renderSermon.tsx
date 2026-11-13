@@ -5,7 +5,8 @@ import { cssTextToReactStyle } from "../cssText";
 import { Fragment, type CSSProperties, type ReactNode } from "react";
 import type { JSONContent } from "@tiptap/react";
 import { bionicParts } from "@/lib/bionic";
-import { effectiveDarkBackground, readingHighlightColor, readingTextColor } from "./contrast";
+import { displayHighlightColor, displayTextColor } from "./contrast";
+import { FORMAT_THEME, type FormatTheme } from "@/lib/sermon/export/frames";
 import {
   VERSE_SNIPPET_FONT_FAMILY,
   currentPassageText,
@@ -41,16 +42,21 @@ export type ReadingClassNames = Partial<
 
 export interface RenderOptions {
   bionic: boolean;
+  /** 0.1–1; ignored when bionic is off. Default 0.45. */
+  bionicStrength?: number;
   theme: "light" | "dark";
+  /** #43 format group: print vs screen-dark. Overrides theme when set. */
+  formatTheme?: FormatTheme;
   classes?: ReadingClassNames;
 }
 
 interface Ctx extends RenderOptions {
   classes: ReadingClassNames;
-  /** Bionic disabled for this subtree (Scripture). */
+  /** Bionic disabled for this subtree (code blocks). */
   plain: boolean;
-  /** Dark-theme background behind the current text run (highlight or page). */
+  /** Background behind the current text run (highlight or page). */
   textBg?: string;
+  formatTheme: FormatTheme;
 }
 
 /** Every node/mark type this renderer handles explicitly (see drift test). */
@@ -131,8 +137,8 @@ function alignStyle(node: JSONContent): CSSProperties | undefined {
 
 const SAFE_HREF = /^(https?:|mailto:|tel:|#|\/)/i;
 
-function bionicLeaf(text: string, inBold: boolean): ReactNode {
-  return bionicParts(text).map((part, i) => {
+function bionicLeaf(text: string, inBold: boolean, strength?: number): ReactNode {
+  return bionicParts(text, strength).map((part, i) => {
     if (!part.bold) return <span key={i}>{part.text}</span>;
     // Inside a user bold mark, bionic adds weight contrast instead of a
     // second <strong>, so the user's bold is never replaced.
@@ -155,9 +161,16 @@ function renderText(node: JSONContent, ctx: Ctx, key: string): ReactNode {
   const hl = marks.find((m) => m.type === "highlight");
   const hlColor = typeof hl?.attrs?.color === "string" && hl.attrs.color ? hl.attrs.color : null;
   const hlPreset = typeof hl?.attrs?.preset === "string" ? hl.attrs.preset : null;
-  ctx = { ...ctx, textBg: effectiveDarkBackground(hlColor, Boolean(hl), hlPreset) };
+  const fmt = ctx.formatTheme;
+  const pageBg = FORMAT_THEME[fmt].pageBackground;
+  ctx = {
+    ...ctx,
+    textBg: hl
+      ? displayHighlightColor(hlColor || "#FFF176", fmt)
+      : pageBg,
+  };
   let out: ReactNode =
-    ctx.bionic && !ctx.plain ? bionicLeaf(text, inBold) : text;
+    ctx.bionic && !ctx.plain ? bionicLeaf(text, inBold, ctx.bionicStrength) : text;
   // Wrap innermost-last so marks[0] is the outermost element, like ProseMirror.
   for (let i = marks.length - 1; i >= 0; i--) {
     out = wrapMark(marks[i], out, ctx, i);
@@ -204,7 +217,12 @@ function wrapMark(
     case "textStyle": {
       const style: CSSProperties = {};
       if (typeof attrs.color === "string" && attrs.color) {
-        style.color = readingTextColor(attrs.color, ctx.theme, ctx.textBg);
+        style.color = displayTextColor(
+          attrs.color,
+          ctx.textBg ?? FORMAT_THEME[ctx.formatTheme].pageBackground,
+          ctx.formatTheme,
+          { highlight: !!ctx.textBg && ctx.textBg !== FORMAT_THEME[ctx.formatTheme].pageBackground },
+        );
       }
       if (typeof attrs.fontFamily === "string" && attrs.fontFamily) {
         style.fontFamily = attrs.fontFamily;
@@ -227,7 +245,10 @@ function wrapMark(
           key={i}
           className="sermon-highlight"
           data-color={color ?? undefined}
-          style={color ? { backgroundColor: readingHighlightColor(color, ctx.theme, preset) } : undefined}
+          style={{
+            ...(color ? { backgroundColor: displayHighlightColor(color, ctx.formatTheme) } : {}),
+            ...(ctx.formatTheme === "screen-dark" ? { color: FORMAT_THEME.print.text } : {}),
+          }}
         >
           {children}
         </mark>
@@ -330,11 +351,11 @@ export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode 
     case "scripture": {
       const citation = typeof node.attrs?.citation === "string" ? node.attrs.citation : "";
       // Body follows the node's TextAlign; the citation is always caption-right
-      // below the quote (slice 1 spec, Align). Scripture never gets bionic.
+      // below the quote (slice 1 spec, Align). Scripture quote body is Bionic when on.
       return (
         <figure key={key} className={c.scripture} data-scripture="" style={alignStyle(node)}>
           <blockquote className={c.quoteBlock}>
-            <p className={c.quote}>{children(node, { ...ctx, plain: true })}</p>
+            <p className={c.quote}>{children(node, { ...ctx, plain: false })}</p>
           </blockquote>
           {citation ? (
             <figcaption className={c.citation}>
@@ -374,7 +395,8 @@ export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode 
 
 /** Render the blocks of a sermon document for Preach. */
 export function renderSermon(content: JSONContent, opts: RenderOptions): ReactNode {
-  const ctx: Ctx = { ...opts, classes: opts.classes ?? {}, plain: false };
+  const formatTheme = opts.formatTheme ?? (opts.theme === "dark" ? "screen-dark" : "print");
+  const ctx: Ctx = { ...opts, formatTheme, classes: opts.classes ?? {}, plain: false };
   const blocks = content.content ?? [];
   return blocks.map((n, i) => {
     if (isTitleSubline(blocks[i - 1], n)) {
