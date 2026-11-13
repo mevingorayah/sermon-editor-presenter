@@ -76,7 +76,7 @@ function fontSize(
   return Math.round(roleBase * Math.pow(STEP_FACTOR, step) * 10) / 10;
 }
 
-function pdfAlign(align: TextAlign): "left" | "center" | "right" {
+function pdfAlign(align: TextAlign): "left" | "center" | "right" | "justify" {
   return align;
 }
 

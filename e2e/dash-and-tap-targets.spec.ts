@@ -10,6 +10,7 @@ async function openEdit(page: Page) {
     if (sessionStorage.getItem("__e2e_seeded")) return;
     sessionStorage.setItem("__e2e_seeded", "1");
     localStorage.clear();
+    localStorage.setItem("sermon-editor-presenter:storage-mode:v1", "browser");
   });
   await page.goto("/edit");
   const notNow = page.getByRole("button", { name: "Not now, keep them in this browser" });
@@ -80,7 +81,7 @@ async function smallControls(page: Page, root: string) {
 test("tap targets are at least 44x44 on /edit and /preach", async ({ page }) => {
   await openEdit(page);
   await expectTap(page.getByRole("button", { name: "Document", exact: true }), "Document");
-  await expectTap(page.getByRole("link", { name: "Export…" }), "Export");
+  await expectTap(page.getByRole("button", { name: "Export (PDF, PNG, PowerPoint)" }), "Export");
   await expectTap(page.getByRole("link", { name: "Enter Preaching" }), "Enter Preaching");
   await expectTap(page.getByRole("button", { name: "New", exact: true }), "New");
   const sermons = page.getByRole("navigation", { name: "Sermons" });
@@ -101,6 +102,11 @@ test("tap targets are at least 44x44 on /edit and /preach", async ({ page }) => 
   await page.getByRole("button", { name: "Document", exact: true }).click();
   expect(await smallControls(page, "[data-edit-mode]"), "/edit Document panel controls under 44x44").toEqual([]);
   await page.keyboard.press("Escape");
+  const docMenu = page.getByRole("menu", { name: "Document" });
+  if (await docMenu.isVisible().catch(() => false)) {
+    await page.getByRole("button", { name: "Document", exact: true }).click();
+  }
+  await expect(docMenu).toBeHidden();
   await page.getByRole("button", { name: "Text color" }).click();
   expect(await smallControls(page, "[data-edit-mode]"), "/edit Text color menu under 44x44").toEqual([]);
   await page.keyboard.press("Escape");

@@ -5,6 +5,8 @@
  * other colour, and every colour in the light theme, is returned unchanged.
  */
 
+import { highlightPresetByIdOrColor } from "@/lib/writing/colors";
+
 export const DARK_STAGE_BG = "#141210"; // --rm-bg (dark), reading-mode.css
 export const MIN_CONTRAST = 4.5;
 /** #17 HIGHLIGHT_PRESETS yellow (light #FFF176) → its pre-mixed dark value. */
@@ -139,6 +141,8 @@ export function readingHighlightColor(
   preset?: string | null,
 ): string {
   if (theme !== "dark") return color;
+  const hit = highlightPresetByIdOrColor(color, preset);
+  if (hit) return hit.dark;
   if (preset === "yellow" || color.trim().toLowerCase() === YELLOW_PRESET_LIGHT) {
     return DARK_YELLOW_PRESET;
   }

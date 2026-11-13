@@ -100,7 +100,8 @@
   background: var(--edit-bg-elevated);
   color: var(--edit-fg);
   cursor: pointer;
-  min-height: 2rem;
+  min-height: 44px;
+  box-sizing: border-box;
 }
 
 .fontSelect:hover,
@@ -284,6 +285,114 @@
 .prose :global(.sermon-find-match-current) {
   background: color-mix(in srgb, var(--edit-accent) 55%, transparent);
   outline: 1px solid var(--edit-accent);
+}
+
+
+.swatchCheck {
+  color: #1a1814;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-shadow: 0 0 2px #fff;
+}
+
+.recentRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  margin-top: 0.15rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--edit-border);
+}
+
+.recentLabel {
+  font-size: 0.7rem;
+  color: var(--edit-fg-muted);
+  margin-right: 0.15rem;
+}
+
+.hexRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  margin-top: 0.2rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--edit-border);
+}
+
+.hexLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 44px;
+}
+
+.hexInput {
+  font: inherit;
+  font-size: 0.8125rem;
+  min-height: 44px;
+  min-width: 7.5rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--edit-border);
+  background: var(--edit-bg);
+  color: var(--edit-fg);
+  box-sizing: border-box;
+}
+
+.hexSwatch {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  border: 1px solid var(--edit-border);
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.hexApply {
+  font: inherit;
+  font-size: 0.8125rem;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.25rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--edit-border);
+  background: var(--edit-bg);
+  color: var(--edit-fg);
+  cursor: pointer;
+}
+
+.hexApply:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.spacingLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 44px;
+}
+
+.spacingName {
+  font-size: 0.7rem;
+  color: var(--edit-fg-muted);
+}
+
+.spacingInput {
+  font: inherit;
+  font-size: 0.8125rem;
+  min-height: 44px;
+  width: 4.4rem;
+  padding: 0.25rem 0.35rem;
+  border-radius: 6px;
+  border: 1px solid var(--edit-border);
+  background: var(--edit-bg-elevated);
+  color: var(--edit-fg);
+  box-sizing: border-box;
 }
 
 /* Highlight + mark styles live in src/styles/sermon-marks.css (shared with Preach). */

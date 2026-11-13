@@ -91,9 +91,23 @@ export function textAlignOf(node: JSONContent): CSSProperties["textAlign"] | und
     : undefined;
 }
 
+function spacingStyle(attrs: Record<string, unknown> | undefined): CSSProperties {
+  const style: CSSProperties = {};
+  const ls = attrs?.letterSpacing;
+  const lh = attrs?.lineSpacing;
+  if (typeof ls === "string" && ls) style.letterSpacing = ls;
+  else if (typeof ls === "number") style.letterSpacing = `${ls}em`;
+  if (typeof lh === "string" && lh) style.lineHeight = lh;
+  else if (typeof lh === "number") style.lineHeight = lh;
+  return style;
+}
+
 function alignStyle(node: JSONContent): CSSProperties | undefined {
   const a = textAlignOf(node);
-  return a ? { textAlign: a } : undefined;
+  const spacing = spacingStyle(node.attrs);
+  const style: CSSProperties = { ...spacing };
+  if (a) style.textAlign = a;
+  return Object.keys(style).length ? style : undefined;
 }
 
 const SAFE_HREF = /^(https?:|mailto:|tel:|#|\/)/i;
@@ -179,6 +193,7 @@ function wrapMark(
       if (typeof attrs.fontSize === "string" && attrs.fontSize) {
         style.fontSize = attrs.fontSize;
       }
+      Object.assign(style, spacingStyle(attrs));
       return Object.keys(style).length ? (
         <span key={i} style={style}>{children}</span>
       ) : (

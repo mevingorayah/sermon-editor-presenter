@@ -52,9 +52,20 @@ function alignType(align: TextAlign) {
       return AlignmentType.CENTER;
     case "right":
       return AlignmentType.RIGHT;
+    case "justify":
+      return AlignmentType.JUSTIFIED;
     default:
       return AlignmentType.LEFT;
   }
+}
+
+
+/** docx characterSpacing is twentieths of a point; letter-spacing is em × font size. */
+function letterSpacingTwips(raw: string | undefined, sizeHalfPoints: number): number | undefined {
+  if (raw == null || raw === "") return undefined;
+  const em = parseFloat(String(raw).replace(/em$/i, ""));
+  if (!Number.isFinite(em) || em === 0) return undefined;
+  return Math.round(em * (sizeHalfPoints / 2) * 20);
 }
 
 function runToTextRun(
@@ -76,9 +87,10 @@ function runToTextRun(
     shading: run.highlight
       ? {
           type: ShadingType.CLEAR,
-          fill: hexWithoutHash(HIGHLIGHT_AMBER),
+          fill: hexWithoutHash(run.highlightColor ?? HIGHLIGHT_AMBER),
         }
       : undefined,
+    characterSpacing: letterSpacingTwips(run.letterSpacing, opts.size),
   });
 }
 
