@@ -91,10 +91,9 @@
 }
 
 /*
- * Pulpit stage (Preach only, not the Calibrate preview): type scales with the
- * screen so lines stay ~38–45 characters (sans body is narrower than serif,
- * so the column is 32ch) by growing the text, not by narrowing the column. min(vw, vh) keeps a landscape tablet near 28–32 px
- * while a laptop goes larger; phones floor at 22 px.
+ * Pulpit stage (Preach only, not the Calibrate preview): the column fills the
+ * screen width up to 60ch. Type scales with min(vw, vh) so a landscape tablet
+ * stays near 28–32 px while a laptop goes larger; phones floor at 22 px.
  */
 [data-reading-mode] [data-pulpit] {
   --rm-size-body: clamp(22px, min(3.5vw, 4.4vh), 64px);
@@ -102,7 +101,7 @@
   --rm-size-h1: calc(var(--rm-size-body) * 1.4);
   --rm-size-h2: calc(var(--rm-size-body) * 1.25);
   --rm-size-caption: calc(var(--rm-size-body) * 0.6);
-  --rm-measure: 32ch;
+  --rm-measure: 60ch;
   --rm-pad-inline: clamp(1rem, 4vw, 4rem);
   --rm-pad-block: clamp(1.25rem, 4vh, 3rem);
   --rm-gap-block: 0.9em;

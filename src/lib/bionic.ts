@@ -1,7 +1,19 @@
 /**
- * Grapheme-aware bionic reading: bold roughly the first 40–50% of each word.
- * Skips punctuation; callers should skip Scripture citations entirely.
+ * Grapheme-aware bionic reading: bold the first `strength` of each word
+ * (default 45%). Skips punctuation. Applied to all Preach text, including
+ * Scripture quote body; already-bold text stays bold.
  */
+
+export const DEFAULT_BIONIC_STRENGTH = 0.45;
+/** Floor is above 0 so the slider can never turn Bionic off. */
+export const MIN_BIONIC_STRENGTH = 0.1;
+export const MAX_BIONIC_STRENGTH = 1;
+
+export function clampBionicStrength(value: unknown, fallback = DEFAULT_BIONIC_STRENGTH): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(MAX_BIONIC_STRENGTH, Math.max(MIN_BIONIC_STRENGTH, n));
+}
 
 function graphemes(word: string): string[] {
   if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
@@ -33,7 +45,7 @@ export interface BionicPart {
 }
 
 /** Split a plain-text run into bold/regular parts for bionic rendering. */
-export function bionicParts(text: string): BionicPart[] {
+export function bionicParts(text: string, strength: number = DEFAULT_BIONIC_STRENGTH): BionicPart[] {
   if (!text) return [];
   const parts: BionicPart[] = [];
   const tokens = text.split(/(\s+)/);
@@ -47,8 +59,9 @@ export function bionicParts(text: string): BionicPart[] {
     if (lead) parts.push({ bold: false, text: lead });
     if (core) {
       const g = graphemes(core);
-      // ~40–50%: ceil of half, at least 1 for short words
-      const n = Math.max(1, Math.ceil(g.length * 0.45));
+      const ratio = clampBionicStrength(strength);
+      // At least 1 grapheme so the floor can never turn Bionic off.
+      const n = Math.max(1, Math.ceil(g.length * ratio));
       const boldCount = Math.min(g.length, n);
       parts.push({ bold: true, text: g.slice(0, boldCount).join("") });
       if (boldCount < g.length) {

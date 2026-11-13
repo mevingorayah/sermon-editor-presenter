@@ -9,6 +9,7 @@ import styles from "./ReadingView.module.css";
 interface ReadingViewProps {
   content: JSONContent;
   bionic: boolean;
+  bionicStrength?: number;
   /** Theme for the dark-mode contrast policy on user colours. */
   theme?: ReadingTheme;
   formatTheme?: FormatTheme;
@@ -37,6 +38,7 @@ const classes = {
 export function ReadingView({
   content,
   bionic,
+  bionicStrength,
   theme = "light",
   formatTheme,
   flattenGradient = false,
@@ -48,7 +50,7 @@ export function ReadingView({
         <div className={styles.atmosphere} aria-hidden="true" />
       ) : null}
       <article className={`${styles.column} sermon-marks`}>
-        {renderSermon(content, { bionic, theme, formatTheme, classes })}
+        {renderSermon(content, { bionic, bionicStrength, theme, formatTheme, classes })}
       </article>
     </div>
   );

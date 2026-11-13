@@ -259,7 +259,7 @@ export function PreachShell() {
         theme={ps.theme}
         typeScaleStep={ps.typeScaleStep}
         lineHeight={ps.lineHeight}
-        bionic={ps.bionic}
+        bionicStrength={ps.bionicStrength ?? 0.45}
         calibrationOpen={calibrationOpen}
         onThemeChange={(theme: ReadingTheme) => patchSettings({ theme })}
         onTypeScaleChange={(typeScaleStep: TypeScaleStep) =>
@@ -268,7 +268,7 @@ export function PreachShell() {
         onLineHeightChange={(lineHeight: LineHeightOption) =>
           patchSettings({ lineHeight })
         }
-        onBionicChange={(bionic: boolean) => patchSettings({ bionic })}
+        onBionicStrengthChange={(bionicStrength: number) => patchSettings({ bionicStrength })}
         calibrationToggleRef={calibrationToggleRef}
         view={view}
         onViewChange={changeView}
@@ -305,7 +305,7 @@ export function PreachShell() {
               fill={fill}
             />
           ) : (
-            <ReadingView content={doc.content} bionic={ps.bionic} theme={fmtTheme === "print" ? "light" : "dark"} formatTheme={fmtTheme} pulpit />
+            <ReadingView content={doc.content} bionic theme={fmtTheme === "print" ? "light" : "dark"} formatTheme={fmtTheme} bionicStrength={ps.bionicStrength ?? 0.45} pulpit />
           )}
         </div>
 

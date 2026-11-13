@@ -78,8 +78,8 @@ for (const vp of VIEWPORTS) {
     expect(m.fs).toBeGreaterThanOrEqual(vp.min);
     expect(m.fs).toBeLessThanOrEqual(vp.max);
     if (vp.name !== "phone") {
-      expect(m.cpl).toBeGreaterThanOrEqual(34);
-      expect(m.cpl).toBeLessThanOrEqual(50);
+      expect(m.cpl).toBeGreaterThanOrEqual(40);
+      expect(m.cpl).toBeLessThanOrEqual(100);
     }
     expect(m.hyph).toBe("none");
     expect(m.lh).toBeCloseTo(1.55, 1);
@@ -186,7 +186,7 @@ for (const target of ["screen-16-9", "paper-a4"]) {
   });
 }
 
-const FORMATS = ["a4", "a5", "letter", "4-3", "16-10", "16-9", "fit"];
+const FORMATS = ["a4", "a5", "letter", "half-letter", "4-3", "16-10", "16-9", "fit"];
 for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 800 }, { width: 2112, height: 1320 }, { width: 800, height: 1280 }, { width: 1000, height: 300 }]) {
   test(`⚙ Page: every format re-renders live, saved, never clipped (${vp.width}x${vp.height})`, async ({ page }) => {
     await page.setViewportSize(vp);

@@ -72,6 +72,12 @@ export const EXPORT_FAMILY: Record<ApprovedFontId, string> = {
   montserrat: "Montserrat Export",
   "nunito-sans": "Nunito Sans Export",
   "jetbrains-mono": "JetBrains Mono Export",
+  "eb-garamond": "EB Garamond Export",
+  "crimson-pro": "Crimson Pro Export",
+  "noto-serif": "Noto Serif Export",
+  "source-sans-3": "Sermon Export Sans D",
+  "noto-sans": "Noto Sans Export",
+  "ibm-plex-sans": "Sermon Export Sans F",
 };
 
 /**
@@ -198,12 +204,23 @@ export function metricCompatibleCss(id: FontFamilyId): string {
  * wider than its export font, so the pre-broken, non-wrapping PPTX lines
  * never overflow; they just sit slightly narrower.
  */
+const OFFICE_FACE: Record<string, string> = {
+  lora: "Lora", merriweather: "Merriweather", "playfair-display": "Playfair Display",
+  "source-serif-4": "Source Serif 4", literata: "Literata",
+  inter: "Inter", "open-sans": "Open Sans", lato: "Lato", montserrat: "Montserrat",
+  "nunito-sans": "Nunito Sans", "jetbrains-mono": "JetBrains Mono",
+  "eb-garamond": "EB Garamond", "crimson-pro": "Crimson Pro", "noto-serif": "Noto Serif",
+  "source-sans-3": "Source Sans 3", "noto-sans": "Noto Sans", "ibm-plex-sans": "IBM Plex Sans",
+};
+
 export function metricCompatibleOffice(id: FontFamilyId): string {
+  const resolved = exportFontId(id);
+  if (OFFICE_FACE[resolved]) return OFFICE_FACE[resolved];
   switch (fontCategory(id)) {
     case "mono": return "Courier New";
     case "serif": return "Times New Roman";
     case "sans":
-    default: return "Calibri"; // Arial is about as wide as Inter; Calibri is safely narrower
+    default: return "Calibri";
   }
 }
 

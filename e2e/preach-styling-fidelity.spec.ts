@@ -161,12 +161,9 @@ for (const theme of ["light", "dark"] as const) {
       await expect(para.locator("s")).toHaveText("Struck");
       await expect(para.locator("a[href='https://example.org']")).toHaveText("Linked");
       await expect(para.locator("br")).toHaveCount(1);
-      if (bionic) {
-        await expect(col.locator("[data-bionic]").first()).toBeVisible();
-        await expect(para.locator("em [data-bionic]")).toHaveCount(1);
-      } else {
-        await expect(col.locator("[data-bionic]")).toHaveCount(0);
-      }
+      // Preach always applies Bionic, even when the saved sermon has bionic:false.
+      await expect(col.locator("[data-bionic]").first()).toBeVisible();
+      await expect(para.locator("em [data-bionic]")).toHaveCount(1);
 
       // Alignment on every block type
       await expect(col.locator("h1")).toHaveCSS("text-align", "center");

@@ -47,6 +47,7 @@ export const FORMAT_GROUPS: Array<{ label: string; items: FormatButton[] }> = [
     { key: "a4", label: "A4", format: "a4" },
     { key: "a5", label: "A5", format: "a5" },
     { key: "letter", label: "Letter", format: "letter" },
+    { key: "half-letter", label: "½ Letter", format: "half-letter" },
   ] },
   { label: "Screen", items: [
     { key: "4-3", label: "4:3", format: "4:3" },
@@ -66,7 +67,6 @@ const NATURAL: Record<PageFormat, PageOrientation> = {
 /** Extra button shown only when the sermon already uses it (legal / custom). */
 export function extraButton(c: PageChoice): FormatButton | null {
   if (c.format === "legal") return { key: "legal", label: "Legal", format: "legal" };
-  if (c.format === "half-letter") return { key: "half-letter", label: "½ Letter", format: "half-letter" };
   if (c.format === "custom") return { key: "custom", label: "Custom size", format: "custom" };
   return null;
 }

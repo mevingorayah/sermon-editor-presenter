@@ -24,6 +24,8 @@ export interface PresentationSettings {
   typeScaleStep: TypeScaleStep;
   lineHeight: LineHeightOption;
   bionic: boolean;
+  /** 0.1–1, default 0.45. Preach always applies Bionic; this is only the strength. */
+  bionicStrength?: number;
   /** Calibration / export preview target */
   calibrationTarget: CalibrationTarget;
   /**
@@ -147,6 +149,7 @@ export const DEFAULT_PRESENTATION_SETTINGS: PresentationSettings = {
   typeScaleStep: 0,
   lineHeight: 1.55,
   bionic: true,
+  bionicStrength: 0.45,
   calibrationTarget: "screen-16-9",
   /** New sermons: A4 portrait (frames.DEFAULT_PAGE). */
   page: { format: "a4", orientation: "portrait" },

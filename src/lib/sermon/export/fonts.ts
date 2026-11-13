@@ -11,12 +11,18 @@ export const APPROVED_FONT_IDS = [
   "montserrat",
   "nunito-sans",
   "jetbrains-mono",
+  "eb-garamond",
+  "crimson-pro",
+  "noto-serif",
+  "source-sans-3",
+  "noto-sans",
+  "ibm-plex-sans",
 ] as const;
 export type ApprovedFontId = (typeof APPROVED_FONT_IDS)[number];
 
 /** A run's font: an approved id, or a legacy v1 value (sans/serif/mono). */
 export type ExtraWritingFontId = "eb-garamond" | "crimson-pro" | "noto-serif" | "source-sans-3" | "noto-sans" | "ibm-plex-sans";
-export type FontFamilyId = "sans" | "serif" | "mono" | ApprovedFontId | ExtraWritingFontId;
+export type FontFamilyId = "sans" | "serif" | "mono" | ApprovedFontId;
 
 /** Legacy v1 values → the export font used for them (matches PR #30 LEGACY_FONT_MAP). */
 export const LEGACY_EXPORT_FONT: Record<"sans" | "serif" | "mono", ApprovedFontId> = {
@@ -33,12 +39,7 @@ export const LEGACY_EXPORT_FONT: Record<"sans" | "serif" | "mono", ApprovedFontI
 export const EXPORT_COVERED_FONTS: ReadonlySet<ApprovedFontId> = new Set(APPROVED_FONT_IDS);
 
 /** The bundled font that measures and renders `id`. */
-/**
- * Faces without a bundled export file map to the same category:
- * - EB Garamond, Crimson Pro, Noto Serif → Literata (serif)
- * - Source Sans 3, Noto Sans, IBM Plex Sans → Inter (sans)
- * The ten approved faces still use their bundled OFL files.
- */
+/** The bundled font that measures and renders `id`. Legacy sans/serif/mono still map. */
 export function exportFontId(id: FontFamilyId | string | undefined): ApprovedFontId {
   if (id === "sans" || id === "serif" || id === "mono") return LEGACY_EXPORT_FONT[id];
   if (EXPORT_COVERED_FONTS.has(id as ApprovedFontId)) return id as ApprovedFontId;
@@ -68,6 +69,12 @@ const FONT_NAMES: Record<ApprovedFontId, string> = {
   montserrat: "montserrat",
   "nunito-sans": "nunito sans",
   "jetbrains-mono": "jetbrains mono",
+  "eb-garamond": "eb garamond",
+  "crimson-pro": "crimson pro",
+  "noto-serif": "noto serif",
+  "source-sans-3": "source sans 3",
+  "noto-sans": "noto sans",
+  "ibm-plex-sans": "ibm plex sans",
 };
 
 /** Map a stored font value (font id, CSS var or stack, or v1 Sans/Serif/Mono) to an id. */
@@ -81,8 +88,7 @@ export function mapFontFamily(
   for (const id of APPROVED_FONT_IDS) {
     if (first === FONT_NAMES[id] || n.includes(`--font-${id}`)) return id;
   }
-  // Extra writing-tool fonts (no bundled export file yet — category still maps).
-  const EXTRA: Record<string, string> = {
+  const EXTRA: Record<string, ExtraWritingFontId> = {
     "eb garamond": "eb-garamond",
     "crimson pro": "crimson-pro",
     "noto serif": "noto-serif",
@@ -90,7 +96,7 @@ export function mapFontFamily(
     "noto sans": "noto-sans",
     "ibm plex sans": "ibm-plex-sans",
   };
-  if (EXTRA[first]) return EXTRA[first] as FontFamilyId;
+  if (EXTRA[first]) return EXTRA[first];
   if (n.includes("monospace") || n.includes("mono") || n === "mono") {
     return "mono";
   }

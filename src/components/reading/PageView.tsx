@@ -15,6 +15,7 @@ import {
   type PageViewLine,
 } from "@/lib/reading/pageView";
 import { displayHighlightColor, displayTextColor } from "@/lib/reading/contrast";
+import { bionicParts, clampBionicStrength, DEFAULT_BIONIC_STRENGTH } from "@/lib/bionic";
 import { FORMAT_THEME, formatTheme } from "@/lib/sermon/export/frames";
 import { letterSpacingEm } from "@/lib/sermon/export/textMeasure";
 import { CUE_COLOR } from "@/lib/reading/renderSermon";
@@ -42,6 +43,7 @@ function typingInControl(t: EventTarget | null): boolean {
 
 export function PageView({ content, settings, fill = false }: PageViewProps) {
   const fmtTheme = formatTheme(settings.page?.format ?? settings.calibrationTarget);
+  const bionicStrength = clampBionicStrength(settings.bionicStrength, DEFAULT_BIONIC_STRENGTH);
   const model = useMemo(() => buildPageView({ content, settings }), [content, settings]);
   const hostRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
@@ -129,7 +131,7 @@ export function PageView({ content, settings, fill = false }: PageViewProps) {
           style={{ width: frame.width, height: frame.height, transform: `scale(${scale})` }}
         >
           {lines.map((l) => (
-            <Line key={l.key} l={l} frame={frame} formatTheme={fmtTheme} />
+            <Line key={l.key} l={l} frame={frame} formatTheme={fmtTheme} bionicStrength={bionicStrength} />
           ))}
         </div>
       </section>
@@ -144,10 +146,12 @@ function Line({
   l,
   frame,
   formatTheme: fmt,
+  bionicStrength,
 }: {
   l: PageViewLine;
   frame: { left: number; contentWidth: number };
   formatTheme: "print" | "screen-dark";
+  bionicStrength: number;
 }) {
   return (
     <div
@@ -186,9 +190,15 @@ function Line({
           style.color = FORMAT_THEME.print.text;
         }
         if (r.highlight) style.backgroundColor = displayHighlightColor(r.highlightColor || "#FFF176", fmt);
+        const alreadyBold = Boolean(r.bold || l.role.bold);
+        const body = alreadyBold || cue || l.kind === "citation"
+          ? t.text
+          : bionicParts(t.text, bionicStrength).map((part, i) =>
+              part.bold ? <strong key={i} data-bionic="">{part.text}</strong> : <span key={i}>{part.text}</span>,
+            );
         return (
           <span key={ti} style={style} className={cue ? styles.cue : undefined} data-cue={cue ? "" : undefined}>
-            {t.text}
+            {body}
           </span>
         );
       })}

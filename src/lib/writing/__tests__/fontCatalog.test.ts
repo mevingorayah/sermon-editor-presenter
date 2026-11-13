@@ -35,13 +35,13 @@ test("stored family names and ids map for export category (French-capable fonts)
 });
 
 
-test("six new faces map to a same-category bundled export font", () => {
-  assert.equal(exportFontId("eb-garamond"), "literata");
-  assert.equal(exportFontId("crimson-pro"), "literata");
-  assert.equal(exportFontId("noto-serif"), "literata");
-  assert.equal(exportFontId("source-sans-3"), "inter");
-  assert.equal(exportFontId("noto-sans"), "inter");
-  assert.equal(exportFontId("ibm-plex-sans"), "inter");
+test("six new faces use their own bundled export font, not a fallback", () => {
+  assert.equal(exportFontId("eb-garamond"), "eb-garamond");
+  assert.equal(exportFontId("crimson-pro"), "crimson-pro");
+  assert.equal(exportFontId("noto-serif"), "noto-serif");
+  assert.equal(exportFontId("source-sans-3"), "source-sans-3");
+  assert.equal(exportFontId("noto-sans"), "noto-sans");
+  assert.equal(exportFontId("ibm-plex-sans"), "ibm-plex-sans");
   assert.equal(exportFontId("lora"), "lora");
   assert.equal(exportFontId("inter"), "inter");
 });

@@ -33,6 +33,8 @@ export type ReadingClassNames = Partial<
 
 export interface RenderOptions {
   bionic: boolean;
+  /** 0.1–1; ignored when bionic is off. Default 0.45. */
+  bionicStrength?: number;
   theme: "light" | "dark";
   /** #43 format group: print vs screen-dark. Overrides theme when set. */
   formatTheme?: FormatTheme;
@@ -41,7 +43,7 @@ export interface RenderOptions {
 
 interface Ctx extends RenderOptions {
   classes: ReadingClassNames;
-  /** Bionic disabled for this subtree (Scripture). */
+  /** Bionic disabled for this subtree (code blocks). */
   plain: boolean;
   /** Background behind the current text run (highlight or page). */
   textBg?: string;
@@ -116,8 +118,8 @@ function alignStyle(node: JSONContent): CSSProperties | undefined {
 
 const SAFE_HREF = /^(https?:|mailto:|tel:|#|\/)/i;
 
-function bionicLeaf(text: string, inBold: boolean): ReactNode {
-  return bionicParts(text).map((part, i) => {
+function bionicLeaf(text: string, inBold: boolean, strength?: number): ReactNode {
+  return bionicParts(text, strength).map((part, i) => {
     if (!part.bold) return <span key={i}>{part.text}</span>;
     // Inside a user bold mark, bionic adds weight contrast instead of a
     // second <strong>, so the user's bold is never replaced.
@@ -149,7 +151,7 @@ function renderText(node: JSONContent, ctx: Ctx, key: string): ReactNode {
       : pageBg,
   };
   let out: ReactNode =
-    ctx.bionic && !ctx.plain ? bionicLeaf(text, inBold) : text;
+    ctx.bionic && !ctx.plain ? bionicLeaf(text, inBold, ctx.bionicStrength) : text;
   // Wrap innermost-last so marks[0] is the outermost element, like ProseMirror.
   for (let i = marks.length - 1; i >= 0; i--) {
     out = wrapMark(marks[i], out, ctx, i);
@@ -306,7 +308,7 @@ export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode 
     case "scripture": {
       const citation = typeof node.attrs?.citation === "string" ? node.attrs.citation : "";
       // Body follows the node's TextAlign; the citation is always caption-right
-      // below the quote (slice 1 spec, Align). Scripture never gets bionic.
+      // below the quote (slice 1 spec, Align). Scripture quote body is Bionic when on.
       return (
         <figure key={key} className={c.scripture} data-scripture="" style={alignStyle(node)}>
           <blockquote className={c.quoteBlock}>

@@ -58,17 +58,11 @@ export const GOOGLE_CSS2_FAMILIES = [
   "Lora:ital,wght@0,400;0,700;1,400;1,700",
   "Merriweather:ital,wght@0,400;0,700;1,400;1,700",
   "Playfair+Display:ital,wght@0,400;0,700;1,400;1,700",
-  "EB+Garamond:ital,wght@0,400;0,700;1,400;1,700",
-  "Crimson+Pro:ital,wght@0,400;0,700;1,400;1,700",
-  "Noto+Serif:ital,wght@0,400;0,700;1,400;1,700",
   "Inter:ital,wght@0,400;0,700;1,400;1,700",
   "Open+Sans:ital,wght@0,400;0,700;1,400;1,700",
   "Lato:ital,wght@0,400;0,700;1,400;1,700",
   "Montserrat:ital,wght@0,400;0,700;1,400;1,700",
   "Nunito+Sans:ital,wght@0,400;0,700;1,400;1,700",
-  "Source+Sans+3:ital,wght@0,400;0,700;1,400;1,700",
-  "Noto+Sans:ital,wght@0,400;0,700;1,400;1,700",
-  "IBM+Plex+Sans:ital,wght@0,400;0,700;1,400;1,700",
 ] as const;
 
 export const GOOGLE_FONTS_HREF =
