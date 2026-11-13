@@ -4,6 +4,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import { TextStyle, Color, FontFamily } from "@tiptap/extension-text-style";
 import { Title } from "./Title";
 import { Scripture } from "./Scripture";
+import { VerseSnippet } from "@/lib/sermon/verseSnippet";
 
 /** Node types that carry TextAlign. Shared by Edit and Preach. */
 export const ALIGNED_TYPES = ["heading", "paragraph", "title", "scripture"];
@@ -22,6 +23,7 @@ export function createSchemaExtensions() {
     }),
     Title,
     Scripture,
+    VerseSnippet,
     TextStyle,
     Color,
     FontFamily,
