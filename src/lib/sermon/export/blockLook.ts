@@ -50,6 +50,93 @@ export function blockShadowPaint(shadow?: BlockShadow | null): BlockShadowPaint 
   return BLOCK_SHADOW_PAINT[shadow];
 }
 
+/**
+ * Lift at rest: a downward shadow that matches Edit's 2px rise
+ * (`transform: translateY(-2px)` in `blockCss`). Exports have no hover state,
+ * so this is always the resting shadow, never a hover one. Reused by the
+ * PDF / PNG / PPTX shadow path.
+ */
+export const BLOCK_LIFT_REST_SHADOW: BlockShadowPaint = {
+  offsetX: 0,
+  offsetY: 2,
+  blur: 6,
+  color: "#000000",
+  opacity: 0.16,
+};
+
+/** Opacity Edit applies for `effect: "fade"` (`opacity: 0.72` in `blockCss`). */
+export const BLOCK_FADE_OPACITY = 0.72;
+
+/** Outline Edit applies: `outline: 2px solid currentColor`. */
+export const BLOCK_OUTLINE_CSS_PX = 2;
+export const BLOCK_OUTLINE_STYLE = "solid" as const;
+
+export interface BlockOutlinePaint {
+  width: number;
+  style: "solid";
+  /** Unset when the block has no stored colour; painters use the type colour. */
+  color?: string;
+}
+
+export function blockFadeOpacity(effect?: BlockEffect | null): number | undefined {
+  return effect === "fade" ? BLOCK_FADE_OPACITY : undefined;
+}
+
+export function blockOutlinePaint(
+  effect?: BlockEffect | null,
+  color?: string | null,
+): BlockOutlinePaint | undefined {
+  if (effect !== "outline") return undefined;
+  return {
+    width: BLOCK_OUTLINE_CSS_PX,
+    style: BLOCK_OUTLINE_STYLE,
+    ...(color ? { color } : {}),
+  };
+}
+
+export function blockLiftShadow(effect?: BlockEffect | null): BlockShadowPaint | undefined {
+  if (effect !== "lift") return undefined;
+  return BLOCK_LIFT_REST_SHADOW;
+}
+
+/** Stored box-shadow first, then lift's resting shadow. Layout is unchanged. */
+export function blockExportShadows(
+  look?: Pick<BlockLook, "shadow" | "effect"> | null,
+): BlockShadowPaint[] {
+  const out: BlockShadowPaint[] = [];
+  const stored = blockShadowPaint(look?.shadow);
+  const lift = blockLiftShadow(look?.effect);
+  if (stored) out.push(stored);
+  if (lift) out.push(lift);
+  return out;
+}
+
+export interface BlockBoxEffects {
+  shadows: BlockShadowPaint[];
+  opacity?: number;
+  outline?: BlockOutlinePaint;
+}
+
+/** Paint-only extras for a block or section look (no layout change). */
+export function blockBoxEffects(
+  look?: Pick<BlockLook, "shadow" | "effect" | "color"> | null,
+): BlockBoxEffects {
+  const opacity = blockFadeOpacity(look?.effect);
+  const outline = blockOutlinePaint(look?.effect, look?.color);
+  return {
+    shadows: blockExportShadows(look),
+    ...(opacity !== undefined ? { opacity } : {}),
+    ...(outline ? { outline } : {}),
+  };
+}
+
+export function lookNeedsExportBox(look?: Pick<BlockLook, "background" | "borderLeft" | "shadow" | "effect" | "color"> | null): boolean {
+  if (!look) return false;
+  if (look.background || look.borderLeft) return true;
+  const e = blockBoxEffects(look);
+  return e.shadows.length > 0 || !!e.outline;
+}
+
 /** pptxgenjs shape shadow: type outer, blur/offset in points, angle 0° = right, 90° = down. */
 export function pptxShadowOptions(
   paint: BlockShadowPaint,

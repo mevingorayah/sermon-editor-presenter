@@ -2,7 +2,7 @@ import { snapshotLineSpacing } from "./frames";
 import type { CalibratedSnapshot } from "@/types/document";
 import { citationDisplay, styledBlocksFromSnapshot, titleTextFromSnapshot, type BlockColumn, type StyledBlock } from "./contentWalk";
 import { effectiveBlockSizePt } from "../blockStyle";
-import { BORDER_LEFT_CSS_PX, SECTION_GAP_CSS_PX, blockShadowPaint, lookRole, type BlockLook, type BlockShadowPaint } from "./blockLook";
+import { BORDER_LEFT_CSS_PX, SECTION_GAP_CSS_PX, blockBoxEffects, lookNeedsExportBox, lookRole, type BlockLook, type BlockOutlinePaint, type BlockShadowPaint } from "./blockLook";
 import { DEFAULT_MARGINS, resolveMargins } from "./margins";
 import { PAGE_LIMITS, clamp, pngFrameSize, pxPerInch, pxPerPt, resolvePage, type PageInput, type PageSpec } from "./frames";
 import type { FontFamilyId } from "./fonts";
@@ -117,6 +117,25 @@ export interface PngBox {
   borderWidth: number;
   /** Drawn around the box; does not change line breaks or pagination. */
   shadow?: BlockShadowPaint;
+  /** All shadows to paint (stored first, then lift). `shadow` is shadows[0]. */
+  shadows?: BlockShadowPaint[];
+  /** Whole-block fade (`effect: "fade"`); applies to fill, outline and text. */
+  opacity?: number;
+  /** Full-box outline (`effect: "outline"`), drawn as a border. */
+  outline?: BlockOutlinePaint;
+}
+
+/** Spread look effects onto a box without changing its size or position. */
+export function withBoxEffects(box: PngBox, look?: BlockLook | null, cssPx = 1): PngBox {
+  const e = blockBoxEffects(look);
+  const outline = e.outline ? { ...e.outline, width: e.outline.width * cssPx } : undefined;
+  return {
+    ...box,
+    ...(e.shadows[0] ? { shadow: e.shadows[0] } : {}),
+    ...(e.shadows.length ? { shadows: e.shadows } : {}),
+    ...(e.opacity !== undefined ? { opacity: e.opacity } : {}),
+    ...(outline ? { outline } : {}),
+  };
 }
 
 export interface PngPage {
@@ -611,11 +630,14 @@ export function layoutPngPages(
         if (!q.b.verseBar) emitCite();
         cy.set(ci, at + q.pb + q.r.gap);
       }
-      const sectionShadow = blockShadowPaint(sl?.shadow);
-      if (sl?.background || sl?.borderLeft || sectionShadow) {
+      if (lookNeedsExportBox(sl)) {
         sectionBoxes.push({
           page: pages.length - 1,
-          box: { x: f.left, y: top, w: f.contentWidth, h, fill: sl?.background, border: sl?.borderLeft ?? undefined, borderWidth: sl?.borderLeft ? BORDER_LEFT_CSS_PX * cssPx : 0, ...(sectionShadow ? { shadow: sectionShadow } : {}) },
+          box: withBoxEffects({
+            x: f.left, y: top, w: f.contentWidth, h,
+            fill: sl?.background, border: sl?.borderLeft ?? undefined,
+            borderWidth: sl?.borderLeft ? BORDER_LEFT_CSS_PX * cssPx : 0,
+          }, sl, cssPx),
         });
       }
       y = top + h + smb;
@@ -677,7 +699,7 @@ export function layoutPngPages(
     const spans = new Map<number, { y0: number; y1: number; first: boolean; last: boolean }>();
     for (const l of pg.lines) {
       const q = prepared[l.blockIndex];
-      if (!q.b.look?.background && !q.b.look?.borderLeft && !blockShadowPaint(q.b.look?.shadow)) continue;
+      if (!lookNeedsExportBox(q.b.look)) continue;
       const isFirst = q.b.verseBar
         ? (q.b.citation ? l.kind === "citation" : l.kind === "text" && l.lineIndex === 0)
         : l.kind === "text" && l.lineIndex === 0;
@@ -695,12 +717,10 @@ export function layoutPngPages(
       const q = prepared[i];
       const y0 = Math.max(0, sp.y0 - (sp.first ? q.pt : 0));
       const y1 = Math.min(f.height, sp.y1 + (sp.last ? q.pb : 0));
-      const shadow = blockShadowPaint(q.b.look?.shadow);
-      boxes.push({
+      boxes.push(withBoxEffects({
         x: q.boxX, y: y0, w: q.boxW, h: y1 - y0,
         fill: q.b.look!.background, border: q.b.look!.borderLeft ?? undefined, borderWidth: q.borderW,
-        ...(shadow ? { shadow } : {}),
-      });
+      }, q.b.look, cssPx));
     }
     if (boxes.length) pg.boxes = boxes;
   });
