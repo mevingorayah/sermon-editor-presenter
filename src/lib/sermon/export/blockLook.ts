@@ -48,12 +48,12 @@ function clean<T extends object>(o: T | null | undefined): Partial<T> {
 
 /** Merge the three layers; undefined when nothing at all is set. */
 export function resolveBlockLook(
-  type: BlockType,
+  type: BlockType | "verseSnippet",
   attrs: { style?: unknown; spacing?: unknown } | null | undefined,
   globals?: GlobalStyles | null,
 ): BlockLook | undefined {
-  const b = BUILTIN[type];
-  const g = globals?.[type];
+  const b = type === "verseSnippet" ? undefined : BUILTIN[type];
+  const g = type === "verseSnippet" ? undefined : globals?.[type];
   const style: BlockStyle = { ...clean(b?.style), ...clean(g?.style), ...clean(attrs?.style as BlockStyle) };
   const spacing: BlockSpacing = { ...clean(b?.spacing), ...clean(g?.spacing), ...clean(attrs?.spacing as BlockSpacing) };
   if (!Object.keys(style).length && !Object.keys(spacing).length) return undefined;

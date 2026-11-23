@@ -4,7 +4,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { styledBlocksFromSnapshot } from "@/lib/sermon/export/contentWalk";
 import { toSemanticBlocks } from "@/lib/semanticBlocks";
 import { renderSermon } from "@/lib/reading/renderSermon";
-import type { CalibratedSnapshot, SermonContent } from "@/types/document";
+import { findBlockLayoutIssues, STYLABLE_NODE_TYPES } from "@/lib/sermon/blockStyle";
+import { parseSermonFile, serializeSermonFile } from "@/lib/sermon-file";
+import { currentPassageText, normalizeAttrs } from "@/lib/sermon/verseSnippet";
+import type { CalibratedSnapshot, SermonContent, SermonDocument } from "@/types/document";
+import { DEFAULT_PRESENTATION_SETTINGS } from "@/types/document";
 
 const content: SermonContent = {
   type: "doc",
@@ -82,5 +86,81 @@ describe("verseSnippet in Preach and exports", () => {
     assert.match(html, /data-scripture=""/);
     assert.match(html, /Existing scripture quote\./);
     assert.match(html, /Philippians 4:4/);
+  });
+});
+
+
+const WORDS = "FIXTURE made-up snippet words.";
+
+describe("verseSnippet block styles persist", () => {
+  const snippet: SermonContent["content"] extends (infer T)[] | undefined ? T : never = {
+    type: "verseSnippet",
+    attrs: {
+      ref: "Fixture 1:1",
+      translation: "WEB",
+      texts: { WEB: WORDS, LSG: "FIXTURE mots inventés." },
+      style: { color: "#2E6B3A", size: 28 },
+      spacing: { mt: 16, mb: 8 },
+    },
+  };
+  const styledContent: SermonContent = { type: "doc", content: [snippet] };
+
+  it("keeps style and spacing through save, Preach and exports, with serif and the same words", () => {
+    assert.equal(STYLABLE_NODE_TYPES.has("verseSnippet"), true);
+    assert.deepEqual(findBlockLayoutIssues(styledContent), []);
+    assert.equal(currentPassageText(normalizeAttrs(snippet.attrs)), WORDS);
+
+    const file = parseSermonFile(serializeSermonFile({
+      id: "11111111-1111-4111-8111-111111111111",
+      title: "Fixture verse style",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      content: styledContent,
+      presentationSettings: DEFAULT_PRESENTATION_SETTINGS,
+      notes: "",
+    } as SermonDocument));
+    const reloaded = (file.sermon.content as SermonContent).content?.[0];
+    assert.equal(reloaded?.type, "verseSnippet");
+    assert.deepEqual(reloaded?.attrs?.style, { color: "#2E6B3A", size: 28 });
+    assert.deepEqual(reloaded?.attrs?.spacing, { mt: 16, mb: 8 });
+    assert.equal(currentPassageText(normalizeAttrs(reloaded?.attrs)), WORDS);
+
+    const html = renderToStaticMarkup(renderSermon(file.sermon.content as SermonContent, { bionic: false, theme: "light" }));
+    assert.match(html, /FIXTURE made-up snippet words\./);
+    assert.match(html, /color:#2E6B3A/i);
+    assert.match(html, /margin-top:16px/);
+    assert.match(html, /margin-bottom:8px/);
+    assert.match(html, /--font-literata/);
+    assert.doesNotMatch(html, /Open Sans|Inter,/);
+
+    const styled = styledBlocksFromSnapshot({ ...snapshot, content: file.sermon.content } as CalibratedSnapshot);
+    assert.equal(styled[0].runs[0].text, WORDS);
+    assert.equal(styled[0].runs[0].fontFamily, "literata");
+    assert.equal(styled[0].runs[0].fontExplicit, true);
+    assert.equal(styled[0].runs[0].color, "#2E6B3A");
+    assert.deepEqual(styled[0].look?.spacing, { mt: 16, mb: 8 });
+    assert.equal(styled[0].verseBar, true);
+  });
+
+  it("lets a writer override the serif face without changing the words", () => {
+    const overridden: SermonContent = {
+      type: "doc",
+      content: [{
+        type: "verseSnippet",
+        attrs: {
+          ref: "Fixture 1:1",
+          translation: "WEB",
+          texts: { WEB: WORDS },
+          style: { font: "inter", color: "#2E6B3A" },
+        },
+      }],
+    };
+    assert.deepEqual(findBlockLayoutIssues(overridden), []);
+    const html = renderToStaticMarkup(renderSermon(overridden, { bionic: false, theme: "light" }));
+    assert.match(html, /FIXTURE made-up snippet words\./);
+    assert.match(html, /Inter/);
+    const styled = styledBlocksFromSnapshot({ ...snapshot, content: overridden } as CalibratedSnapshot);
+    assert.equal(styled[0].runs[0].text, WORDS);
+    assert.equal(styled[0].runs[0].fontFamily, "inter");
+    assert.equal(styled[0].runs[0].color, "#2E6B3A");
   });
 });

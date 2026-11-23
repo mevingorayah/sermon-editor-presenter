@@ -1,16 +1,17 @@
 /**
  * Text-colour and highlight palettes for the Edit toolbar, Preach, and tests.
- * Text: the existing 6 presets (Default + 5 named hues) plus a custom hex.
+ * Text: the 6 specified presets (docs/ux/sermon-editor-v2-spec.md §4.2) plus a custom hex.
  * Highlight: 8 presets plus a custom hex. Recent lists live in localStorage.
  */
 
-/** Each is >= 4.5:1 on white, Edit #f4f1ea and every light highlight (contrast.test.ts); dark Preach lightens them as needed. */
+/** Each light value is >= 4.5:1 on cream #f4f1ea; Preach dark uses `dark` on #121212 (also >= 4.5:1). */
 export const TEXT_COLORS = [
-  { id: "muted", label: "Muted gray", value: "#5c5c5c" },
-  { id: "accent", label: "Accent", value: "#5c4a1f" },
-  { id: "red", label: "Soft red", value: "#9b3e36" },
-  { id: "blue", label: "Soft blue", value: "#376080" },
-  { id: "green", label: "Soft green", value: "#336640" },
+  { id: "ink", label: "Ink", value: "#1a1814", dark: "#f2eee6" },
+  { id: "crimson", label: "Crimson", value: "#a8201a", dark: "#ff8a80" },
+  { id: "royal-blue", label: "Royal blue", value: "#1d4e89", dark: "#8ab4f8" },
+  { id: "forest", label: "Forest", value: "#2e6b3a", dark: "#81c995" },
+  { id: "gold", label: "Gold", value: "#8a5a00", dark: "#f6c453" },
+  { id: "purple", label: "Purple", value: "#5b2a86", dark: "#c58af9" },
 ] as const;
 
 export type TextColorPreset = (typeof TEXT_COLORS)[number];

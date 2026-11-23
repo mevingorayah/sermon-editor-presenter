@@ -58,6 +58,7 @@ test("unparseable colours pass through", () => {
 
 // Q3 / UI UX rule: text on a highlight in dark Preach reaches 4.5:1 against
 // that highlight's dark colour. Mirrors TEXT_COLORS in src/lib/writing/colors.ts.
+import { TEXT_COLORS } from "@/lib/writing/colors";
 import {
   DARK_HIGHLIGHT_BG as HL_DEFAULT,
   effectiveDarkBackground,
@@ -68,9 +69,9 @@ import {
   rgbToHsl as hslOf,
 } from "../contrast";
 
-const TEXT_PRESETS = ["#5c5c5c", "#5c4a1f", "#9b3e36", "#376080", "#336640"];
+const TEXT_PRESETS = ["#1a1814", "#a8201a", "#1d4e89", "#2e6b3a", "#8a5a00", "#5b2a86"];
 // Old files keep the previous swatch values (no migration); they must still pass.
-const LEGACY_TEXT = ["#9a948a", "#d47870", "#6a9fc4", "#6aaa7a", "#6b6b6b", "#b0463d", "#3f6f93", "#3d7a4c"];
+const LEGACY_TEXT = ["#5c5c5c", "#5c4a1f", "#9b3e36", "#376080", "#336640", "#9a948a", "#d47870", "#6a9fc4", "#6aaa7a", "#6b6b6b", "#b0463d", "#3f6f93", "#3d7a4c"];
 const DARK_HIGHLIGHTS = [
   HL_DEFAULT,
   ...["#fff176", "#fde68a", "#fef08a", "#d4a84b", "#93c5fd", "#86efac", "#f9a8d4", "#c4b5fd"].map((c) => hlDark(c, "dark")),
@@ -82,7 +83,10 @@ test("every text preset reaches 4.5:1 on every dark highlight, keeping its hue",
       const out = textOn(c, "dark", bg);
       const r = ratioOf(rgbOf(out)!, rgbOf(bg)!);
       assert.ok(r >= 4.5, `${c} on ${bg} -> ${out} = ${r.toFixed(2)}`);
-      const [h0, s0] = hslOf(rgbOf(c)!);
+      // Specified dark variants may differ in hue from the light swatch;
+      // compare against the displayed colour's own hue after any lift.
+      const shown = TEXT_COLORS.find((p) => p.value.toLowerCase() === c.toLowerCase())?.dark ?? c;
+      const [h0, s0] = hslOf(rgbOf(shown)!);
       const [h1, , l1] = hslOf(rgbOf(out)!);
       // Near-white outputs lose hue to 8-bit rounding; skip them and greys.
       if (s0 > 0.15 && l1 < 0.95) assert.ok(Math.abs(h1 - h0) < 4, `${c} hue drift`);
@@ -155,20 +159,32 @@ function lightHighlightBackgrounds(): Array<[string, [number, number, number]]> 
   ];
 }
 
-test("every text colour preset in src/lib/writing/colors.ts is >= 4.5:1 on white, Edit #f4f1ea and every light highlight", () => {
+test("every text colour preset in src/lib/writing/colors.ts meets 4.5:1 on cream/white and its dark variant meets 4.5:1 on #121212", () => {
   const src = readFileSync(new URL("../../writing/colors.ts", import.meta.url), "utf8");
   const block = src.match(/export const TEXT_COLORS = \[([\s\S]*?)\] as const;/);
   assert.ok(block, "TEXT_COLORS not found in src/lib/writing/colors.ts; point this test at the new preset list");
   const values = [...block[1].matchAll(/value:\s*"(#[0-9a-fA-F]{6})"/g)].map((m) => m[1]);
-  assert.ok(values.length >= 5, `found ${values.length} presets`);
+  const darks = [...block[1].matchAll(/dark:\s*"(#[0-9a-fA-F]{6})"/g)].map((m) => m[1]);
+  assert.ok(values.length >= 6, `found ${values.length} presets`);
+  assert.equal(darks.length, values.length);
   assert.deepEqual(values.map((v) => v.toLowerCase()), TEXT_PRESETS);
+  const lightBgs: Array<[string, [number, number, number]]> = [
+    ["white", rgbOf("#ffffff")!],
+    ["Edit #f4f1ea", rgbOf("#f4f1ea")!],
+    ["light Preach #f7f3eb", rgbOf("#f7f3eb")!],
+  ];
   for (const v of values) {
-    const bgs: Array<[string, [number, number, number]]> = [
-      ["white", rgbOf("#ffffff")!],
-      ["Edit #f4f1ea", rgbOf("#f4f1ea")!],
-      ...lightHighlightBackgrounds(),
-    ];
-    for (const [name, bg] of bgs) {
+    for (const [name, bg] of lightBgs) {
+      const r = ratioOf(rgbOf(v)!, bg);
+      assert.ok(r >= 4.5, `${v} is ${r.toFixed(2)}:1 on ${name}`);
+    }
+  }
+  const darkBgs: Array<[string, [number, number, number]]> = [
+    ["spec #121212", rgbOf("#121212")!],
+    ["dark Preach #141210", rgbOf("#141210")!],
+  ];
+  for (const v of darks) {
+    for (const [name, bg] of darkBgs) {
       const r = ratioOf(rgbOf(v)!, bg);
       assert.ok(r >= 4.5, `${v} is ${r.toFixed(2)}:1 on ${name}`);
     }

@@ -80,6 +80,7 @@ export const STYLABLE_NODE_TYPES = new Set<string>([
   "heading",
   "paragraph",
   "scripture",
+  "verseSnippet",
   "quote",
   "illustration",
   "section",
