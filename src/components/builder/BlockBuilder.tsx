@@ -10,7 +10,9 @@ import {
   topBlocks, type DropTarget, type InsertDef,
 } from "./blockOps";
 import { StylePanel } from "./StylePanel";
+import { BlocksPalette } from "./BlocksPalette";
 import { blockCss, type GlobalStyles } from "@/lib/builder/blockAttrs";
+import { LAYOUT, PANEL_KEYS, SHEET_MQ, fitScale, readFlag, writeFlag, type EditPageBox } from "@/lib/editLayout/layout";
 import styles from "./BlockBuilder.module.css";
 
 interface Rect { top: number; height: number; left: number; width: number }
@@ -20,20 +22,85 @@ interface Props {
   globalStyles: GlobalStyles;
   onGlobalStylesChange: (g: GlobalStyles) => void;
   children: ReactNode;
+  /** The sermon's page (chosen size + orientation) in CSS px. */
+  page?: EditPageBox;
+  formattingOpen?: boolean;
+  onFormattingOpenChange?: (open: boolean) => void;
 }
 
 const LONG_PRESS_MS = 300;
-const TABLET_MQ = "(max-width: 1100px)";
+const DRAG_THRESHOLD_PX = 6;
+const DEFAULT_PAGE_BOX: EditPageBox = { widthPx: 794, heightPx: 1123, margins: { top: 77, right: 77, bottom: 77, left: 77 } };
 
-export function BlockBuilder({ editor, globalStyles, onGlobalStylesChange, children }: Props) {
+function useMedia(q: string): boolean {
+  const [m, setM] = useState(() => typeof window !== "undefined" && window.matchMedia(q).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(q);
+    const on = () => setM(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, [q]);
+  return m;
+}
+
+export function BlockBuilder({
+  editor, globalStyles, onGlobalStylesChange, children,
+  page = DEFAULT_PAGE_BOX, formattingOpen = true, onFormattingOpenChange,
+}: Props) {
   const canvasRef = useRef<HTMLDivElement>(null);
+  const layoutRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  /** Formatting is a bottom sheet below 1024 px or on a portrait tablet. */
+  const sheetMode = useMedia(SHEET_MQ);
+  const sheetModeRef = useRef(sheetMode);
+  sheetModeRef.current = sheetMode;
+  const setFormatting = useCallback((open: boolean) => onFormattingOpenChange?.(open), [onFormattingOpenChange]);
+  const [paletteCollapsed, setPaletteCollapsed] = useState<boolean>(() =>
+    typeof window !== "undefined" && readFlag(PANEL_KEYS.blocks) === "collapsed",
+  );
+  const onPaletteCollapsed = (c: boolean) => {
+    setPaletteCollapsed(c);
+    writeFlag(PANEL_KEYS.blocks, c ? "collapsed" : "expanded");
+  };
+  const [scale, setScale] = useState(1);
+  const [sheetHeight, setSheetHeight] = useState(page.heightPx);
+  const [scrollbarW, setScrollbarW] = useState(0);
+  const floatingOpen = formattingOpen && !sheetMode;
+  const leftInset = LAYOUT.inset * 2 + (paletteCollapsed ? LAYOUT.paletteCollapsed : LAYOUT.palette) + LAYOUT.blockGutter;
+  const rightInset = LAYOUT.inset + (floatingOpen ? LAYOUT.formatting + LAYOUT.inset : 0);
+
+  // Page scale: fit the band between the floating panels. Only the scale
+  // changes (the page keeps its width in CSS px), so line breaks never move.
+  useLayoutEffect(() => {
+    const sc = scrollerRef.current;
+    if (!sc) return;
+    const fit = () => {
+      setScrollbarW(sc.offsetWidth - sc.clientWidth);
+      setScale(fitScale(page.widthPx, sc.clientWidth - leftInset - rightInset));
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(sc);
+    return () => ro.disconnect();
+  }, [page.widthPx, leftInset, rightInset]);
+
+  useLayoutEffect(() => {
+    const el = sheetRef.current;
+    if (!el) return;
+    const on = () => setSheetHeight(el.offsetHeight);
+    on();
+    const ro = new ResizeObserver(on);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [rects, setRects] = useState<Map<number, Rect>>(new Map());
   const [selected, setSelected] = useState<number | null>(null);
   const [menu, setMenu] = useState<{ at: number; replace: boolean; top: number; colPos?: number } | null>(null);
   const [query, setQuery] = useState("");
   const [drag, setDrag] = useState<{ from: number; target: DropTarget } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [sheetOpen, setSheetOpen] = useState(false);
   const [, force] = useState(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -60,23 +127,32 @@ export function BlockBuilder({ editor, globalStyles, onGlobalStylesChange, child
     return () => { editor.off("update", onTx); editor.off("transaction", onTx); ro.disconnect(); };
   }, [editor, measure]);
 
+  const lastSel = useRef<number | null>(null);
   useEffect(() => {
     const onSel = () => {
       if (!editor.isFocused) return;
       const b = blockAtSelection(editor);
       setSelected(b?.pos ?? null);
-      if (b) setSheetOpen(true);
+      // Formatting still opens when a block is selected (a newly selected one,
+      // so typing inside a block after closing it does not reopen it).
+      if (b && b.pos !== lastSel.current) setFormatting(true);
+      lastSel.current = b?.pos ?? null;
     };
     editor.on("selectionUpdate", onSel);
     editor.on("focus", onSel);
     return () => { editor.off("selectionUpdate", onSel); editor.off("focus", onSel); };
-  }, [editor]);
+  }, [editor, setFormatting]);
 
   useEffect(() => {
     const dom = editor.view.dom as HTMLElement;
     const onKey = (e: KeyboardEvent) => {
       const cur = blockAtSelection(editor);
-      if (e.key === "Escape" && !menu) { setSelected(null); setSheetOpen(false); return; }
+      if (e.key === "Escape" && !menu) {
+        setSelected(null);
+        lastSel.current = null;
+        if (sheetModeRef.current) setFormatting(false);
+        return;
+      }
       if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown") && cur) {
         e.preventDefault();
         const dir = e.key === "ArrowUp" ? -1 : 1;
@@ -100,7 +176,7 @@ export function BlockBuilder({ editor, globalStyles, onGlobalStylesChange, child
     };
     dom.addEventListener("keydown", onKey);
     return () => dom.removeEventListener("keydown", onKey);
-  }, [editor, menu, rects]);
+  }, [editor, menu, rects, setFormatting]);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -199,6 +275,74 @@ export function BlockBuilder({ editor, globalStyles, onGlobalStylesChange, child
     targetEl.addEventListener("pointercancel", up);
   };
 
+  /** Palette click: insert at the cursor (after the selected block), as the old Blocks list did. */
+  const insertAtCursor = (t: InsertDef) => {
+    const blocksNow = collectBlocks(editor);
+    const topsNow = topBlocks(editor);
+    const sb = selected !== null ? blocksNow.find((b) => b.pos === selected) : undefined;
+    const at = sb
+      ? (sb.parentType === "doc" ? topsNow.findIndex((b) => b.pos === sb.pos) + 1 : topsNow.length)
+      : topsNow.length;
+    if (sb?.parentType === "column" && sb.parentPos !== null && t.json().type !== "section") {
+      const col = editor.state.doc.nodeAt(sb.parentPos);
+      let index = 0;
+      if (col) {
+        let p = sb.parentPos + 1;
+        for (let i = 0; i < col.childCount; i++) {
+          if (p === sb.pos) { index = i + 1; break; }
+          p += col.child(i).nodeSize;
+        }
+      }
+      insertBlockInColumn(editor, sb.parentPos, index, t);
+    } else {
+      insertBlockAt(editor, at < 0 ? topsNow.length : at, t);
+    }
+  };
+
+  /** Palette pointer: a click inserts at the cursor; a drag drops onto the page. */
+  const startPaletteDrag = (def: InsertDef, e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const btn = e.currentTarget;
+    const pid = e.pointerId;
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    let dragging = false;
+    let target: DropTarget | null = null;
+    try { btn.setPointerCapture(pid); } catch { /* ignore */ }
+    const overCanvas = (x: number, y: number) => {
+      const r = scrollerRef.current?.getBoundingClientRect();
+      return !!r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    };
+    const move = (ev: PointerEvent) => {
+      if (!dragging && Math.hypot(ev.clientX - x0, ev.clientY - y0) < DRAG_THRESHOLD_PX) return;
+      dragging = true;
+      target = overCanvas(ev.clientX, ev.clientY) ? dropTargetAt(ev.clientX, ev.clientY) : null;
+      setDrag(target ? { from: -1, target } : null);
+    };
+    const done = (ev: PointerEvent) => {
+      btn.removeEventListener("pointermove", move);
+      btn.removeEventListener("pointerup", done);
+      btn.removeEventListener("pointercancel", done);
+      setDrag(null);
+      if (ev.type === "pointercancel") return;
+      if (!dragging) { insertAtCursor(def); return; }
+      if (!target) return;
+      if (target.kind === "column" && def.json().type !== "section") {
+        insertBlockInColumn(editor, target.colPos, target.index, def);
+      } else {
+        const t = target;
+        const topsNow = topBlocks(editor);
+        const idx = topsNow.findIndex((b) => b.pos === t.pos);
+        insertBlockAt(editor, idx < 0 ? topsNow.length : idx, def);
+      }
+      setSelected(blockAtSelection(editor)?.pos ?? null);
+    };
+    btn.addEventListener("pointermove", move);
+    btn.addEventListener("pointerup", done);
+    btn.addEventListener("pointercancel", done);
+  };
+
   const blocks = collectBlocks(editor);
   const tops = topBlocks(editor);
   const sel = selected !== null && blocks.some((b) => b.pos === selected) ? selected : null;
@@ -261,46 +405,48 @@ export function BlockBuilder({ editor, globalStyles, onGlobalStylesChange, child
       })()
     : null;
 
+  const pageW = page.widthPx;
   return (
-    <div className={styles.layout}>
+    <div
+      className={styles.layout}
+      ref={layoutRef}
+      data-sheet-mode={sheetMode ? "true" : "false"}
+      style={{ ["--sbw" as string]: `${scrollbarW}px` }}
+    >
       {globalCss ? <style>{globalCss}</style> : null}
-      <aside className={styles.left} aria-label="Block panel">
-        <h2 className={styles.panelTitle}>Blocks</h2>
-        <ul className={styles.blockList}>
-          {INSERT_TYPES.map((t) => (
-            <li key={t.id}>
-              <button
-                type="button"
-                className={styles.panelBtn}
-                onClick={() => {
-                  const at = selBlock
-                    ? (selBlock.parentType === "doc" ? tops.findIndex((b) => b.pos === selBlock.pos) + 1 : tops.length)
-                    : tops.length;
-                  if (selBlock?.parentType === "column" && selBlock.parentPos !== null && t.json().type !== "section") {
-                    const col = editor.state.doc.nodeAt(selBlock.parentPos);
-                    let index = 0;
-                    if (col) {
-                      let p = selBlock.parentPos + 1;
-                      for (let i = 0; i < col.childCount; i++) {
-                        if (p === selBlock.pos) { index = i + 1; break; }
-                        p += col.child(i).nodeSize;
-                      }
-                    }
-                    insertBlockInColumn(editor, selBlock.parentPos, index, t);
-                  } else {
-                    insertBlockAt(editor, at < 0 ? tops.length : at, t);
-                  }
-                }}
-              >
-                {t.label}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </aside>
-
-      <div className={styles.canvas} ref={canvasRef} data-builder-canvas="">
-        {children}
+      {/* Full-width scroll container: its scrollbar is the window's right edge. */}
+      <div
+        className={styles.scroller}
+        ref={scrollerRef}
+        data-testid="edit-scroller"
+        style={sheetMode && formattingOpen ? { paddingBottom: "50vh" } : undefined}
+      >
+        <div className={styles.band} style={{ paddingLeft: leftInset, paddingRight: rightInset }}>
+      <div
+        className={styles.canvas}
+        ref={canvasRef}
+        data-builder-canvas=""
+        style={{ width: LAYOUT.blockGutter + pageW * scale, marginLeft: -LAYOUT.blockGutter }}
+      >
+        <div className={styles.sheetBox} style={{ width: pageW * scale, height: sheetHeight * scale }}>
+          <div
+            className={styles.sheet}
+            ref={sheetRef}
+            data-testid="edit-page"
+            data-edit-page=""
+            data-scale={scale.toFixed(4)}
+            data-page-width={pageW}
+            style={{
+              width: pageW,
+              minHeight: page.heightPx,
+              transform: scale === 1 ? undefined : `scale(${scale})`,
+              ["--edit-page-scale" as string]: String(scale),
+              padding: `${page.margins.top}px ${page.margins.right}px ${page.margins.bottom}px ${page.margins.left}px`,
+            }}
+          >
+            {children}
+          </div>
+        </div>
 
         {tops.map((b, i) => {
           const r = rects.get(b.pos);
@@ -330,7 +476,7 @@ export function BlockBuilder({ editor, globalStyles, onGlobalStylesChange, child
               aria-label={`${TYPE_LABEL[typeName] ?? typeName} block tools`}
               style={{ top: Math.max(0, selRect.top) }}
               onKeyDown={(e) => {
-                if (e.key === "Escape") { setSelected(null); setSheetOpen(false); editor.commands.blur(); }
+                if (e.key === "Escape") { setSelected(null); if (sheetMode) setFormatting(false); editor.commands.blur(); }
                 if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
                   const btns = Array.from((e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>("button,select"));
                   const i = btns.indexOf(document.activeElement as HTMLElement);
@@ -371,7 +517,7 @@ export function BlockBuilder({ editor, globalStyles, onGlobalStylesChange, child
                 onClick={() => { deleteBlockAt(editor, sel); setSelected(null); showToast("Block deleted"); }}>🗑</button>
               <button type="button" className={`${styles.tb} ${styles.sheetOpenBtn}`} aria-label="Open block settings"
                 data-testid="open-style-sheet"
-                onClick={() => setSheetOpen(true)}>⚙</button>
+                onClick={() => setFormatting(true)}>⚙</button>
             </div>
           </>
         )}
@@ -408,13 +554,24 @@ export function BlockBuilder({ editor, globalStyles, onGlobalStylesChange, child
           </div>
         )}
       </div>
+        </div>
+      </div>
+
+      <BlocksPalette
+        collapsed={paletteCollapsed}
+        onCollapsedChange={onPaletteCollapsed}
+        onInsert={insertAtCursor}
+        onPointerDown={startPaletteDrag}
+        onWheel={(dy) => scrollerRef.current?.scrollBy({ top: dy })}
+      />
 
       <StylePanel
         editor={editor}
-        pos={sheetOpen || (typeof window !== "undefined" && !window.matchMedia(TABLET_MQ).matches) ? sel : null}
+        pos={formattingOpen ? sel : null}
+        open={formattingOpen}
         globalStyles={globalStyles}
         onGlobalStylesChange={onGlobalStylesChange}
-        onCloseSheet={() => setSheetOpen(false)}
+        onClose={() => setFormatting(false)}
       />
 
       {toast && (

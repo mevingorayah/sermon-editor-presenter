@@ -75,9 +75,11 @@ test("highlight, text colour, font, justify and spacing round-trip in localStore
   await page.getByRole("button", { name: "Apply custom colour" }).click();
 
   await page.getByLabel("Font family").selectOption("lora");
+  await page.getByTestId("align-trigger").click();
   await page.getByRole("toolbar", { name: "Text formatting" }).getByRole("button", { name: "Justify", exact: true }).click();
   await pm.click();
   await expect(pm).toContainText("Writing tools fixture text");
+  await page.getByTestId("spacing-trigger").click();
   await page.getByTestId("letter-spacing").fill("0.05");
   await page.getByTestId("line-spacing").fill("1.7");
   await pm.click();
@@ -127,10 +129,15 @@ test("highlight, text colour, font, justify and spacing round-trip in localStore
   }
 });
 
+test.describe("touch (pointer: coarse)", () => {
+test.use({ hasTouch: true });
 test("toolbar writing controls are at least 44px", async ({ page }) => {
   await seed(page);
   await page.goto("/edit", { waitUntil: "networkidle" });
   await expect(page.getByRole("button", { name: "Highlight" })).toBeVisible({ timeout: 20_000 });
+  // Compact top bar: 36 px with a mouse, 44 px under (pointer: coarse).
+  expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
+  await page.getByTestId("align-trigger").click();
   const names = ["Highlight", "Text color", "Justify", "Align left"];
   for (const name of names) {
     const box = await page.getByRole("button", { name }).boundingBox();
@@ -140,6 +147,7 @@ test("toolbar writing controls are at least 44px", async ({ page }) => {
   }
   const font = await page.getByLabel("Font family").boundingBox();
   expect(font!.height).toBeGreaterThanOrEqual(44);
+  await page.getByTestId("spacing-trigger").click();
   const letter = await page.getByTestId("letter-spacing").boundingBox();
   expect(letter!.height).toBeGreaterThanOrEqual(44);
 
@@ -159,4 +167,5 @@ test("toolbar writing controls are at least 44px", async ({ page }) => {
   const defBox = await def.boundingBox();
   expect(defBox!.height).toBeGreaterThanOrEqual(44);
   expect(defBox!.width).toBeGreaterThanOrEqual(44);
+});
 });

@@ -6,7 +6,11 @@ import {
   type Editor,
   type JSONContent,
 } from "@tiptap/react";
+import { useCallback, useMemo, useState } from "react";
 import { useEffect } from "react";
+import type { PresentationSettings } from "@/types/document";
+import { DEFAULT_PRESENTATION_SETTINGS } from "@/types/document";
+import { PANEL_KEYS, SHEET_MQ, editPageBox, readFlag, writeFlag } from "@/lib/editLayout/layout";
 import { createSermonExtensions } from "@/extensions";
 import { BlockBuilder } from "../builder/BlockBuilder";
 import { stripDefaultBuilderAttrs, type GlobalStyles } from "@/lib/builder/blockAttrs";
@@ -20,6 +24,8 @@ interface SermonEditorProps {
   /** sermon.globalStyles — saved with the sermon. */
   globalStyles?: GlobalStyles;
   onGlobalStylesChange?: (g: GlobalStyles) => void;
+  /** The sermon's page settings: the Edit page keeps this size and orientation. */
+  presentationSettings?: PresentationSettings;
 }
 const NO_GLOBALS: GlobalStyles = {};
 
@@ -29,7 +35,24 @@ export function SermonEditor({
   onEditorReady,
   globalStyles = NO_GLOBALS,
   onGlobalStylesChange,
+  presentationSettings,
 }: SermonEditorProps) {
+  const ps = presentationSettings ?? DEFAULT_PRESENTATION_SETTINGS;
+  const pageKey = JSON.stringify([ps.calibrationTarget, ps.page ?? null]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const page = useMemo(() => editPageBox(ps), [pageKey]);
+  /** Formatting panel open state, saved per browser. Default: open unless it is a bottom sheet. */
+  const [formattingOpen, setFormattingOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    const saved = readFlag(PANEL_KEYS.formatting);
+    if (saved === "open") return true;
+    if (saved === "closed") return false;
+    return !window.matchMedia(SHEET_MQ).matches;
+  });
+  const setFormatting = useCallback((open: boolean) => {
+    setFormattingOpen(open);
+    writeFlag(PANEL_KEYS.formatting, open ? "open" : "closed");
+  }, []);
   const editor = useEditor({
     immediatelyRender: false,
     extensions: createSermonExtensions(),
@@ -66,86 +89,19 @@ export function SermonEditor({
 
   return (
     <div className={styles.root}>
-      <div
-        className={styles.toolbar}
-        role="toolbar"
-        aria-label="Text formatting"
+      <FormatToolbar
+        editor={editor}
+        formattingOpen={formattingOpen}
+        onToggleFormatting={() => setFormatting(!formattingOpen)}
+      />
+      <BlockBuilder
+        editor={editor}
+        globalStyles={globalStyles}
+        onGlobalStylesChange={(g) => onGlobalStylesChange?.(g)}
+        page={page}
+        formattingOpen={formattingOpen}
+        onFormattingOpenChange={setFormatting}
       >
-        <div className={styles.toolGroup} role="group" aria-label="Block type">
-          <button
-            type="button"
-            className={styles.toolBtn}
-            onClick={() => editor.chain().focus().setNode("title").run()}
-          >
-            Title
-          </button>
-          <button
-            type="button"
-            className={styles.toolBtn}
-            onClick={() =>
-              editor.chain().focus().toggleHeading({ level: 1 }).run()
-            }
-          >
-            H1
-          </button>
-          <button
-            type="button"
-            className={styles.toolBtn}
-            onClick={() =>
-              editor.chain().focus().toggleHeading({ level: 2 }).run()
-            }
-          >
-            H2
-          </button>
-          <button
-            type="button"
-            className={styles.toolBtn}
-            onClick={() => editor.chain().focus().setParagraph().run()}
-          >
-            Body
-          </button>
-          <button
-            type="button"
-            className={styles.toolBtn}
-            onClick={() =>
-              editor
-                .chain()
-                .focus()
-                .insertContent({
-                  type: "scripture",
-                  attrs: { citation: "" },
-                  content: [],
-                })
-                .run()
-            }
-          >
-            Scripture
-          </button>
-          <button
-            type="button"
-            className={styles.toolBtn}
-            onClick={() => {
-              // Insert after the current block so a selected atom is not replaced.
-              const $from = editor.state.selection.$from;
-              const depth = $from.depth || 1;
-              let at = $from.after(depth);
-              if (at == null || at < 0) at = editor.state.doc.content.size;
-              editor
-                .chain()
-                .focus()
-                .insertContentAt(at, {
-                  type: "verseSnippet",
-                  attrs: { ref: "", translation: "LSG", texts: {} },
-                })
-                .run();
-            }}
-          >
-            Verse snippet
-          </button>
-        </div>
-        <FormatToolbar editor={editor} />
-      </div>
-      <BlockBuilder editor={editor} globalStyles={globalStyles} onGlobalStylesChange={(g) => onGlobalStylesChange?.(g)}>
         <EditorContent editor={editor} />
       </BlockBuilder>
     </div>

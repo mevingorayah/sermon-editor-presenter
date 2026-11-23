@@ -74,6 +74,8 @@ import { OutlineNav } from "./OutlineNav";
 import { FindBar } from "./FindBar";
 import { NotesPanel } from "./NotesPanel";
 import { SermonList } from "./SermonList";
+import { LeftPanel } from "./LeftPanel";
+import { LEFT_TABS, PANEL_KEYS, initialLeftOpen, readFlag, writeFlag, type LeftTab } from "@/lib/editLayout/layout";
 import {
   BackupBanner,
   BrowserOnlyBanner,
@@ -140,6 +142,24 @@ export function EditShell() {
   const [openElsewhere, setOpenElsewhere] = useState(false);
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [confirmOpen, setConfirmOpen] = useState<SermonDocument | null>(null);
+  /** Edit layout: left Sermons/Outline/Find panel (layout only, saved per browser). */
+  const [leftOpen, setLeftOpen] = useState<boolean>(() =>
+    typeof window === "undefined" ? true : initialLeftOpen(readFlag(PANEL_KEYS.left), window.innerWidth),
+  );
+  const [leftTab, setLeftTab] = useState<LeftTab>(() => {
+    const t = typeof window === "undefined" ? null : readFlag(PANEL_KEYS.leftTab);
+    return (LEFT_TABS as string[]).includes(t ?? "") ? (t as LeftTab) : "sermons";
+  });
+  const setLeft = useCallback((open: boolean) => {
+    setLeftOpen(open);
+    writeFlag(PANEL_KEYS.left, open ? "expanded" : "collapsed");
+  }, []);
+  const openLeftTab = useCallback((t: LeftTab) => {
+    setLeftTab(t);
+    writeFlag(PANEL_KEYS.leftTab, t);
+    setLeftOpen(true);
+    writeFlag(PANEL_KEYS.left, "expanded");
+  }, []);
 
   const docRef = useRef<SermonDocument | null>(null);
   const dirRef = useRef<DirHandleLike | null>(null);
@@ -960,6 +980,9 @@ export function EditShell() {
     [loadOpenedSermon],
   );
 
+  const leftOpenRef = useRef(leftOpen);
+  leftOpenRef.current = leftOpen;
+
   const triggerOpen = useCallback(() => {
     setMenuOpen(false);
     openFileInput.current?.click();
@@ -969,6 +992,21 @@ export function EditShell() {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
       const k = e.key.toLowerCase();
+      if (e.key === "\\" || e.code === "Backslash") {
+        e.preventDefault();
+        setLeft(!leftOpenRef.current);
+        return;
+      }
+      if (k === "f") {
+        // Find lives in the left panel: open it on the Find tab, then focus.
+        openLeftTab("find");
+        window.setTimeout(() => {
+          const input = document.querySelector<HTMLInputElement>('[data-edit-mode] input[placeholder="Find in sermon…"]');
+          input?.focus();
+          input?.select();
+        }, 0);
+        return;
+      }
       if (k === "s") {
         e.preventDefault();
         void onSaveToPc();
@@ -979,7 +1017,7 @@ export function EditShell() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onSaveToPc, triggerOpen]);
+  }, [onSaveToPc, triggerOpen, setLeft, openLeftTab]);
 
   const listItems = useMemo(() => {
     const items = Object.values(library).map((e) => ({
@@ -1178,20 +1216,32 @@ export function EditShell() {
       ) : null}
 
       <div className={styles.main}>
-        <aside className={styles.sidebar} aria-label="Study chrome">
-          <SermonList
-            sermons={listItems}
-            activeId={doc.id}
-            onSelect={(id) => void openSermon(id)}
-            onCreate={() => void onCreate()}
-            onDelete={(id) => void onDelete(id)}
-            disabled={busy}
-          />
-          <OutlineNav items={outline} />
-          {/* Keyed by sermon: switching sermons resets query, replace text and matches. */}
-          <FindBar key={editorKey || doc.id} editor={editor} />
-          <NotesPanel value={doc.notes} onChange={onNotesChange} />
-        </aside>
+        <LeftPanel
+          open={leftOpen}
+          tab={leftTab}
+          onToggle={() => setLeft(!leftOpen)}
+          onOpenTab={openLeftTab}
+          sections={{
+            sermons: (
+              <SermonList
+                sermons={listItems}
+                activeId={doc.id}
+                onSelect={(id) => void openSermon(id)}
+                onCreate={() => void onCreate()}
+                onDelete={(id) => void onDelete(id)}
+                disabled={busy}
+              />
+            ),
+            outline: (
+              <>
+                <OutlineNav items={outline} />
+                <NotesPanel value={doc.notes} onChange={onNotesChange} />
+              </>
+            ),
+            // Keyed by sermon: switching sermons resets query, replace text and matches.
+            find: <FindBar key={editorKey || doc.id} editor={editor} />,
+          }}
+        />
 
         <main className={styles.editorPane}>
           <SermonEditor
@@ -1201,6 +1251,7 @@ export function EditShell() {
             onEditorReady={setEditor}
             globalStyles={doc.globalStyles}
             onGlobalStylesChange={onGlobalStylesChange}
+            presentationSettings={doc.presentationSettings}
           />
         </main>
       </div>

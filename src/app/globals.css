@@ -80,6 +80,21 @@ a {
 [data-edit-mode] button[aria-haspopup] { min-width: 44px; min-height: 44px; }
 [data-edit-mode] [role="menuitem"] { min-height: 44px; }
 [data-edit-mode] [role="listbox"] :is(button, [role="option"]) { min-width: 44px; min-height: 44px; box-sizing: border-box; }
+/* Edit layout: the compact top bar is 36 px with a mouse and 44 px on touch. */
+[data-edit-mode] [data-compact-chrome] :is(input:not([type="checkbox"], [type="radio"], [type="hidden"], [type="file"], [type="range"]), select, button[aria-haspopup]) {
+  min-height: 36px;
+  min-width: 36px;
+}
+@media (pointer: coarse) {
+  [data-edit-mode] [data-compact-chrome] :is(input:not([type="checkbox"], [type="radio"], [type="hidden"], [type="file"], [type="range"]), select, button[aria-haspopup]) {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+/* Controls inside the scaled Edit page keep a 44 px on-screen target. */
+[data-edit-mode] [data-edit-page] :is(input:not([type="checkbox"], [type="radio"], [type="hidden"], [type="file"], [type="range"]), select, textarea) {
+  min-height: calc(44.5px / var(--edit-page-scale, 1));
+}
 
 /* Block builder — new block types; existing types unchanged. */
 .sermon-quote { margin: 0.75em 0; padding-left: 1em; border-left: 3px solid #bdbdbd; font-style: italic; }
