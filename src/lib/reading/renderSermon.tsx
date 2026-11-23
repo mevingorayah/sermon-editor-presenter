@@ -372,7 +372,10 @@ export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode 
       const citation = [attrs.ref, translationLabel(attrs.translation)]
         .filter(Boolean)
         .join(" · ");
-      const style = { ...alignStyle(node), fontFamily: VERSE_SNIPPET_FONT_FAMILY };
+      const built = alignStyle(node) ?? {};
+      // Keep the snippet's serif face unless the writer overrode the block font.
+      const fontFamily = built.fontFamily ?? VERSE_SNIPPET_FONT_FAMILY;
+      const style = { ...built, fontFamily };
       return (
         <figure key={key} className={c.scripture} data-verse-snippet="" style={style}>
           {citation ? (
@@ -381,7 +384,7 @@ export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode 
             </div>
           ) : null}
           <blockquote className={c.quoteBlock}>
-            <p className={c.quote} style={{ fontFamily: VERSE_SNIPPET_FONT_FAMILY }}>
+            <p className={c.quote} style={{ fontFamily }}>
               {text}
             </p>
           </blockquote>

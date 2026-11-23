@@ -238,12 +238,17 @@ function blockFromTipTap(node: JSONContent, globals?: GlobalStyles): StyledBlock
         .filter(Boolean)
         .join(" · ");
       const l = look("verseSnippet");
+      // Default serif stays unless the writer set a block font.
       return withLook({
         type: "Scripture",
         align: alignOf(node),
         ...spacingOf(node),
         runs: text
-          ? [{ text, fontFamily: VERSE_SNIPPET_EXPORT_FONT, fontExplicit: true }]
+          ? lookRuns(
+              [{ text, fontFamily: VERSE_SNIPPET_EXPORT_FONT, fontExplicit: !l?.font }],
+              { bold: false, italic: false },
+              l,
+            )
           : [],
         citation: citation || undefined,
         verseBar: true,

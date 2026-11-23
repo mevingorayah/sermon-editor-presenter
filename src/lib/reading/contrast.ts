@@ -6,7 +6,7 @@
  */
 
 import type { FormatTheme } from "@/lib/sermon/export/frames";
-import { highlightPresetByIdOrColor } from "@/lib/writing/colors";
+import { highlightPresetByIdOrColor, textPresetByValue } from "@/lib/writing/colors";
 
 
 export const DARK_STAGE_BG = "#141210"; // --rm-bg (dark), reading-mode.css
@@ -115,7 +115,10 @@ export function readingTextColor(
   /** Effective background: the highlight's dark colour when one is present. */
   background: string = DARK_STAGE_BG,
 ): string {
-  return theme === "dark" ? ensureContrast(color, background) : color;
+  if (theme !== "dark") return color;
+  const preset = textPresetByValue(color);
+  // Specified dark variants on the page; still lift against a highlight if needed.
+  return ensureContrast(preset?.dark ?? color, background);
 }
 
 /** Dark-Preach background behind text: the highlight if present, else the page. */

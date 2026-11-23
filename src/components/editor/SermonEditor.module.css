@@ -154,8 +154,11 @@
 }
 
 .swatch {
-  width: 1.6rem;
-  height: 1.6rem;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  box-sizing: border-box;
   border-radius: 999px;
   border: 2px solid transparent;
   cursor: pointer;
@@ -177,7 +180,8 @@
 .swatchDefault {
   width: auto;
   height: auto;
-  min-height: 1.6rem;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0.2rem 0.45rem;
   border-radius: 6px;
   border: 1px solid var(--edit-border);
