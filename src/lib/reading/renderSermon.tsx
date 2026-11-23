@@ -5,7 +5,7 @@ import { cssTextToReactStyle } from "../cssText";
 import { Fragment, type CSSProperties, type ReactNode } from "react";
 import type { JSONContent } from "@tiptap/react";
 import { bionicParts } from "@/lib/bionic";
-import { displayHighlightColor, displayTextColor } from "./contrast";
+import { displayHighlightColor, displayTextColor, displayTextOnBackground } from "./contrast";
 import { FORMAT_THEME, type FormatTheme } from "@/lib/sermon/export/frames";
 import {
   VERSE_SNIPPET_FONT_FAMILY,
@@ -57,6 +57,8 @@ interface Ctx extends RenderOptions {
   plain: boolean;
   /** Background behind the current text run (highlight or page). */
   textBg?: string;
+  /** True when the current run sits on a highlight mark (not a block fill). */
+  highlight?: boolean;
   formatTheme: FormatTheme;
 }
 
@@ -129,11 +131,28 @@ function builderStyle(node: JSONContent): CSSProperties | undefined {
   return cssTextToReactStyle(blockCss(shown, sanitizeSpacing(sp)));
 }
 
-function alignStyle(node: JSONContent): CSSProperties | undefined {
+function alignStyle(node: JSONContent, ctx?: Ctx): CSSProperties | undefined {
   const a = textAlignOf(node);
   const style: CSSProperties = { ...spacingStyle(node.attrs), ...builderStyle(node) };
   if (a) style.textAlign = a;
+  if (ctx) {
+    const fill = typeof style.backgroundColor === "string" ? style.backgroundColor : undefined;
+    if (fill) {
+      const shown = displayTextOnBackground(
+        typeof style.color === "string" ? style.color : undefined,
+        fill,
+        ctx.formatTheme,
+        { pageBackground: FORMAT_THEME[ctx.formatTheme].pageBackground },
+      );
+      if (shown) style.color = shown;
+    }
+  }
   return Object.keys(style).length ? style : undefined;
+}
+
+function ctxForBlock(node: JSONContent, ctx: Ctx): Ctx {
+  const fill = alignStyle(node, ctx)?.backgroundColor;
+  return typeof fill === "string" ? { ...ctx, textBg: fill } : ctx;
 }
 
 const SAFE_HREF = /^(https?:|mailto:|tel:|#|\/)/i;
@@ -168,7 +187,8 @@ function renderText(node: JSONContent, ctx: Ctx, key: string): ReactNode {
     ...ctx,
     textBg: hl
       ? displayHighlightColor(hlColor || "#FFF176", fmt)
-      : pageBg,
+      : (ctx.textBg ?? pageBg),
+    highlight: !!hl,
   };
   let out: ReactNode =
     ctx.bionic && !ctx.plain ? bionicLeaf(text, inBold, ctx.bionicStrength) : text;
@@ -222,7 +242,7 @@ function wrapMark(
           attrs.color,
           ctx.textBg ?? FORMAT_THEME[ctx.formatTheme].pageBackground,
           ctx.formatTheme,
-          { highlight: !!ctx.textBg && ctx.textBg !== FORMAT_THEME[ctx.formatTheme].pageBackground },
+          { highlight: !!ctx.highlight },
         );
       }
       if (typeof attrs.fontFamily === "string" && attrs.fontFamily) {
@@ -267,50 +287,51 @@ function children(node: JSONContent, ctx: Ctx): ReactNode {
 
 export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode {
   const c = ctx.classes;
+  const inner = ctxForBlock(node, ctx);
   switch (node.type) {
     case "text":
       return renderText(node, ctx, key);
     case "doc":
-      return <Fragment key={key}>{children(node, ctx)}</Fragment>;
+      return <Fragment key={key}>{children(node, inner)}</Fragment>;
     case "title":
       return (
-        <h1 key={key} className={c.title} data-sermon-title="" style={alignStyle(node)}>
-          {children(node, ctx)}
+        <h1 key={key} className={c.title} data-sermon-title="" style={alignStyle(node, ctx)}>
+          {children(node, inner)}
         </h1>
       );
     case "heading": {
       const level = node.attrs?.level === 2 ? 2 : 1;
       const Tag = level === 1 ? "h2" : "h3";
       return (
-        <Tag key={key} className={level === 1 ? c.h1 : c.h2} style={alignStyle(node)}>
-          {children(node, ctx)}
+        <Tag key={key} className={level === 1 ? c.h1 : c.h2} style={alignStyle(node, ctx)}>
+          {children(node, inner)}
         </Tag>
       );
     }
     case "paragraph":
       return (
-        <p key={key} className={c.body} style={alignStyle(node)}>
-          {children(node, ctx)}
+        <p key={key} className={c.body} style={alignStyle(node, ctx)}>
+          {children(node, inner)}
         </p>
       );
     case "bulletList":
       return (
         <ul key={key} className={c.list}>
-          {children(node, ctx)}
+          {children(node, inner)}
         </ul>
       );
     case "orderedList": {
       const start = typeof node.attrs?.start === "number" ? node.attrs.start : undefined;
       return (
         <ol key={key} className={c.list} start={start !== 1 ? start : undefined}>
-          {children(node, ctx)}
+          {children(node, inner)}
         </ol>
       );
     }
     case "listItem":
       return (
         <li key={key} className={c.listItem}>
-          {children(node, ctx)}
+          {children(node, inner)}
         </li>
       );
     case "hardBreak":
@@ -319,30 +340,30 @@ export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode 
       return <hr key={key} className={c.rule} />;
     case "quote":
       return (
-        <blockquote key={key} className="sermon-quote" data-quote="" style={alignStyle(node)}>
-          {children(node, ctx)}
+        <blockquote key={key} className="sermon-quote" data-quote="" style={alignStyle(node, ctx)}>
+          {children(node, inner)}
         </blockquote>
       );
     case "illustration":
       return (
-        <div key={key} className="sermon-illustration" data-illustration="" style={alignStyle(node)}>
-          {children(node, ctx)}
+        <div key={key} className="sermon-illustration" data-illustration="" style={alignStyle(node, ctx)}>
+          {children(node, inner)}
         </div>
       );
     case "section":
       return (
-        <section key={key} className="sermon-section" data-section="" data-columns={String(node.attrs?.columns ?? 1)} style={alignStyle(node)}>
-          {children(node, ctx)}
+        <section key={key} className="sermon-section" data-section="" data-columns={String(node.attrs?.columns ?? 1)} style={alignStyle(node, ctx)}>
+          {children(node, inner)}
         </section>
       );
     case "column":
       return (
         <div key={key} className="sermon-column" data-column="">
-          {children(node, ctx)}
+          {children(node, inner)}
         </div>
       );
     case "blockquote":
-      return <blockquote key={key}>{children(node, ctx)}</blockquote>;
+      return <blockquote key={key}>{children(node, inner)}</blockquote>;
     case "codeBlock":
       return (
         <pre key={key}>
@@ -354,9 +375,9 @@ export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode 
       // Body follows the node's TextAlign; the citation is always caption-right
       // below the quote (slice 1 spec, Align). Scripture quote body is Bionic when on.
       return (
-        <figure key={key} className={c.scripture} data-scripture="" style={alignStyle(node)}>
+        <figure key={key} className={c.scripture} data-scripture="" style={alignStyle(node, ctx)}>
           <blockquote className={c.quoteBlock}>
-            <p className={c.quote}>{children(node, { ...ctx, plain: false })}</p>
+            <p className={c.quote}>{children(node, { ...inner, plain: false })}</p>
           </blockquote>
           {citation ? (
             <figcaption className={c.citation}>
@@ -372,7 +393,7 @@ export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode 
       const citation = [attrs.ref, translationLabel(attrs.translation)]
         .filter(Boolean)
         .join(" · ");
-      const built = alignStyle(node) ?? {};
+      const built = alignStyle(node, ctx) ?? {};
       // Keep the snippet's serif face unless the writer overrode the block font.
       const fontFamily = built.fontFamily ?? VERSE_SNIPPET_FONT_FAMILY;
       const style = { ...built, fontFamily };
@@ -393,7 +414,7 @@ export function renderNode(node: JSONContent, ctx: Ctx, key: string): ReactNode 
     }
     default:
       // Unknown node: render its children instead of dropping them.
-      return <Fragment key={key}>{children(node, ctx)}</Fragment>;
+      return <Fragment key={key}>{children(node, inner)}</Fragment>;
   }
 }
 
@@ -405,7 +426,7 @@ export function renderSermon(content: JSONContent, opts: RenderOptions): ReactNo
   return blocks.map((n, i) => {
     if (isTitleSubline(blocks[i - 1], n)) {
       return (
-        <p key={`${n.type}-${i}`} className={ctx.classes.titleSub} data-title-sub="" style={alignStyle(n)}>
+        <p key={`${n.type}-${i}`} className={ctx.classes.titleSub} data-title-sub="" style={alignStyle(n, ctx)}>
           {children(n, ctx)}
         </p>
       );

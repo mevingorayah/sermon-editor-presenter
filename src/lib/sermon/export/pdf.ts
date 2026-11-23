@@ -38,8 +38,9 @@ function registerExportFonts(doc: PDFKit.PDFDocument): (id: FontFamilyId, st: { 
 }
 import { frameSizeInches, pxPerPt, type PageInput } from "./frames";
 import { layoutSnapshot, roleStyle } from "./pngLayout";
-import { lookAlign, lookRole } from "./blockLook";
+import { blockFadeOpacity, lookAlign, lookRole, type BlockOutlinePaint, type BlockShadowPaint } from "./blockLook";
 import { blockColor, paletteFor, sliceRuns, splitRunsByGlyph, trimRunsEnd, type GlyphRun } from "./png";
+import { displayTextOnBackground } from "@/lib/reading/contrast";
 
 export interface PdfBuildOptions {
   includeNotes?: boolean;
@@ -210,6 +211,57 @@ function writeBlock(
 }
 
 /**
+ * Approximate a CSS box-shadow in PDF: offset + colour/opacity are exact;
+ * blur is a stack of expanding translucent rects (PDF has no Gaussian blur).
+ * Does not move text or change page breaks.
+ */
+export function drawPdfBoxShadow(
+  doc: PDFKit.PDFDocument,
+  box: { x: number; y: number; w: number; h: number },
+  sh: BlockShadowPaint,
+  pxToPt: (px: number) => number,
+): void {
+  const x = pxToPt(box.x + sh.offsetX);
+  const y = pxToPt(box.y + sh.offsetY);
+  const w = pxToPt(box.w);
+  const h = pxToPt(box.h);
+  const blur = pxToPt(sh.blur);
+  const steps = Math.max(1, Math.min(12, Math.round(sh.blur) || 1));
+  for (let i = steps; i >= 0; i--) {
+    const t = i / steps;
+    const expand = blur * t;
+    const alpha = sh.opacity / (steps + 1);
+    doc.save().fillColor(sh.color).fillOpacity(alpha)
+      .rect(x - expand, y - expand, w + 2 * expand, h + 2 * expand)
+      .fill()
+      .restore();
+  }
+}
+
+/** Outline as a stroke sitting outside the box (CSS outline), paint only. */
+export function drawPdfBoxOutline(
+  doc: PDFKit.PDFDocument,
+  box: { x: number; y: number; w: number; h: number },
+  outline: BlockOutlinePaint,
+  pxToPt: (px: number) => number,
+  fallbackColor: string,
+  opacity = 1,
+): void {
+  const w = pxToPt(outline.width);
+  const x = pxToPt(box.x) - w / 2;
+  const y = pxToPt(box.y) - w / 2;
+  const width = pxToPt(box.w) + w;
+  const height = pxToPt(box.h) + w;
+  doc.save()
+    .lineWidth(w)
+    .strokeColor(outline.color || fallbackColor)
+    .strokeOpacity(opacity)
+    .rect(x, y, width, height)
+    .stroke()
+    .restore();
+}
+
+/**
  * PDF: the same pages as PNG/PPTX (`layoutPngPages`), drawn line by line at
  * the frame's size in points, so line and page breaks match exactly
  * (pdfkit's built-in fonts are the metrics the layout measures with).
@@ -259,8 +311,15 @@ export async function buildPdf(
       doc.addPage();
       paint();
       for (const b of page.boxes ?? []) {
-        if (b.fill) doc.save().rect(P(b.x), P(b.y), P(b.w), P(b.h)).fill(b.fill).restore();
-        if (b.border) doc.save().rect(P(b.x), P(b.y), P(b.borderWidth), P(b.h)).fill(b.border).restore();
+        const alpha = b.opacity ?? 1;
+        const shadows = b.shadows ?? (b.shadow ? [b.shadow] : []);
+        for (const sh of shadows) {
+          const paint = alpha < 1 ? { ...sh, opacity: sh.opacity * alpha } : sh;
+          drawPdfBoxShadow(doc, b, paint, P);
+        }
+        if (b.fill) doc.save().fillOpacity(alpha).rect(P(b.x), P(b.y), P(b.w), P(b.h)).fill(b.fill).restore();
+        if (b.border) doc.save().fillOpacity(alpha).rect(P(b.x), P(b.y), P(b.borderWidth), P(b.h)).fill(b.border).restore();
+        if (b.outline) drawPdfBoxOutline(doc, b, b.outline, P, pal.fg, alpha);
       }
       for (const line of page.lines) {
         const block = styled[line.blockIndex];
@@ -268,17 +327,27 @@ export async function buildPdf(
         const lw = line.width ?? f.contentWidth;
         const baseline = P(line.y + line.size);
         const fs = P(line.size);
+        const fade = blockFadeOpacity(block.look?.effect) ?? blockFadeOpacity(block.column?.sectionLook?.effect);
         if (line.kind === "citation") {
           const shownCite = citationDisplay(block);
-          doc.font(fontFor("serif", {})).fontSize(fs).fillColor(pal.muted);
+          doc.save();
+          if (fade !== undefined) doc.fillOpacity(fade);
+          const theme = pal.light ? "print" as const : "screen-dark" as const;
+          const nearest = block.look?.background ?? pal.bg;
+          const citeFill = displayTextOnBackground(undefined, nearest, theme, { pageBackground: pal.bg }) ?? pal.muted;
+          doc.font(fontFor("serif", {})).fontSize(fs).fillColor(citeFill);
           const shown = safeGlyphs(doc, shownCite.text);
           const w = doc.widthOfString(shown, { features: NO_LIGA });
           const x = shownCite.align === "left" ? P(lx) : Math.max(P(lx), P(lx + lw) - w);
           doc.text(shown, x, baseline, { lineBreak: false, baseline: "alphabetic", features: NO_LIGA });
+          doc.restore();
           continue;
         }
         const role = lookRole(roleStyle(block.type), block.look);
-        const bc = block.look?.color ?? color(block.type);
+        const theme = pal.light ? "print" as const : "screen-dark" as const;
+        const nearest = block.look?.background ?? pal.bg;
+        const bc = displayTextOnBackground(block.look?.color, nearest, theme, { pageBackground: pal.bg })
+          ?? block.look?.color ?? color(block.type);
         const align = lookAlign(block.look, block.align);
         const runs = splitRunsByGlyph(trimRunsEnd(sliceRuns(block.runs, line.start, line.end)), role);
         const fontOf = (r: GlyphRun) =>
@@ -289,9 +358,14 @@ export async function buildPdf(
         const total = runs.reduce((w, r) => { doc.font(fontOf(r)).fontSize(fs); return w + doc.widthOfString(safeGlyphs(doc, r.text), { features: NO_LIGA }); }, 0);
         const free = P(lw) - total;
         let x = P(lx) + (align === "center" ? free / 2 : align === "right" ? free : 0);
+        if (fade !== undefined) doc.save().fillOpacity(fade);
         if (block.look?.highlight && total > 0) doc.save().rect(x, baseline - fs * 0.8, total, fs * 1.05).fill(block.look.highlight).restore();
         for (const r of runs) {
-          doc.font(fontOf(r)).fontSize(fs).fillColor(r.color || bc);
+          const runFill = displayTextOnBackground(r.color ?? block.look?.color, nearest, theme, {
+            highlight: !!r.highlight,
+            pageBackground: pal.bg,
+          }) ?? (r.color || bc);
+          doc.font(fontOf(r)).fontSize(fs).fillColor(runFill);
           const drawn = safeGlyphs(doc, r.text);
           const w = doc.widthOfString(drawn, { features: NO_LIGA });
           if (r.highlight) {
@@ -306,6 +380,7 @@ export async function buildPdf(
           if (r.strike) rule(-fs * 0.3);
           x += w;
         }
+        if (fade !== undefined) doc.restore();
       }
     }
 

@@ -79,3 +79,8 @@
   font-style: italic;
   color: var(--rm-fg-muted);
 }
+
+.box {
+  position: absolute;
+  pointer-events: none;
+}

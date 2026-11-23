@@ -9,9 +9,9 @@ import {
 } from "./colors";
 import { citationDisplay, type StyledBlock, type StyledRun } from "./contentWalk";
 import { layoutSnapshot, roleStyle, type PngPage, type SnapshotLayout } from "./pngLayout";
-import { lookAlign, lookRole } from "./blockLook";
+import { blockFadeOpacity, lookAlign, lookRole, type BlockOutlinePaint, type BlockShadowPaint } from "./blockLook";
 import { afmMeasurer, FALLBACK_FAMILY, letterSpacingEm, metricCompatibleCss, splitByCoverage } from "./textMeasure";
-import { displayHighlightColor, displayTextColor, ensureContrast } from "@/lib/reading/contrast";
+import { displayHighlightColor, displayTextColor, displayTextOnBackground, ensureContrast } from "@/lib/reading/contrast";
 
 export interface PngBuildOptions {
   resolvedColors?: { accent: string };
@@ -105,15 +105,59 @@ export function blockColor(type: StyledBlock["type"], p: Palette): string {
   return p.fg;
 }
 
+/** SVG filter + caster for a CSS box-shadow (sharp rasterises this). */
+export function svgBoxShadow(id: string, box: { x: number; y: number; w: number; h: number }, sh: BlockShadowPaint): string {
+  const std = (sh.blur / 2).toFixed(2);
+  const pad = sh.blur * 3 + Math.abs(sh.offsetX) + Math.abs(sh.offsetY);
+  const fx = (box.x + Math.min(0, sh.offsetX) - pad).toFixed(2);
+  const fy = (box.y + Math.min(0, sh.offsetY) - pad).toFixed(2);
+  const fw = (box.w + Math.abs(sh.offsetX) + pad * 2).toFixed(2);
+  const fh = (box.h + Math.abs(sh.offsetY) + pad * 2).toFixed(2);
+  return (
+    `<filter id="${escapeXml(id)}" x="${fx}" y="${fy}" width="${fw}" height="${fh}" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">` +
+    `<feGaussianBlur in="SourceAlpha" stdDeviation="${std}" result="blur"/>` +
+    `<feOffset in="blur" dx="${sh.offsetX}" dy="${sh.offsetY}" result="off"/>` +
+    `<feFlood flood-color="${escapeXml(sh.color)}" flood-opacity="${sh.opacity}" result="tint"/>` +
+    `<feComposite in="tint" in2="off" operator="in" result="shadow"/>` +
+    `</filter>` +
+    `<rect data-block-shadow="${escapeXml(id)}" x="${box.x.toFixed(2)}" y="${box.y.toFixed(2)}" width="${box.w.toFixed(2)}" height="${box.h.toFixed(2)}" fill="#000000" filter="url(#${escapeXml(id)})"/>`
+  );
+}
+
+/** Full-box outline as a border (CSS outline sits outside the box). */
+export function svgBoxOutline(id: string, box: { x: number; y: number; w: number; h: number }, outline: BlockOutlinePaint, fallbackColor: string): string {
+  const w = outline.width;
+  const color = outline.color || fallbackColor;
+  return (
+    `<rect data-block-outline="${escapeXml(id)}" x="${(box.x - w / 2).toFixed(2)}" y="${(box.y - w / 2).toFixed(2)}" ` +
+    `width="${(box.w + w).toFixed(2)}" height="${(box.h + w).toFixed(2)}" fill="none" stroke="${escapeXml(color)}" ` +
+    `stroke-width="${w}" stroke-linejoin="miter" data-outline-style="${escapeXml(outline.style)}"/>`
+  );
+}
+
+function boxShadows(b: { shadow?: BlockShadowPaint; shadows?: BlockShadowPaint[] }): BlockShadowPaint[] {
+  return b.shadows ?? (b.shadow ? [b.shadow] : []);
+}
+
 function pageSvg(layout: SnapshotLayout, page: PngPage, p: Palette): string {
   const { frame: f, styled } = layout;
+  const fadeOf = (block: (typeof styled)[number]) =>
+    blockFadeOpacity(block.look?.effect) ?? blockFadeOpacity(block.column?.sectionLook?.effect);
   const parts: string[] = [
     `<rect x="0" y="0" width="8" height="${f.height}" fill="${escapeXml(p.accent)}" />`,
   ];
-  for (const b of page.boxes ?? []) {
-    if (b.fill) parts.push(`<rect x="${b.x.toFixed(2)}" y="${b.y.toFixed(2)}" width="${b.w.toFixed(2)}" height="${b.h.toFixed(2)}" fill="${escapeXml(b.fill)}" />`);
-    if (b.border) parts.push(`<rect x="${b.x.toFixed(2)}" y="${b.y.toFixed(2)}" width="${b.borderWidth.toFixed(2)}" height="${b.h.toFixed(2)}" fill="${escapeXml(b.border)}" />`);
-  }
+  (page.boxes ?? []).forEach((b, i) => {
+    const inner: string[] = [];
+    boxShadows(b).forEach((sh, j) => inner.push(svgBoxShadow(`bsh-${i}-${j}`, b, sh)));
+    if (b.fill) inner.push(`<rect x="${b.x.toFixed(2)}" y="${b.y.toFixed(2)}" width="${b.w.toFixed(2)}" height="${b.h.toFixed(2)}" fill="${escapeXml(b.fill)}" />`);
+    if (b.border) inner.push(`<rect x="${b.x.toFixed(2)}" y="${b.y.toFixed(2)}" width="${b.borderWidth.toFixed(2)}" height="${b.h.toFixed(2)}" fill="${escapeXml(b.border)}" />`);
+    if (b.outline) inner.push(svgBoxOutline(`bon-${i}`, b, b.outline, p.fg));
+    if (b.opacity !== undefined && b.opacity < 1 && inner.length) {
+      parts.push(`<g data-block-fade="${b.opacity}" opacity="${b.opacity}">${inner.join("")}</g>`);
+    } else {
+      parts.push(...inner);
+    }
+  });
   for (const line of page.lines) {
     const block = styled[line.blockIndex];
     const lx = line.x ?? f.left;
@@ -123,8 +167,13 @@ function pageSvg(layout: SnapshotLayout, page: PngPage, p: Palette): string {
       const shown = citationDisplay(block);
       const anchor = shown.align === "left" ? "start" : "end";
       const x = shown.align === "left" ? lx : lx + lw;
+      const fade = fadeOf(block);
+      const fadeAttr = fade !== undefined ? ` opacity="${fade}"` : "";
+      const theme = p.light ? "print" as const : "screen-dark" as const;
+      const nearest = block.look?.background ?? p.bg;
+      const citeFill = displayTextOnBackground(undefined, nearest, theme, { pageBackground: p.bg }) ?? p.muted;
       parts.push(
-        `<text x="${x}" y="${baseline}" text-anchor="${anchor}" fill="${escapeXml(p.muted)}" font-size="${line.size}" font-family="${escapeXml(metricCompatibleCss("serif"))}">${escapeXml(shown.text)}</text>`,
+        `<text x="${x}" y="${baseline}" text-anchor="${anchor}" fill="${escapeXml(citeFill)}" font-size="${line.size}" font-family="${escapeXml(metricCompatibleCss("serif"))}"${fadeAttr}>${escapeXml(shown.text)}</text>`,
       );
       continue;
     }
@@ -146,25 +195,33 @@ function pageSvg(layout: SnapshotLayout, page: PngPage, p: Palette): string {
     const widths = runs.map((run) => afmMeasurer(run.text, line.size, styleOf(run)));
     const total = widths.reduce((a, w) => a + w, 0);
     let hx = anchor === "middle" ? x - total / 2 : anchor === "end" ? x - total : x;
+    const fade = fadeOf(block);
+    const fadeAttr = fade !== undefined ? ` opacity="${fade}"` : "";
     if (block.look?.highlight && total > 0) {
       parts.push(
-        `<rect x="${hx.toFixed(2)}" y="${(line.y + line.size * 0.15).toFixed(2)}" width="${total.toFixed(2)}" height="${(line.size * 1.05).toFixed(2)}" fill="${escapeXml(block.look.highlight)}" />`,
+        `<rect x="${hx.toFixed(2)}" y="${(line.y + line.size * 0.15).toFixed(2)}" width="${total.toFixed(2)}" height="${(line.size * 1.05).toFixed(2)}" fill="${escapeXml(block.look.highlight)}"${fadeAttr} />`,
       );
     }
     runs.forEach((run, i) => {
       if (run.highlight) {
         const hl = displayHighlightColor(run.highlightColor || p.highlight);
         parts.push(
-          `<rect x="${hx.toFixed(2)}" y="${(line.y + line.size * 0.15).toFixed(2)}" width="${widths[i].toFixed(2)}" height="${(line.size * 1.05).toFixed(2)}" fill="${escapeXml(hl)}" />`,
+          `<rect x="${hx.toFixed(2)}" y="${(line.y + line.size * 0.15).toFixed(2)}" width="${widths[i].toFixed(2)}" height="${(line.size * 1.05).toFixed(2)}" fill="${escapeXml(hl)}"${fadeAttr} />`,
         );
       }
       hx += widths[i];
     });
     const tspans = runs
       .map((run) => {
+        const theme = p.light ? "print" as const : "screen-dark" as const;
+        const nearest = block.look?.background ?? p.bg;
+        const painted = displayTextOnBackground(run.color ?? block.look?.color, nearest, theme, {
+          highlight: !!run.highlight,
+          pageBackground: p.bg,
+        });
         const fill = run.highlight && !run.color && !p.light
           ? "#141210"
-          : displayTextColor(run.color || color, p.bg, p.light ? "print" : "screen-dark", { highlight: !!run.highlight });
+          : (painted ?? displayTextColor(run.color || color, nearest, theme, { highlight: !!run.highlight }));
         const deco = [run.underline ? "underline" : "", run.strike ? "line-through" : ""].filter(Boolean).join(" ");
         const ls = letterSpacingEm(run.letterSpacing ?? block.letterSpacing);
         const lsAttr = ls ? ` letter-spacing="${(ls * line.size).toFixed(3)}"` : "";
@@ -172,7 +229,7 @@ function pageSvg(layout: SnapshotLayout, page: PngPage, p: Palette): string {
       })
       .join("");
     parts.push(
-      `<text x="${x}" y="${baseline}" text-anchor="${anchor}" font-size="${line.size}" xml:space="preserve">${tspans}</text>`,
+      `<text x="${x}" y="${baseline}" text-anchor="${anchor}" font-size="${line.size}" xml:space="preserve"${fadeAttr}>${tspans}</text>`,
     );
   }
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -180,6 +237,18 @@ function pageSvg(layout: SnapshotLayout, page: PngPage, p: Palette): string {
   <rect width="100%" height="100%" fill="${escapeXml(p.bg)}" />
   ${parts.join("\n  ")}
 </svg>`;
+}
+
+/** SVG for each laid-out page (unit tests; no rasterisation). */
+export function buildPagesSvg(snapshot: CalibratedSnapshot, options: PngBuildOptions = {}): string[] {
+  const layout = layoutSnapshot(snapshot);
+  const palette = paletteFor(options.exportTheme ?? snapshot.theme, options.resolvedColors?.accent);
+  return layout.pages.map((page) => pageSvg(layout, page, palette));
+}
+
+/** SVG for the first laid-out page (unit tests; no rasterisation). */
+export function buildPageSvg(snapshot: CalibratedSnapshot, options: PngBuildOptions = {}): string {
+  return buildPagesSvg(snapshot, options)[0];
 }
 
 /** One PNG per page of the shared layout (`layoutPngPages`). */

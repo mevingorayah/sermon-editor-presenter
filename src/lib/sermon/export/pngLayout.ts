@@ -2,7 +2,7 @@ import { snapshotLineSpacing } from "./frames";
 import type { CalibratedSnapshot } from "@/types/document";
 import { citationDisplay, styledBlocksFromSnapshot, titleTextFromSnapshot, type BlockColumn, type StyledBlock } from "./contentWalk";
 import { effectiveBlockSizePt } from "../blockStyle";
-import { BORDER_LEFT_CSS_PX, SECTION_GAP_CSS_PX, lookRole, type BlockLook } from "./blockLook";
+import { BORDER_LEFT_CSS_PX, SECTION_GAP_CSS_PX, blockBoxEffects, lookNeedsExportBox, lookRole, type BlockLook, type BlockOutlinePaint, type BlockShadowPaint } from "./blockLook";
 import { DEFAULT_MARGINS, resolveMargins } from "./margins";
 import { PAGE_LIMITS, clamp, pngFrameSize, pxPerInch, pxPerPt, resolvePage, type PageInput, type PageSpec } from "./frames";
 import type { FontFamilyId } from "./fonts";
@@ -115,6 +115,27 @@ export interface PngBox {
   fill?: string;
   border?: string;
   borderWidth: number;
+  /** Drawn around the box; does not change line breaks or pagination. */
+  shadow?: BlockShadowPaint;
+  /** All shadows to paint (stored first, then lift). `shadow` is shadows[0]. */
+  shadows?: BlockShadowPaint[];
+  /** Whole-block fade (`effect: "fade"`); applies to fill, outline and text. */
+  opacity?: number;
+  /** Full-box outline (`effect: "outline"`), drawn as a border. */
+  outline?: BlockOutlinePaint;
+}
+
+/** Spread look effects onto a box without changing its size or position. */
+export function withBoxEffects(box: PngBox, look?: BlockLook | null, cssPx = 1): PngBox {
+  const e = blockBoxEffects(look);
+  const outline = e.outline ? { ...e.outline, width: e.outline.width * cssPx } : undefined;
+  return {
+    ...box,
+    ...(e.shadows[0] ? { shadow: e.shadows[0] } : {}),
+    ...(e.shadows.length ? { shadows: e.shadows } : {}),
+    ...(e.opacity !== undefined ? { opacity: e.opacity } : {}),
+    ...(outline ? { outline } : {}),
+  };
 }
 
 export interface PngPage {
@@ -357,8 +378,9 @@ export function layoutPngPages(
           : clamp(opts.paragraphSpacingPt, PAGE_LIMITS.paragraphSpacingPt) * pxPerPt(target),
     };
     const segs = blockSegments(b);
-    // Fit: one line never taller than the content box.
-    r.size = Math.max(minPx, Math.min(r.size, (avail - pt - pb) / lineHeight));
+    // Fit: one line never taller than the page. Padding and border must
+    // not shrink type — a padded block just takes more room (more pages).
+    r.size = Math.max(minPx, Math.min(r.size, avail / lineHeight));
     const heading = HEADINGS.has(b.type);
     if (heading) {
       // UX heading rule: break only between words (Jésus-Christ stays whole);
@@ -467,12 +489,15 @@ export function layoutPngPages(
   }
 
   /**
-   * Keep-with-next needs: a heading, the headings after it, and the first
-   * two lines of the block that follows (one, if two never fit on a page)
-   * on one page. Real headings are long and wrap; at large sizes they plus
-   * two lines (or even alone) can be taller than the page, which left them
-   * at the page bottom or split across pages. Shrink such a heading (floor
-   * 24 pt) until the group fits; last block first so chains see final sizes.
+   * Keep-with-next: a heading stays with the first two lines of what
+   * follows (one, if two never fit on a page). Type size is never
+   * reduced to make the group fit — if they don't fit on this page,
+   * the heading moves to the next page with that block (ensure /
+   * carryHeadings). When the group is taller than a page even at
+   * full size, keep one line and tighten gaps rather than strand
+   * the heading. The general shrink-to-fit rules (a line taller
+   * than the page, a word wider than the column, 48/72 max, 24 pt
+   * floor) are applied in `prepare` and are unchanged.
    */
   const oneLine = new Set<number>(); // blocks whose headings + 2 lines never fit
   const followLines = (i: number): number => {
@@ -482,22 +507,6 @@ export function layoutPngPages(
     if (oneLine.has(i)) return n.pt + n.lh;
     const two = n.pt + Math.min(2, n.ranges.length) * n.lh + n.pb;
     return two <= avail ? two : n.pt + n.lh + n.pb;
-  };
-  /** One 5% step down (floor 24 pt) for heading `p`; false at the floor. */
-  const shrinkHeading = (p: Prepared): boolean => {
-    if (p.r.size <= minPx) return false;
-    const segs = blockSegments(p.b);
-    p.r.size = Math.max(minPx, p.r.size * 0.95);
-    p.lh = p.r.size * lineHeight;
-    // Same rule as above: words stay whole unless one is wider than the
-    // column even at 24 pt (the heading already fits its widest word).
-    p.ranges = wrapLineRanges(p.b.text, p.r.size, p.w, segs, opts.measure, true);
-    p.sizes = p.ranges.map(([a, z]) => {
-      const w = measureRange(p.b.text, a, a + p.b.text.slice(a, z).trimEnd().length, p.r.size, segs, measure);
-      return w > p.w ? Math.max(minPx, p.r.size * (p.w / w) * 0.999) : p.r.size;
-    });
-    p.height = p.pt + p.ranges.length * p.lh + p.cite + p.pb;
-    return true;
   };
   for (let i = prepared.length - 1; i >= 0; i--) {
     if (sideBySide.has(i)) continue;
@@ -511,12 +520,6 @@ export function layoutPngPages(
       return r;
     };
     const fits = () => p.pt + p.ranges.length * p.lh + p.pb + p.r.gap + rest() <= avail;
-    // This heading first, then the headings chained under it.
-    while (!fits() && shrinkHeading(p));
-    for (let k = i + 1; k < j && !fits(); k++) while (!fits() && shrinkHeading(prepared[k]));
-    // Still too tall at the floor (huge type on small pages): keep one line
-    // with the headings, then tighten the spaces under them rather than
-    // strand them.
     if (!fits()) oneLine.add(j);
     for (let k = j - 1; k >= i && !fits(); k--) {
       const over = p.pt + p.ranges.length * p.lh + p.pb + p.r.gap + rest() - avail;
@@ -609,10 +612,14 @@ export function layoutPngPages(
         if (!q.b.verseBar) emitCite();
         cy.set(ci, at + q.pb + q.r.gap);
       }
-      if (sl?.background || sl?.borderLeft) {
+      if (lookNeedsExportBox(sl)) {
         sectionBoxes.push({
           page: pages.length - 1,
-          box: { x: f.left, y: top, w: f.contentWidth, h, fill: sl.background, border: sl.borderLeft ?? undefined, borderWidth: sl.borderLeft ? BORDER_LEFT_CSS_PX * cssPx : 0 },
+          box: withBoxEffects({
+            x: f.left, y: top, w: f.contentWidth, h,
+            fill: sl?.background, border: sl?.borderLeft ?? undefined,
+            borderWidth: sl?.borderLeft ? BORDER_LEFT_CSS_PX * cssPx : 0,
+          }, sl, cssPx),
         });
       }
       y = top + h + smb;
@@ -642,11 +649,17 @@ export function layoutPngPages(
       if (!underHeadings) ensure(p.height);
     }
 
+    /** Advance by padding, but never so far that `contentH` would overflow
+     *  the frame. Type stays; leftover padding is clipped (more pages). */
+    const applyPad = (pad: number, contentH: number) => {
+      y += Math.min(Math.max(0, pad), Math.max(0, f.bottom - y - contentH));
+    };
     if (p.b.verseBar && p.b.citation) {
       const before = pages.length;
-      ensure(p.pt + p.cite + (p.ranges.length ? p.lh : 0) + (p.ranges.length <= 1 ? p.pb : 0));
+      const afterCite = (p.ranges.length ? p.lh : 0) + (p.ranges.length <= 1 ? p.pb : 0);
+      ensure(p.pt + p.cite + afterCite);
       if (pages.length > before && !HEADINGS.has(p.b.type)) carryHeadings(bi);
-      y += p.pt;
+      applyPad(p.pt, p.cite + afterCite);
       push("citation", p.ranges.length, 0, p.b.citation.length, p.cSize, p.cLh);
     }
     p.ranges.forEach(([s, e], li) => {
@@ -655,16 +668,19 @@ export function layoutPngPages(
       // Rule 2 (oversized Scripture): last line keeps its citation.
       const before = pages.length;
       const firstPad = first && !p.b.verseBar ? p.pt : 0;
-      ensure(firstPad + (last && p.cite && !p.b.verseBar ? p.lh + p.cite : p.lh) + (last ? p.pb : 0));
+      const lineH = last && p.cite && !p.b.verseBar ? p.lh + p.cite : p.lh;
+      const endPad = last ? p.pb : 0;
+      ensure(firstPad + lineH + endPad);
       if (first && pages.length > before && !HEADINGS.has(p.b.type)) carryHeadings(bi);
-      if (first && !p.b.verseBar) y += p.pt;
+      if (first && !p.b.verseBar) applyPad(p.pt, lineH + endPad);
       push("text", li, s, e, p.sizes[li], p.lh);
     });
     if (p.b.citation && !p.b.verseBar) {
       ensure(p.cite + p.pb);
       push("citation", p.ranges.length, 0, p.b.citation.length, p.cSize, p.cLh);
     }
-    y += p.pb + p.r.gap;
+    applyPad(p.pb, 0);
+    y += p.r.gap;
   }
 
   // Boxes (fill / left rule) behind styled blocks, per page, from the placed
@@ -674,7 +690,7 @@ export function layoutPngPages(
     const spans = new Map<number, { y0: number; y1: number; first: boolean; last: boolean }>();
     for (const l of pg.lines) {
       const q = prepared[l.blockIndex];
-      if (!q.b.look?.background && !q.b.look?.borderLeft) continue;
+      if (!lookNeedsExportBox(q.b.look)) continue;
       const isFirst = q.b.verseBar
         ? (q.b.citation ? l.kind === "citation" : l.kind === "text" && l.lineIndex === 0)
         : l.kind === "text" && l.lineIndex === 0;
@@ -692,10 +708,10 @@ export function layoutPngPages(
       const q = prepared[i];
       const y0 = Math.max(0, sp.y0 - (sp.first ? q.pt : 0));
       const y1 = Math.min(f.height, sp.y1 + (sp.last ? q.pb : 0));
-      boxes.push({
+      boxes.push(withBoxEffects({
         x: q.boxX, y: y0, w: q.boxW, h: y1 - y0,
         fill: q.b.look!.background, border: q.b.look!.borderLeft ?? undefined, borderWidth: q.borderW,
-      });
+      }, q.b.look, cssPx));
     }
     if (boxes.length) pg.boxes = boxes;
   });

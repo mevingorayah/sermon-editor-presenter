@@ -174,11 +174,16 @@ test.describe("local-only storage", () => {
     const flow = page.locator("[data-page-view]").or(page.locator(".ProseMirror, main"));
     await expect(flow.first()).toBeVisible({ timeout: 20_000 });
     if (await pv.count()) {
+      // Walk every page: a heading at full size may start the typed
+      // sentence on the previous page, so the last page alone is not enough.
       const count = Number(await pv.getAttribute("data-page-count"));
-      for (let i = 1; i < count; i++) await page.keyboard.press("ArrowRight");
-      await expect(pv).toHaveAttribute("data-page-index", String(count - 1));
-      const lines = (await pv.locator("[data-line]").allTextContents()).join(" ").replace(/\s+/g, " ");
-      expect(lines).toContain(ACCENTED);
+      let lines = "";
+      for (let i = 0; i < count; i++) {
+        await expect(pv).toHaveAttribute("data-page-index", String(i));
+        lines += " " + (await pv.locator("[data-line]").allTextContents()).join(" ");
+        if (i < count - 1) await page.keyboard.press("ArrowRight");
+      }
+      expect(lines.replace(/\s+/g, " ")).toContain(ACCENTED);
     } else {
       await expect(page.getByText(ACCENTED)).toBeVisible({ timeout: 20_000 });
     }

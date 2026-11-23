@@ -4,9 +4,9 @@ import { citationDisplay, titleTextFromSnapshot } from "./contentWalk";
 import { blockColor, paletteFor, sliceRuns, splitRunsByGlyph, trimRunsEnd, type GlyphRun } from "./png";
 import { frameSizeInches, pxPerInch, pxPerPt, type PageInput } from "./frames";
 import { layoutSnapshot, roleStyle } from "./pngLayout";
-import { lookAlign, lookRole } from "./blockLook";
+import { blockFadeOpacity, lookAlign, lookRole, pptxShadowOptions } from "./blockLook";
 import { FALLBACK_OFFICE_FACE, letterSpacingEm, metricCompatibleOffice } from "./textMeasure";
-import { displayHighlightColor, displayTextColor } from "@/lib/reading/contrast";
+import { displayHighlightColor, displayTextColor, displayTextOnBackground } from "@/lib/reading/contrast";
 
 export interface PptxBuildOptions {
   resolvedColors?: { accent: string };
@@ -18,8 +18,11 @@ const hex = (c: string) => c.replace(/^#/, "");
 
 function runsToPptxText(
   runs: GlyphRun[],
-  opts: { fontSize: number; defaultColor: string; bold: boolean; italic: boolean; highlight: string; darkStage?: boolean },
+  opts: { fontSize: number; defaultColor: string; bold: boolean; italic: boolean; highlight: string; darkStage?: boolean; fill?: string },
 ): PptxGenJS.TextProps[] {
+  const theme = opts.darkStage ? "screen-dark" as const : "print" as const;
+  const pageBg = opts.darkStage ? "#141210" : "#ffffff";
+  const nearest = opts.fill ?? pageBg;
   return runs.map((run) => ({
     text: run.text,
     options: {
@@ -32,7 +35,10 @@ function runsToPptxText(
       color: hex(
         run.highlight && !run.color && opts.darkStage
           ? "#141210"
-          : displayTextColor(run.color || opts.defaultColor, opts.darkStage ? "#141210" : "#ffffff", opts.darkStage ? "screen-dark" : "print", { highlight: !!run.highlight }),
+          : (displayTextOnBackground(run.color ?? (opts.fill && opts.darkStage ? undefined : opts.defaultColor), nearest, theme, {
+              highlight: !!run.highlight,
+              pageBackground: pageBg,
+            }) ?? displayTextColor(run.color || opts.defaultColor, nearest, theme, { highlight: !!run.highlight })),
       ),
       highlight: run.highlight ? hex(displayHighlightColor(run.highlightColor || opts.highlight)) : undefined,
       charSpacing: (() => {
@@ -97,16 +103,32 @@ export async function buildPptx(
       fill: { color: hex(p.accent) }, line: { color: hex(p.accent), width: 0 },
     });
     for (const b of page.boxes ?? []) {
-      if (b.fill) {
+      const shadows = b.shadows ?? (b.shadow ? [b.shadow] : []);
+      const fade = b.opacity ?? 1;
+      const transparency = fade < 1 ? Math.round((1 - fade) * 100) : 0;
+      const outlineLine = b.outline
+        ? { color: hex(b.outline.color || p.fg), width: pt(b.outline.width) }
+        : undefined;
+      const paints = shadows.length ? shadows : (b.fill || outlineLine ? [undefined] : []);
+      paints.forEach((sh, k) => {
+        const first = k === 0;
+        const shadow = sh ? pptxShadowOptions(fade < 1 ? { ...sh, opacity: sh.opacity * fade } : sh, pt) : undefined;
+        if (!first && !shadow) return;
         slide.addShape(pptx.ShapeType.rect, {
           x: inch(b.x), y: inch(b.y), w: inch(b.w), h: inch(b.h),
-          fill: { color: hex(b.fill) }, line: { color: hex(b.fill), width: 0 },
+          fill: first && b.fill
+            ? { color: hex(b.fill), ...(transparency ? { transparency } : {}) }
+            : { color: "FFFFFF", transparency: 100 },
+          line: first && outlineLine
+            ? outlineLine
+            : { color: first && b.fill ? hex(b.fill) : "FFFFFF", width: 0 },
+          ...(shadow ? { shadow } : {}),
         });
-      }
+      });
       if (b.border) {
         slide.addShape(pptx.ShapeType.rect, {
           x: inch(b.x), y: inch(b.y), w: inch(b.borderWidth), h: inch(b.h),
-          fill: { color: hex(b.border) }, line: { color: hex(b.border), width: 0 },
+          fill: { color: hex(b.border), ...(transparency ? { transparency } : {}) }, line: { color: hex(b.border), width: 0 },
         });
       }
     }
@@ -116,11 +138,14 @@ export async function buildPptx(
         x: inch(line.x ?? f.left), y: inch(line.y), w: inch(line.width ?? f.contentWidth), h: inch(line.lineHeight),
         margin: 0, valign: "top" as const, wrap: false, fit: "none" as const,
       };
+      const fade = blockFadeOpacity(block.look?.effect) ?? blockFadeOpacity(block.column?.sectionLook?.effect);
+      const textFade = fade !== undefined ? { transparency: Math.round((1 - fade) * 100) } : {};
       if (line.kind === "citation") {
         const shown = citationDisplay(block);
         slide.addText(shown.text, {
           ...box, align: shown.align, fontSize: pt(line.size), color: hex(p.muted),
           fontFace: metricCompatibleOffice("serif"),
+          ...textFade,
         });
         continue;
       }
@@ -130,8 +155,8 @@ export async function buildPptx(
       if (!runs.length) continue;
       if (hl) runs = runs.map((r) => ({ ...r, highlight: true }));
       slide.addText(
-        runsToPptxText(runs, { fontSize: pt(line.size), defaultColor: block.look?.color ?? blockColor(block.type, p), highlight: hl ?? p.highlight, darkStage: !p.light, ...role }),
-        { ...box, align: lookAlign(block.look, block.align) },
+        runsToPptxText(runs, { fontSize: pt(line.size), defaultColor: block.look?.color ?? blockColor(block.type, p), highlight: hl ?? p.highlight, darkStage: !p.light, fill: block.look?.background, ...role }),
+        { ...box, align: lookAlign(block.look, block.align), ...textFade },
       );
     }
   }
