@@ -1,0 +1,99 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  border-right: 1px solid var(--edit-border);
+  background: var(--edit-bg-elevated);
+  width: 18rem;
+  flex: none;
+}
+.panel[data-collapsed="true"] {
+  width: 48px;
+  overflow: hidden;
+}
+.header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0.5rem 0.5rem 0.25rem 0.75rem;
+  position: sticky;
+  top: 0;
+  background: var(--edit-bg-elevated);
+  z-index: 1;
+}
+.tabs {
+  display: flex;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.tab,
+.chevron,
+.railBtn {
+  min-height: 36px;
+  min-width: 36px;
+  font: inherit;
+  font-size: 0.8125rem;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--edit-fg);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tab {
+  flex: 1;
+  padding: 0 0.4rem;
+}
+.tab[aria-selected="true"] {
+  border-color: var(--edit-border);
+  background: var(--edit-bg);
+  font-weight: 600;
+}
+.chevron span,
+.railBtn span {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.tab:hover,
+.chevron:hover,
+.railBtn:hover {
+  border-color: var(--edit-accent);
+}
+.tab:focus-visible,
+.chevron:focus-visible,
+.railBtn:focus-visible {
+  outline: 2px solid var(--edit-focus);
+  outline-offset: 1px;
+}
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0.5rem 0;
+}
+.railBtn {
+  width: 44px;
+  height: 44px;
+}
+.section {
+  padding: 0.5rem 1rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.section[hidden] {
+  display: none;
+}
+@media (pointer: coarse) {
+  .tab,
+  .chevron,
+  .railBtn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

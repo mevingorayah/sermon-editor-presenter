@@ -43,6 +43,9 @@ test("Find/Replace resets when switching sermons; Replace All shows count and un
   await page.keyboard.type("grace grace grace");
   // Let history close the typing group so Undo reverts only the Replace All.
   await page.waitForTimeout(800);
+  // Find lives on the left panel's Find tab (Ctrl+F opens it too).
+  await page.keyboard.press("ControlOrMeta+f");
+  await expect(page.getByRole("tab", { name: "Find", exact: true })).toHaveAttribute("aria-selected", "true");
   const find = page.getByPlaceholder("Find in sermon…");
   const replace = page.getByPlaceholder("Replace with…");
   await find.fill("grace");
@@ -57,7 +60,9 @@ test("Find/Replace resets when switching sermons; Replace All shows count and un
 
   // Switch to the other sermon: find state must be empty.
   await find.fill("grace");
+  await page.getByRole("tab", { name: "Sermons", exact: true }).click();
   await sermons.locator('button:not([aria-current="true"]):not([title="Delete"])').first().click();
+  await page.getByRole("tab", { name: "Find", exact: true }).click();
   await expect(find).toHaveValue("");
   await expect(replace).toHaveValue("");
   await expect(page.getByTestId("find-replace-all")).toHaveText("All");

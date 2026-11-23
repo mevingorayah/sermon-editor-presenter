@@ -23,12 +23,14 @@
   border-radius: 10px 10px 0 0;
 }
 
+/* Inside the scaled Edit page, controls keep a 44 px on-screen tap target
+   (--edit-page-scale is the page's fit scale; 1 elsewhere). */
 .field {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-width: 44px;
-  min-height: 44px;
+  min-width: calc(44.5px / var(--edit-page-scale, 1));
+  min-height: calc(44.5px / var(--edit-page-scale, 1));
   margin: 0;
   gap: 0;
 }
@@ -38,8 +40,8 @@
 .gateway,
 .paste {
   box-sizing: border-box;
-  min-width: 44px;
-  min-height: 44px;
+  min-width: calc(44.5px / var(--edit-page-scale, 1));
+  min-height: calc(44.5px / var(--edit-page-scale, 1));
   margin: 0;
   padding: 0 0.7rem;
   font: inherit;

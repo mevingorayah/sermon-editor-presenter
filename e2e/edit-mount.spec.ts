@@ -85,10 +85,13 @@ test("Scripture block alignment renders as a real style (no crash)", async ({ pa
   // as a *string* style) and must be applied as a real CSS value, live.
   // The doc autosaves, so do not assume a starting alignment; end on "left".
   await scripture.locator(".sermon-scripture-quote").click();
+  await page.getByTestId("align-trigger").click();
   await page.getByRole("button", { name: "Align center" }).click();
   await expect(scripture).toHaveCSS("text-align", "center");
+  await page.getByTestId("align-trigger").click();
   await page.getByRole("button", { name: "Align right" }).click();
   await expect(scripture).toHaveCSS("text-align", "right");
+  await page.getByTestId("align-trigger").click();
   await page.getByRole("button", { name: "Align left" }).click();
   await expect(scripture).toHaveCSS("text-align", "left");
 

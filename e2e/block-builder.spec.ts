@@ -75,7 +75,7 @@ test("block style change persists after reload", async ({ page }) => {
   await openFresh(page);
   await seedBlocks(page);
   await pm(page).locator("p", { hasText: "Bravo block" }).click();
-  const panel = page.getByRole("complementary", { name: "Block settings" });
+  const panel = page.getByRole("complementary", { name: "Formatting" });
   await panel.getByRole("tab", { name: "Style" }).click();
   await panel.getByLabel("Size").fill("20");
   await panel.getByRole("button", { name: "Text colour Soft red" }).click();
@@ -98,7 +98,7 @@ test("global style saves with the sermon; Preach renders block styles like Edit"
   await openFresh(page);
   await seedBlocks(page);
   await pm(page).locator("p", { hasText: "Bravo block" }).click();
-  const panel = page.getByRole("complementary", { name: "Block settings" });
+  const panel = page.getByRole("complementary", { name: "Formatting" });
   await panel.getByRole("tab", { name: "Style" }).click();
   await panel.getByLabel("Size").fill("20");
   await panel.getByRole("button", { name: "Text colour Soft red" }).click();
@@ -159,7 +159,7 @@ test("a block can be dropped into a section column; words stay the same", async 
   await expect(col.locator("p", { hasText: "Alpha block" })).toBeVisible();
 });
 
-test("tablet width: block settings open as a bottom sheet, controls are 44px", async ({ page }) => {
+test("tablet width: Formatting opens as a bottom sheet, controls are 44px", async ({ page }) => {
   await openFresh(page, 768, 1024);
   await seedBlocks(page);
   await pm(page).locator("p", { hasText: "Bravo block" }).click();
@@ -169,7 +169,7 @@ test("tablet width: block settings open as a bottom sheet, controls are 44px", a
   const vp = page.viewportSize()!;
   expect(box!.y).toBeGreaterThan(vp.height * 0.4);
   expect(box!.width).toBeGreaterThan(vp.width * 0.9);
-  const close = sheet.getByRole("button", { name: "Close block settings" });
+  const close = sheet.getByRole("button", { name: "Close formatting" });
   await expect(close).toBeVisible();
   const closeBox = await close.boundingBox();
   expect(closeBox!.height).toBeGreaterThanOrEqual(44);

@@ -29,8 +29,10 @@ interface Props {
   pos: number | null;
   globalStyles: GlobalStyles;
   onGlobalStylesChange: (g: GlobalStyles) => void;
-  /** Tablet bottom sheet: close control (hidden on wide layouts via CSS). */
-  onCloseSheet?: () => void;
+  /** Formatting panel open (floating on the right, or the bottom sheet). */
+  open?: boolean;
+  /** X: closes the panel; it reopens from the top-bar Formatting toggle. */
+  onClose?: () => void;
 }
 
 function Reset({ show, onClick, label }: { show: boolean; onClick: () => void; label: string }) {
@@ -38,12 +40,25 @@ function Reset({ show, onClick, label }: { show: boolean; onClick: () => void; l
   return <button type="button" className={styles.reset} aria-label={`Reset ${label} to global`} onClick={onClick}>↺</button>;
 }
 
-export function StylePanel({ editor, pos, globalStyles, onGlobalStylesChange, onCloseSheet }: Props) {
+export function StylePanel({ editor, pos, globalStyles, onGlobalStylesChange, open = true, onClose }: Props) {
   const [tab, setTab] = useState<Tab>("style");
   const block = pos !== null ? collectBlocks(editor).find((b) => b.pos === pos) : undefined;
+  const header = (
+    <div className={styles.sheetBar}>
+      <span className={styles.sheetHandle} aria-hidden />
+      <h2 className={styles.formattingTitle}>Formatting</h2>
+      {onClose ? (
+        <button type="button" className={styles.sheetClose} aria-label="Close formatting" title="Close" onClick={onClose}>
+          <span aria-hidden="true">✕</span>
+        </button>
+      ) : null}
+    </div>
+  );
   if (!block || pos === null) {
     return (
-      <aside className={styles.right} aria-label="Block settings" data-testid="style-sheet" data-open="false">
+      <aside id="formatting-panel" className={styles.right} aria-label="Formatting" data-testid="style-sheet"
+        data-open={open ? "true" : "false"} data-empty="true" hidden={!open}>
+        {header}
         <p className={styles.empty}>Select a block to style it.</p>
       </aside>
     );
@@ -76,16 +91,10 @@ export function StylePanel({ editor, pos, globalStyles, onGlobalStylesChange, on
   );
 
   return (
-    <aside className={styles.right} aria-label="Block settings" data-testid="style-sheet" data-open="true">
-      <div className={styles.sheetBar}>
-        <span className={styles.sheetHandle} aria-hidden />
-        <h2 className={styles.panelTitle}>{TYPE_LABEL[type] ?? type}</h2>
-        {onCloseSheet ? (
-          <button type="button" className={styles.sheetClose} aria-label="Close block settings" onClick={onCloseSheet}>
-            Close
-          </button>
-        ) : null}
-      </div>
+    <aside id="formatting-panel" className={styles.right} aria-label="Formatting" data-testid="style-sheet"
+      data-open={open ? "true" : "false"} hidden={!open}>
+      {header}
+      <h3 className={styles.panelTitle}>{TYPE_LABEL[type] ?? type}</h3>
       <div role="tablist" aria-label="Block settings tabs" className={styles.tabs}>
         {(["content", "style", "spacing"] as Tab[]).map((t) => (
           <button key={t} role="tab" type="button" aria-selected={tab === t} className={styles.tab}

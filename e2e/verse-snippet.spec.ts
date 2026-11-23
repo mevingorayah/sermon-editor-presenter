@@ -190,7 +190,7 @@ test("Verse snippet toolbar inserts an empty node that is keyboard-accessible", 
   await page.locator(".ProseMirror").click();
   await page.keyboard.press("Control+End");
   await page.keyboard.press("Enter");
-  await page.getByRole("group", { name: "Block type" }).getByRole("button", { name: "Verse snippet", exact: true }).click();
+  await page.getByRole("toolbar", { name: "Text formatting" }).getByLabel("Style", { exact: true }).selectOption("verseSnippet");
   const blocks = page.locator("[data-verse-snippet]");
   await expect(blocks).toHaveCount(2);
   const fresh = blocks.last();

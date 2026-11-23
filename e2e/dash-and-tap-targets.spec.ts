@@ -78,8 +78,12 @@ async function smallControls(page: Page, root: string) {
   }, root);
 }
 
+test.describe("touch (pointer: coarse)", () => {
+// Edit layout spec: compact chrome is 36 px with a mouse and 44 px on touch.
+test.use({ hasTouch: true });
 test("tap targets are at least 44x44 on /edit and /preach", async ({ page }) => {
   await openEdit(page);
+  expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
   await expectTap(page.getByRole("button", { name: "Document", exact: true }), "Document");
   await expectTap(page.getByRole("button", { name: "Export (PDF, PNG, PowerPoint)" }), "Export");
   await expectTap(page.getByRole("link", { name: "Enter Preaching" }), "Enter Preaching");
@@ -89,14 +93,18 @@ test("tap targets are at least 44x44 on /edit and /preach", async ({ page }) => 
   expect(await rows.count()).toBeGreaterThan(0);
   await expectTap(rows.first().locator("button").first(), "Sermon row");
   await expectTap(sermons.getByRole("button", { name: /^Delete/ }).first(), "Delete");
+  for (const t of ["Sermons", "Outline", "Find"]) await expectTap(page.getByRole("tab", { name: t, exact: true }), `${t} tab`);
+  await expectTap(page.getByTestId("left-panel-toggle"), "Collapse side panel");
+  await page.getByRole("tab", { name: "Outline", exact: true }).click();
   const outline = page.getByRole("navigation", { name: "Sermon outline" }).getByRole("button");
   expect(await outline.count()).toBeGreaterThan(0);
   for (let i = 0; i < (await outline.count()); i++) await expectTap(outline.nth(i), `Outline item ${i}`);
+  await page.getByRole("tab", { name: "Find", exact: true }).click();
   const find = page.getByRole("search", { name: "Find and replace" }).getByRole("button");
   expect(await find.count()).toBeGreaterThan(0);
   for (let i = 0; i < (await find.count()); i++) await expectTap(find.nth(i), `Find/replace button ${i}`);
-  const blocks = page.getByRole("group", { name: "Block type" });
-  for (const n of ["Title", "H1", "H2", "Body"]) await expectTap(blocks.getByRole("button", { name: n, exact: true }), n);
+  await expectTap(page.getByRole("toolbar", { name: "Text formatting" }).getByLabel("Style", { exact: true }), "Style");
+  for (const id of ["heading1", "paragraph", "scripture", "verseSnippet"]) await expectTap(page.getByTestId(`palette-${id}`), `Palette ${id}`);
   // Sweep: every visible input, select, textarea, checkbox/radio row and button in /edit.
   expect(await smallControls(page, "[data-edit-mode]"), "/edit controls under 44x44").toEqual([]);
   await page.getByRole("button", { name: "Document", exact: true }).click();
@@ -142,4 +150,5 @@ test("tap targets are at least 44x44 on /edit and /preach", async ({ page }) => 
   const follow = panel.getByText("Follow device rotation");
   if (await follow.count()) await expectTap(panel.locator("label").filter({ has: page.getByRole("checkbox", { name: "Follow device rotation" }) }), "Follow device rotation");
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/after-tap-preach.png` });
+});
 });
