@@ -1,9 +1,11 @@
+import type { CSSProperties } from "react";
 import type { JSONContent } from "@tiptap/react";
 import type { PresentationSettings } from "@/types/document";
 import type { GlobalStyles } from "@/lib/sermon/blockStyle";
 import { cssAlign, lookRole } from "@/lib/sermon/export/blockLook";
 import { sliceRuns } from "@/lib/sermon/export/pages";
-import { layoutSnapshot, pageSpecFromSnapshot, roleStyle } from "@/lib/sermon/export/pngLayout";
+import { layoutSnapshot, pageSpecFromSnapshot, roleStyle, type PngBox } from "@/lib/sermon/export/pngLayout";
+import type { BlockShadowPaint } from "@/lib/sermon/export/blockLook";
 import { bionicMeasurer } from "@/lib/sermon/export/textMeasure";
 import { pageGeometry } from "@/lib/sermon/export/frames";
 import { snapshotFor } from "@/lib/reading/pageSettings";
@@ -57,6 +59,8 @@ export interface PageViewModel {
   /** #29 pageGeometry(page): the page Preach shows is the page every export prints. */
   geometry: ReturnType<typeof pageGeometry>;
   pages: PageViewLine[][];
+  /** Same boxes the exporters paint (fill, left rule, shadow, outline). */
+  boxes: PngBox[][];
 }
 
 /** Page view model: Backend's layoutSnapshot (the export layout), not a copy of it. */
@@ -66,6 +70,7 @@ export function buildPageView(opts: { content: JSONContent; settings: Presentati
   return {
     frame,
     geometry: pageGeometry(pageSpecFromSnapshot(snapshot)),
+    boxes: pages.map((pg) => pg.boxes ?? []),
     pages: pages.map((pg, pi) =>
       pg.lines.map((l, li) => {
         const block = styled[l.blockIndex];
@@ -161,3 +166,46 @@ export function pageOfBlock(
   }
   return Math.max(0, pages.length - 1);
 }
+
+function cssShadow(sh: BlockShadowPaint): string {
+  const hex = sh.color.replace(/^#/, "");
+  const n = hex.length === 3 ? [...hex].map((c) => c + c).join("") : hex;
+  const r = parseInt(n.slice(0, 2), 16);
+  const g = parseInt(n.slice(2, 4), 16);
+  const b = parseInt(n.slice(4, 6), 16);
+  return `${sh.offsetX}px ${sh.offsetY}px ${sh.blur}px rgba(${r},${g},${b},${sh.opacity})`;
+}
+
+/** CSS for a layout box in page view — the same paint exporters use, no layout change. */
+export function boxPaintStyle(box: PngBox): { box: CSSProperties; rule?: CSSProperties } {
+  const shadows = box.shadows ?? (box.shadow ? [box.shadow] : []);
+  const boxStyle: CSSProperties = {
+    position: "absolute",
+    left: box.x,
+    top: box.y,
+    width: box.w,
+    height: box.h,
+    pointerEvents: "none",
+  };
+  if (box.fill) boxStyle.backgroundColor = box.fill;
+  if (box.opacity !== undefined) boxStyle.opacity = box.opacity;
+  if (shadows.length) boxStyle.boxShadow = shadows.map(cssShadow).join(", ");
+  if (box.outline) {
+    boxStyle.outline = `${box.outline.width}px ${box.outline.style} ${box.outline.color ?? "currentColor"}`;
+    boxStyle.outlineOffset = 0;
+  }
+  const rule = box.border
+    ? {
+        position: "absolute" as const,
+        left: box.x,
+        top: box.y,
+        width: box.borderWidth,
+        height: box.h,
+        backgroundColor: box.border,
+        ...(box.opacity !== undefined ? { opacity: box.opacity } : {}),
+        pointerEvents: "none" as const,
+      }
+    : undefined;
+  return { box: boxStyle, rule };
+}
+

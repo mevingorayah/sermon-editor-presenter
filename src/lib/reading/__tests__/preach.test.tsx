@@ -180,3 +180,88 @@ test("page contract: fit-screen, legacy tablet, legal/custom only when set", asy
   const bad = m.fromSettings({ calibrationTarget: "paper-a4", page: { format: "custom", custom: { width: 1, height: 1, unit: "in" } } } as never);
   assert.ok(m.customError(bad));
 });
+
+const VERSE_WORDS = "FIXTURE made-up snippet words for page view.";
+const styledVerse = {
+  type: "verseSnippet",
+  attrs: {
+    ref: "Fixture 1:1",
+    translation: "WEB",
+    texts: { WEB: VERSE_WORDS },
+    style: { background: "#EEE8D5", borderLeft: "#A8201A" },
+    spacing: { pt: 24, pb: 24, pl: 20, pr: 12 },
+  },
+};
+const plainVerse = {
+  type: "verseSnippet",
+  attrs: { ref: "Fixture 1:1", translation: "WEB", texts: { WEB: VERSE_WORDS } },
+};
+const verseDoc = (verse: typeof styledVerse | typeof plainVerse, copies = 10) => ({
+  type: "doc",
+  content: [
+    { type: "title", content: [{ type: "text", text: "Fixture page-view verse styles" }] },
+    ...Array.from({ length: copies }, () => verse),
+  ],
+});
+
+for (const page of [
+  { format: "a4", orientation: "portrait" },
+  { format: "a5", orientation: "portrait" },
+  { format: "16:9", orientation: "landscape" },
+]) {
+  test(`page view paints verse fill, border and padding like the export layout (${page.format})`, () => {
+    const settings = settingsFor(page);
+    const content = verseDoc(styledVerse) as never;
+    const ref = layoutSnapshot(snapshotFor(content, settings));
+    const view = buildPageView({ content, settings });
+    const plain = buildPageView({ content: verseDoc(plainVerse) as never, settings });
+
+    assert.equal(view.pages.length, ref.pages.length, "page count matches the paginated layout");
+    assert.deepEqual(view.boxes, ref.pages.map((p) => p.boxes ?? []));
+
+    const boxes = view.boxes.flat();
+    const filled = boxes.filter((b) => b.fill === "#EEE8D5");
+    assert.ok(filled.length >= 1, "verse fill reaches page view");
+    assert.ok(filled.every((b) => b.border === "#A8201A" && b.borderWidth > 0), "left border reaches page view");
+
+    const verseLines = view.pages.flat().filter((l) => l.blockType === "Scripture");
+    assert.ok(verseLines.some((l) => l.verseBar), "top bar stays");
+    const words = verseLines
+      .filter((l) => l.kind === "text")
+      .map((l) => l.tokens.map((t) => t.text).join(""))
+      .join(" ");
+    assert.equal(words.replace(/\s+/g, ""), VERSE_WORDS.replace(/\s+/g, "").repeat(10));
+    assert.doesNotMatch(words, /Jean |John /);
+
+    for (const b of filled) {
+      const lines = verseLines.filter((l) => {
+        const x = l.x ?? view.frame.left;
+        const w = l.width ?? view.frame.contentWidth;
+        return l.y + l.lineHeight > b.y && l.y < b.y + b.h && x >= b.x - 0.5 && x + w <= b.x + b.w + 0.5;
+      });
+      assert.ok(lines.length >= 1, "padded verse lines sit inside the box");
+      const first = lines.reduce((a, l) => (l.y < a.y ? l : a));
+      const last = lines.reduce((a, l) => (l.y > a.y ? l : a));
+      assert.ok(first.y > b.y + 1, "top padding is in the layout");
+      assert.ok(last.y + last.lineHeight < b.y + b.h - 1, "bottom padding is in the layout");
+      const x = first.x ?? view.frame.left;
+      const w = first.width ?? view.frame.contentWidth;
+      assert.ok(x > b.x + 1, "left padding is in the layout");
+      assert.ok(x + w < b.x + b.w - 1, "right padding is in the layout");
+    }
+
+    for (const [i, pg] of view.pages.entries()) {
+      for (const l of pg) {
+        assert.ok(l.y + l.lineHeight <= view.frame.height + 0.5, `line overflows page ${i} on ${page.format}`);
+      }
+      for (const b of view.boxes[i] ?? []) {
+        assert.ok(b.y >= -0.5 && b.y + b.h <= view.frame.height + 0.5, `box overflows page ${i} on ${page.format}`);
+      }
+    }
+
+    assert.ok(plain.boxes.flat().every((b) => !b.fill && !b.border));
+    // Padding is in the box (asserted above). Page count can rise or fall vs
+    // unpadded when padding also clamps type size on a short page.
+    console.log(page.format, "padded pages", view.pages.length, "unpadded pages", plain.pages.length);
+  });
+}

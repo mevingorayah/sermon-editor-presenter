@@ -6,6 +6,7 @@ import type { JSONContent } from "@tiptap/react";
 import type { PresentationSettings } from "@/types/document";
 import { metricCompatibleCss } from "@/lib/sermon/export/textMeasure";
 import {
+  boxPaintStyle,
   buildPageView,
   clampPage,
   containScale,
@@ -99,6 +100,7 @@ export function PageView({ content, settings, fill = false, globalStyles }: Page
   const { frame } = model;
   const scale = containScale(frame, box.w || frame.width, box.h || frame.height);
   const lines = model.pages[current] ?? [];
+  const boxes = model.boxes[current] ?? [];
 
   return (
     <div
@@ -131,6 +133,15 @@ export function PageView({ content, settings, fill = false, globalStyles }: Page
           className={styles.page}
           style={{ width: frame.width, height: frame.height, transform: `scale(${scale})` }}
         >
+          {boxes.map((b, i) => {
+            const paint = boxPaintStyle(b);
+            return (
+              <div key={`box-${i}`}>
+                <div className={styles.box} data-block-box="" style={paint.box} />
+                {paint.rule ? <div className={styles.box} data-block-border="" style={paint.rule} /> : null}
+              </div>
+            );
+          })}
           {lines.map((l) => (
             <Line key={l.key} l={l} frame={frame} formatTheme={fmtTheme} bionicStrength={bionicStrength} />
           ))}
