@@ -15,7 +15,7 @@ import {
   pageOfBlock,
   type PageViewLine,
 } from "@/lib/reading/pageView";
-import { displayHighlightColor, displayTextColor } from "@/lib/reading/contrast";
+import { displayHighlightColor, displayTextOnBackground } from "@/lib/reading/contrast";
 import { bionicParts, clampBionicStrength, DEFAULT_BIONIC_STRENGTH } from "@/lib/bionic";
 import { FORMAT_THEME, formatTheme } from "@/lib/sermon/export/frames";
 import { letterSpacingEm } from "@/lib/sermon/export/textMeasure";
@@ -143,7 +143,7 @@ export function PageView({ content, settings, fill = false, globalStyles }: Page
             );
           })}
           {lines.map((l) => (
-            <Line key={l.key} l={l} frame={frame} formatTheme={fmtTheme} bionicStrength={bionicStrength} />
+            <Line key={l.key} l={l} frame={frame} formatTheme={fmtTheme} bionicStrength={bionicStrength} fill={fillUnderLine(l, boxes, frame)} />
           ))}
         </div>
       </section>
@@ -154,16 +154,37 @@ export function PageView({ content, settings, fill = false, globalStyles }: Page
   );
 }
 
+
+/** Nearest block fill under a line, if any. */
+function fillUnderLine(
+  l: PageViewLine,
+  boxes: { x: number; y: number; w: number; h: number; fill?: string }[],
+  frame: { left: number; contentWidth: number },
+): string | undefined {
+  const x = l.x ?? frame.left;
+  const w = l.width ?? frame.contentWidth;
+  const hit = boxes.find((b) =>
+    b.fill
+    && l.y + l.lineHeight > b.y
+    && l.y < b.y + b.h
+    && x + w > b.x
+    && x < b.x + b.w,
+  );
+  return hit?.fill;
+}
+
 function Line({
   l,
   frame,
   formatTheme: fmt,
   bionicStrength,
+  fill,
 }: {
   l: PageViewLine;
   frame: { left: number; contentWidth: number };
   formatTheme: "print" | "screen-dark";
   bionicStrength: number;
+  fill?: string;
 }) {
   return (
     <div
@@ -197,17 +218,25 @@ function Line({
         if (deco) style.textDecorationLine = deco;
         const ls = letterSpacingEm(r.letterSpacing);
         if (ls) style.letterSpacing = `${ls}em`;
-        if (r.color && !cue) {
-          style.color = displayTextColor(r.color, FORMAT_THEME[fmt].pageBackground, fmt, { highlight: !!r.highlight });
-        } else if (r.highlight && fmt === "screen-dark" && !cue) {
-          style.color = FORMAT_THEME.print.text;
-        }
+        const pageBg = FORMAT_THEME[fmt].pageBackground;
+        const nearest = fill ?? pageBg;
+        const shown = displayTextOnBackground(r.color, nearest, fmt, {
+          highlight: !!r.highlight,
+          pageBackground: pageBg,
+        });
+        if (shown && !cue) style.color = shown;
+        else if (r.highlight && fmt === "screen-dark" && !cue) style.color = FORMAT_THEME.print.text;
         if (r.highlight) style.backgroundColor = displayHighlightColor(r.highlightColor || "#FFF176", fmt);
+        // Bionic is paint-only on Pages view: layout matches the exporters
+        // (no bionic width), so emphasis must not change glyph advance or
+        // the line would overflow its box.
         const alreadyBold = Boolean(r.bold || l.role.bold);
         const body = alreadyBold || cue || l.kind === "citation"
           ? t.text
           : bionicParts(t.text, bionicStrength).map((part, i) =>
-              part.bold ? <strong key={i} data-bionic="">{part.text}</strong> : <span key={i}>{part.text}</span>,
+              part.bold
+                ? <span key={i} data-bionic="" style={{ textShadow: "0.04em 0 0 currentColor" }}>{part.text}</span>
+                : <span key={i}>{part.text}</span>,
             );
         return (
           <span key={ti} style={style} className={cue ? styles.cue : undefined} data-cue={cue ? "" : undefined}>

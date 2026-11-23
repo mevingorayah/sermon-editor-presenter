@@ -40,6 +40,7 @@ import { frameSizeInches, pxPerPt, type PageInput } from "./frames";
 import { layoutSnapshot, roleStyle } from "./pngLayout";
 import { blockFadeOpacity, lookAlign, lookRole, type BlockOutlinePaint, type BlockShadowPaint } from "./blockLook";
 import { blockColor, paletteFor, sliceRuns, splitRunsByGlyph, trimRunsEnd, type GlyphRun } from "./png";
+import { displayTextOnBackground } from "@/lib/reading/contrast";
 
 export interface PdfBuildOptions {
   includeNotes?: boolean;
@@ -331,7 +332,10 @@ export async function buildPdf(
           const shownCite = citationDisplay(block);
           doc.save();
           if (fade !== undefined) doc.fillOpacity(fade);
-          doc.font(fontFor("serif", {})).fontSize(fs).fillColor(pal.muted);
+          const theme = pal.light ? "print" as const : "screen-dark" as const;
+          const nearest = block.look?.background ?? pal.bg;
+          const citeFill = displayTextOnBackground(undefined, nearest, theme, { pageBackground: pal.bg }) ?? pal.muted;
+          doc.font(fontFor("serif", {})).fontSize(fs).fillColor(citeFill);
           const shown = safeGlyphs(doc, shownCite.text);
           const w = doc.widthOfString(shown, { features: NO_LIGA });
           const x = shownCite.align === "left" ? P(lx) : Math.max(P(lx), P(lx + lw) - w);
@@ -340,7 +344,10 @@ export async function buildPdf(
           continue;
         }
         const role = lookRole(roleStyle(block.type), block.look);
-        const bc = block.look?.color ?? color(block.type);
+        const theme = pal.light ? "print" as const : "screen-dark" as const;
+        const nearest = block.look?.background ?? pal.bg;
+        const bc = displayTextOnBackground(block.look?.color, nearest, theme, { pageBackground: pal.bg })
+          ?? block.look?.color ?? color(block.type);
         const align = lookAlign(block.look, block.align);
         const runs = splitRunsByGlyph(trimRunsEnd(sliceRuns(block.runs, line.start, line.end)), role);
         const fontOf = (r: GlyphRun) =>
@@ -354,7 +361,11 @@ export async function buildPdf(
         if (fade !== undefined) doc.save().fillOpacity(fade);
         if (block.look?.highlight && total > 0) doc.save().rect(x, baseline - fs * 0.8, total, fs * 1.05).fill(block.look.highlight).restore();
         for (const r of runs) {
-          doc.font(fontOf(r)).fontSize(fs).fillColor(r.color || bc);
+          const runFill = displayTextOnBackground(r.color ?? block.look?.color, nearest, theme, {
+            highlight: !!r.highlight,
+            pageBackground: pal.bg,
+          }) ?? (r.color || bc);
+          doc.font(fontOf(r)).fontSize(fs).fillColor(runFill);
           const drawn = safeGlyphs(doc, r.text);
           const w = doc.widthOfString(drawn, { features: NO_LIGA });
           if (r.highlight) {

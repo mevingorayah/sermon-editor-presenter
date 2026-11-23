@@ -176,9 +176,12 @@ export function adjustForDarkContrast(textHex: string, bgHex: string): string {
 /**
  * Apply the format-group colour policy at display time.
  * - print: leave text as saved (white page, dark text).
- * - screen-dark: lighten text that fails 4.5:1 against the page, except
- *   text sitting on a highlight, which stays dark. Highlights keep their
- *   colour (see displayHighlightColor).
+ * - screen-dark: check text against its nearest background (the block
+ *   fill when the block has one, otherwise the page). The saved colour
+ *   is used unchanged when it already meets 4.5:1; only colours that
+ *   fail are lightened, keeping hue. Text sitting on a highlight stays
+ *   dark (highlights keep their colour; see displayHighlightColor).
+ * Never writes back to the sermon.
  */
 export function displayTextColor(
   textHex: string,
@@ -189,6 +192,29 @@ export function displayTextColor(
   if (theme !== "screen-dark") return textHex;
   if (opts?.highlight) return textHex;
   return adjustForDarkContrast(textHex, bgHex);
+}
+
+/** Saved default body text (print). Dark-screen page text is display-only. */
+export const SAVED_BODY_TEXT = "#141210";
+
+/**
+ * Display-time text colour against the nearest background. When no
+ * colour was saved, body text on a fill starts from the saved default
+ * (dark) so a light cream fill keeps dark text rather than the
+ * lightened page colour. Returns `undefined` when the caller should
+ * inherit the page text colour (no fill, no saved colour).
+ */
+export function displayTextOnBackground(
+  savedColor: string | undefined,
+  nearestBg: string,
+  theme: FormatTheme,
+  opts?: { highlight?: boolean; pageBackground?: string },
+): string | undefined {
+  if (opts?.highlight) return savedColor;
+  if (theme !== "screen-dark") return savedColor;
+  const pageBg = opts?.pageBackground;
+  if (!savedColor && (pageBg === undefined || nearestBg === pageBg)) return undefined;
+  return displayTextColor(savedColor ?? SAVED_BODY_TEXT, nearestBg, theme, opts);
 }
 
 /** Highlights keep their saved colour in every format theme. */

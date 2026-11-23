@@ -6,7 +6,7 @@ import { frameSizeInches, pxPerInch, pxPerPt, type PageInput } from "./frames";
 import { layoutSnapshot, roleStyle } from "./pngLayout";
 import { blockFadeOpacity, lookAlign, lookRole, pptxShadowOptions } from "./blockLook";
 import { FALLBACK_OFFICE_FACE, letterSpacingEm, metricCompatibleOffice } from "./textMeasure";
-import { displayHighlightColor, displayTextColor } from "@/lib/reading/contrast";
+import { displayHighlightColor, displayTextColor, displayTextOnBackground } from "@/lib/reading/contrast";
 
 export interface PptxBuildOptions {
   resolvedColors?: { accent: string };
@@ -18,8 +18,11 @@ const hex = (c: string) => c.replace(/^#/, "");
 
 function runsToPptxText(
   runs: GlyphRun[],
-  opts: { fontSize: number; defaultColor: string; bold: boolean; italic: boolean; highlight: string; darkStage?: boolean },
+  opts: { fontSize: number; defaultColor: string; bold: boolean; italic: boolean; highlight: string; darkStage?: boolean; fill?: string },
 ): PptxGenJS.TextProps[] {
+  const theme = opts.darkStage ? "screen-dark" as const : "print" as const;
+  const pageBg = opts.darkStage ? "#141210" : "#ffffff";
+  const nearest = opts.fill ?? pageBg;
   return runs.map((run) => ({
     text: run.text,
     options: {
@@ -32,7 +35,10 @@ function runsToPptxText(
       color: hex(
         run.highlight && !run.color && opts.darkStage
           ? "#141210"
-          : displayTextColor(run.color || opts.defaultColor, opts.darkStage ? "#141210" : "#ffffff", opts.darkStage ? "screen-dark" : "print", { highlight: !!run.highlight }),
+          : (displayTextOnBackground(run.color ?? (opts.fill && opts.darkStage ? undefined : opts.defaultColor), nearest, theme, {
+              highlight: !!run.highlight,
+              pageBackground: pageBg,
+            }) ?? displayTextColor(run.color || opts.defaultColor, nearest, theme, { highlight: !!run.highlight })),
       ),
       highlight: run.highlight ? hex(displayHighlightColor(run.highlightColor || opts.highlight)) : undefined,
       charSpacing: (() => {
@@ -149,7 +155,7 @@ export async function buildPptx(
       if (!runs.length) continue;
       if (hl) runs = runs.map((r) => ({ ...r, highlight: true }));
       slide.addText(
-        runsToPptxText(runs, { fontSize: pt(line.size), defaultColor: block.look?.color ?? blockColor(block.type, p), highlight: hl ?? p.highlight, darkStage: !p.light, ...role }),
+        runsToPptxText(runs, { fontSize: pt(line.size), defaultColor: block.look?.color ?? blockColor(block.type, p), highlight: hl ?? p.highlight, darkStage: !p.light, fill: block.look?.background, ...role }),
         { ...box, align: lookAlign(block.look, block.align), ...textFade },
       );
     }

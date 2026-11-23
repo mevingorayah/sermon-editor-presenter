@@ -11,7 +11,7 @@ import { citationDisplay, type StyledBlock, type StyledRun } from "./contentWalk
 import { layoutSnapshot, roleStyle, type PngPage, type SnapshotLayout } from "./pngLayout";
 import { blockFadeOpacity, lookAlign, lookRole, type BlockOutlinePaint, type BlockShadowPaint } from "./blockLook";
 import { afmMeasurer, FALLBACK_FAMILY, letterSpacingEm, metricCompatibleCss, splitByCoverage } from "./textMeasure";
-import { displayHighlightColor, displayTextColor, ensureContrast } from "@/lib/reading/contrast";
+import { displayHighlightColor, displayTextColor, displayTextOnBackground, ensureContrast } from "@/lib/reading/contrast";
 
 export interface PngBuildOptions {
   resolvedColors?: { accent: string };
@@ -169,8 +169,11 @@ function pageSvg(layout: SnapshotLayout, page: PngPage, p: Palette): string {
       const x = shown.align === "left" ? lx : lx + lw;
       const fade = fadeOf(block);
       const fadeAttr = fade !== undefined ? ` opacity="${fade}"` : "";
+      const theme = p.light ? "print" as const : "screen-dark" as const;
+      const nearest = block.look?.background ?? p.bg;
+      const citeFill = displayTextOnBackground(undefined, nearest, theme, { pageBackground: p.bg }) ?? p.muted;
       parts.push(
-        `<text x="${x}" y="${baseline}" text-anchor="${anchor}" fill="${escapeXml(p.muted)}" font-size="${line.size}" font-family="${escapeXml(metricCompatibleCss("serif"))}"${fadeAttr}>${escapeXml(shown.text)}</text>`,
+        `<text x="${x}" y="${baseline}" text-anchor="${anchor}" fill="${escapeXml(citeFill)}" font-size="${line.size}" font-family="${escapeXml(metricCompatibleCss("serif"))}"${fadeAttr}>${escapeXml(shown.text)}</text>`,
       );
       continue;
     }
@@ -210,9 +213,15 @@ function pageSvg(layout: SnapshotLayout, page: PngPage, p: Palette): string {
     });
     const tspans = runs
       .map((run) => {
+        const theme = p.light ? "print" as const : "screen-dark" as const;
+        const nearest = block.look?.background ?? p.bg;
+        const painted = displayTextOnBackground(run.color ?? block.look?.color, nearest, theme, {
+          highlight: !!run.highlight,
+          pageBackground: p.bg,
+        });
         const fill = run.highlight && !run.color && !p.light
           ? "#141210"
-          : displayTextColor(run.color || color, p.bg, p.light ? "print" : "screen-dark", { highlight: !!run.highlight });
+          : (painted ?? displayTextColor(run.color || color, nearest, theme, { highlight: !!run.highlight }));
         const deco = [run.underline ? "underline" : "", run.strike ? "line-through" : ""].filter(Boolean).join(" ");
         const ls = letterSpacingEm(run.letterSpacing ?? block.letterSpacing);
         const lsAttr = ls ? ` letter-spacing="${(ls * line.size).toFixed(3)}"` : "";

@@ -3,6 +3,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { renderToStaticMarkup } from "react-dom/server";
 import { layoutSnapshot } from "@/lib/sermon/export/pngLayout";
+import { contrastRatio, displayTextOnBackground, parseColor, SAVED_BODY_TEXT } from "@/lib/reading/contrast";
+import { FORMAT_THEME } from "@/lib/sermon/export/frames";
 import { snapshotFor } from "@/lib/reading/pageSettings";
 import { countdown, shouldBarFade, formatElapsed, BAR_IDLE_MS } from "@/lib/reading/barFade";
 import { pageOfBlock, buildPageView, containScale, fillsScreen, pageStepForKey, pageStepForSwipe, clampPage } from "@/lib/reading/pageView";
@@ -260,8 +262,79 @@ for (const page of [
     }
 
     assert.ok(plain.boxes.flat().every((b) => !b.fill && !b.border));
-    // Padding is in the box (asserted above). Page count can rise or fall vs
-    // unpadded when padding also clamps type size on a short page.
-    console.log(page.format, "padded pages", view.pages.length, "unpadded pages", plain.pages.length);
+
+    const sizesOf = (pages: typeof view.pages, type: string) =>
+      pages.flat().filter((l) => l.blockType === type).map((l) => l.size);
+    const sameSizes = (type: string, label: string) => {
+      const padded = sizesOf(view.pages, type);
+      const unpadded = sizesOf(plain.pages, type);
+      assert.ok(padded.length > 0 && unpadded.length > 0, `${page.format}: ${label} lines are laid out`);
+      assert.deepEqual(
+        [...new Set(padded)].sort((a, b) => a - b),
+        [...new Set(unpadded)].sort((a, b) => a - b),
+        `${page.format}: padded and unpadded ${label} must keep the same font size`,
+      );
+    };
+    sameSizes("Scripture", "verse blocks");
+    sameSizes("Title", "headings");
+    assert.ok(
+      view.pages.length >= plain.pages.length,
+      `${page.format}: padded page count (${view.pages.length}) must be >= unpadded (${plain.pages.length})`,
+    );
   });
 }
+
+test("Pages view measures without Bionic, so page counts match the export layout", () => {
+  const content = verseDoc(plainVerse, 12) as never;
+  const settings = Object.assign(settingsFor({ format: "a5", orientation: "portrait" }) as object, { bionicStrength: 0.45 }) as never;
+  const view = buildPageView({ content, settings });
+  const exported = layoutSnapshot(snapshotFor(content, settings));
+  assert.equal(view.pages.length, exported.pages.length, "Pages view page count equals the export count");
+  view.pages.forEach((pg, i) => {
+    assert.equal(pg.length, exported.pages[i].lines.length);
+    pg.forEach((l, j) => {
+      assert.equal(l.y, exported.pages[i].lines[j].y);
+      assert.equal(l.size, exported.pages[i].lines[j].size);
+    });
+  });
+});
+
+test("dark screen: text on a cream verse fill is checked against the fill, not the page", () => {
+  const fill = "#EEE8D5";
+  const pageBg = FORMAT_THEME["screen-dark"].pageBackground;
+  const content = verseDoc(styledVerse, 1) as never;
+  const html = renderToStaticMarkup(
+    <>{renderSermon(content, { bionic: false, theme: "dark", formatTheme: "screen-dark" })}</>,
+  );
+  // Saved fill and text colours are unchanged in the sermon JSON.
+  assert.equal(styledVerse.attrs.style.background, fill);
+  assert.equal((styledVerse.attrs as { style: { color?: string } }).style.color, undefined);
+
+  const figure = html.match(/data-verse-snippet[^>]*style="([^"]*)"/);
+  assert.ok(figure, "Flow paints the verse snippet");
+  const style = figure![1];
+  assert.match(style, /background-color:\s*#EEE8D5/i);
+  const colorM = style.match(/(?:^|;|,)\s*color:\s*(#[0-9a-fA-F]{6})/i);
+  assert.ok(colorM, `Flow sets a text colour on the fill (style=${style})`);
+  const flowColor = colorM![1];
+  const shown = displayTextOnBackground(undefined, fill, "screen-dark", { pageBackground: pageBg });
+  assert.ok(shown);
+  // Cream fill already gives ~15:1 with the saved dark default; keep it.
+  assert.equal(shown!.toLowerCase(), SAVED_BODY_TEXT.toLowerCase());
+  const ratio = contrastRatio(parseColor(shown!)!, parseColor(fill)!);
+  assert.ok(ratio >= 4.5, `contrast ${ratio} against fill`);
+  assert.ok(ratio > 10, `cream fill keeps dark text (ratio ${ratio})`);
+  assert.equal(flowColor.toLowerCase(), shown!.toLowerCase());
+
+  // Pages view uses the same helper against the box fill.
+  const settings = settingsFor({ format: "16:9", orientation: "landscape" });
+  const view = buildPageView({ content, settings });
+  const boxes = view.boxes.flat().filter((b) => b.fill === fill);
+  assert.ok(boxes.length >= 1, "Pages view still has the cream fill");
+  const pageShown = displayTextOnBackground(undefined, fill, "screen-dark", { pageBackground: pageBg });
+  assert.equal(pageShown, shown, "Flow and Pages view agree on the fill text colour");
+  // The lightened page colour would fail on this fill; we must not use it.
+  const pageText = FORMAT_THEME["screen-dark"].text;
+  const bad = contrastRatio(parseColor(pageText)!, parseColor(fill)!);
+  assert.ok(bad < 4.5, `page text on cream would be ${bad}`);
+});
